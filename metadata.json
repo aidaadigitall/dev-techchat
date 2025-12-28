@@ -1,0 +1,8 @@
+{
+  "name": "Tech Chat CRM",
+  "description": "A professional SaaS omnichannel support system with WhatsApp-style chat, Kanban CRM, and automation features.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}

@@ -1,0 +1,229 @@
+import { ReactNode } from 'react';
+
+// --- Shared / Core ---
+export enum AppRoute {
+  DASHBOARD = 'DASHBOARD',
+  CHAT = 'CHAT',
+  KANBAN = 'KANBAN',
+  CONTACTS = 'CONTACTS',
+  CAMPAIGNS = 'CAMPAIGNS',
+  TASKS = 'TASKS', // Nova rota
+  REPORTS = 'REPORTS',
+  SETTINGS = 'SETTINGS',
+  
+  // Super Admin Routes
+  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
+  ADMIN_COMPANIES = 'ADMIN_COMPANIES',
+  ADMIN_PLANS = 'ADMIN_PLANS',
+  ADMIN_FINANCE = 'ADMIN_FINANCE',
+  ADMIN_DATABASE = 'ADMIN_DATABASE' // Nova rota
+}
+
+export interface NavItem {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  path: string;
+  type?: 'general' | 'admin';
+}
+
+// --- Visual Identity / White Label ---
+export interface Branding {
+  appName: string;
+  primaryColor: string;
+  logoUrl?: string;
+}
+
+// --- Chat & Messaging ---
+export enum MessageType {
+  TEXT = 'TEXT',
+  IMAGE = 'IMAGE',
+  AUDIO = 'AUDIO',
+  VIDEO = 'VIDEO',
+  DOCUMENT = 'DOCUMENT',
+  TEMPLATE = 'TEMPLATE',
+  LOCATION = 'LOCATION'
+}
+
+export interface Message {
+  id: string;
+  content: string;
+  senderId: string; // 'me' or contactId
+  timestamp: string;
+  type: MessageType;
+  status: 'sent' | 'delivered' | 'read' | 'failed';
+  channel?: 'whatsapp' | 'instagram' | 'telegram';
+  mediaUrl?: string; // URL for images/videos/docs
+  fileName?: string; // Name for documents
+  location?: { lat: number, lng: number };
+  starred?: boolean; // New field for favorite messages
+}
+
+export interface QuickReply {
+  id: string;
+  shortcut: string;
+  content: string;
+}
+
+export interface Contact {
+  id: string;
+  name: string;
+  avatar: string;
+  phone: string;
+  email?: string;
+  tags: string[];
+  company?: string;
+  sector?: string; // Setor do atendimento (Comercial, Suporte, etc)
+  connectionName?: string; // Nome da conexão (WhatsApp 1, Insta Loja, etc)
+  channel?: 'whatsapp' | 'instagram' | 'telegram';
+  address?: string;
+  lastMessage?: string;
+  lastMessageTime?: string;
+  unreadCount?: number;
+  status: 'open' | 'pending' | 'resolved';
+  pipelineStage?: string; // ID of the kanban stage
+  pipelineValue?: number;
+  notes?: string;
+  blocked?: boolean;
+  customFields?: Record<string, string>;
+  
+  // New Fields
+  employees?: string;
+  role?: string;
+  state?: string;
+  importantInfo?: string;
+}
+
+// --- Kanban / CRM ---
+export interface KanbanCard {
+  id: string;
+  title: string;
+  value: number; // Monetary value
+  contactId: string;
+  contactName: string; // Denormalized for display
+  priority: 'low' | 'medium' | 'high';
+  tags: string[];
+  dueDate?: string;
+}
+
+export interface KanbanColumn {
+  id: string;
+  title: string;
+  cards: KanbanCard[];
+  color: string;
+  cardsCount?: number; // Optional count helper
+}
+
+export interface Pipeline {
+  id: string;
+  name: string;
+  columns: KanbanColumn[];
+}
+
+// --- Campaigns ---
+export interface Campaign {
+  id: string;
+  name: string;
+  status: 'draft' | 'scheduled' | 'sending' | 'completed' | 'paused';
+  createdAt: string;
+  scheduledFor?: string;
+  connectionId: string;
+  stats: {
+    total: number;
+    sent: number;
+    delivered: number;
+    read: number;
+    failed: number;
+  };
+}
+
+// --- Tasks ---
+export type TaskPriority = 'p1' | 'p2' | 'p3' | 'p4';
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  dueDate?: string; // ISO string 'YYYY-MM-DD'
+  priority: TaskPriority;
+  projectId: string; // 'inbox', 'financeiro', etc
+  completed: boolean;
+  assigneeId?: string;
+  tags?: string[];
+  subtasks?: Task[];
+}
+
+// --- Settings & Auth ---
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'super_admin' | 'admin' | 'user' | 'supervisor';
+  avatar: string;
+  status: 'active' | 'inactive';
+  companyId: string;
+}
+
+export interface Integration {
+  id: string;
+  name: string;
+  status: 'connected' | 'disconnected' | 'qr_needed';
+  phone?: string;
+  lastSync?: string;
+}
+
+// --- SaaS / Multi-Tenant Core ---
+export interface Plan {
+  id: string;
+  name: string;
+  price: number;
+  limits: {
+    users: number;
+    connections: number;
+    messages: number;
+  };
+  features: {
+    crm: boolean;
+    campaigns: boolean;
+    api: boolean;
+  };
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+  planId: string;
+  status: 'active' | 'trial' | 'suspended' | 'overdue';
+  subscriptionEnd: string;
+  userCount: number;
+}
+
+export interface SaasStats {
+  totalCompanies: number;
+  activeUsers: number;
+  mrr: number; // Monthly Recurring Revenue
+  churnRate: number;
+}
+
+// --- Reports ---
+export interface DateRange {
+  start: Date;
+  end: Date;
+}
+
+// --- AI Copilot ---
+export interface AIInsight {
+  type: 'sentiment' | 'suggestion' | 'crm_action' | 'risk';
+  content: string;
+  confidence: number;
+}
+
+// --- API Response Wrapper ---
+export interface ApiResponse<T> {
+  data: T;
+  success: boolean;
+  message?: string;
+}
