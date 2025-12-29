@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import MobileHeader from './components/MobileHeader';
+import SpeedInsights from './components/SpeedInsights';
 import { AppRoute, User, Branding } from './types';
 import { MOCK_USERS } from './constants';
 
@@ -84,6 +85,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
+      <SpeedInsights />
       {/* Dynamic Styles for White Label */}
       <style>{`
         :root {
