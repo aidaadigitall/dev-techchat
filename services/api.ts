@@ -1,200 +1,201 @@
 import { Contact, Message, MessageType, KanbanColumn, Pipeline, Campaign, QuickReply, AIInsight, Task } from '../types';
-import { MOCK_CONTACTS, MOCK_MESSAGES, MOCK_KANBAN_COLUMNS } from '../constants';
+import { supabase } from './supabase';
 
-// Simulated delay to mimic network requests
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const MOCK_QUICK_REPLIES: QuickReply[] = [
-  { id: '1', shortcut: '/oi', content: 'Olá! Tudo bem? Como posso ajudar você hoje?' },
-  { id: '2', shortcut: '/pix', content: 'Nossa chave PIX é o CNPJ: 12.345.678/0001-90. Favor enviar o comprovante.' },
-  { id: '3', shortcut: '/fim', content: 'Agradecemos o contato! Se precisar de mais alguma coisa, estamos à disposição.' },
-  { id: '4', shortcut: '/preco', content: 'Nossos planos começam a partir de R$ 199,90. Gostaria de ver a tabela completa?' },
-];
-
-let MOCK_TASKS: Task[] = [
-  {
-    id: '1',
-    title: 'Finalizar proposta comercial da Acme Corp',
-    description: 'Revisar valores e incluir cláusula de suporte estendido.',
-    dueDate: new Date().toISOString().split('T')[0], // Hoje
-    priority: 'p1',
-    projectId: 'comercial',
-    completed: false,
-    assigneeId: '1',
-    tags: ['Contrato', 'Urgente'],
-    subtasks: [
-      { id: '1a', title: 'Calcular impostos', priority: 'p2', projectId: 'comercial', completed: true },
-      { id: '1b', title: 'Gerar PDF final', priority: 'p4', projectId: 'comercial', completed: false }
-    ]
-  },
-  {
-    id: '2',
-    title: 'Reunião de alinhamento semanal',
-    dueDate: new Date().toISOString().split('T')[0], // Hoje
-    priority: 'p3',
-    projectId: 'inbox',
-    completed: false,
-    assigneeId: '2',
-    tags: ['Equipe']
-  },
-  {
-    id: '3',
-    title: 'Pagar servidor AWS',
-    description: 'Vencimento dia 25',
-    dueDate: '2024-12-25', // Futuro
-    priority: 'p1',
-    projectId: 'financeiro',
-    completed: false,
-    assigneeId: '1'
-  },
-  {
-    id: '4',
-    title: 'Criar criativos para Black Friday',
-    dueDate: '2024-11-10', // Passado/Atrasado (exemplo)
-    priority: 'p2',
-    projectId: 'marketing',
-    completed: false,
-    assigneeId: '4',
-    subtasks: [
-      { id: '4a', title: 'Briefing com copywriter', priority: 'p3', projectId: 'marketing', completed: false }
-    ]
-  },
-  {
-    id: '5',
-    title: 'Corrigir bug no login do app',
-    dueDate: new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().split('T')[0], // Amanhã
-    priority: 'p1',
-    projectId: 'dev',
-    completed: false,
-    assigneeId: '3',
-    tags: ['Bug', 'Mobile']
+// Helper to handle Supabase errors
+const handleError = (error: any) => {
+  if (error) {
+    console.error('Supabase Error:', error.message);
+    throw error;
   }
-];
+};
 
-// This service is structured to be easily replaced by Axios calls to your NestJS/Node backend.
 export const api = {
   contacts: {
     list: async (): Promise<Contact[]> => {
-      await delay(300);
-      return MOCK_CONTACTS;
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .order('name', { ascending: true });
+      
+      handleError(error);
+      return data as Contact[];
     },
     getById: async (id: string): Promise<Contact | undefined> => {
-      await delay(200);
-      return MOCK_CONTACTS.find(c => c.id === id);
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      handleError(error);
+      return data as Contact;
     },
     create: async (data: Partial<Contact>): Promise<Contact> => {
-      await delay(500);
-      const newContact = { ...MOCK_CONTACTS[0], ...data, id: Date.now().toString() } as Contact;
-      return newContact;
+      const { data: newContact, error } = await supabase
+        .from('contacts')
+        .insert([data])
+        .select()
+        .single();
+      
+      handleError(error);
+      return newContact as Contact;
     },
     update: async (id: string, data: Partial<Contact>): Promise<Contact> => {
-      await delay(300);
-      // Logic to update mock data would go here if we were persisting it better
-      const index = MOCK_CONTACTS.findIndex(c => c.id === id);
-      if (index !== -1) {
-         MOCK_CONTACTS[index] = { ...MOCK_CONTACTS[index], ...data };
-         return MOCK_CONTACTS[index];
-      }
-      return { ...MOCK_CONTACTS[0], ...data } as Contact;
+      const { data: updatedContact, error } = await supabase
+        .from('contacts')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      handleError(error);
+      return updatedContact as Contact;
     }
   },
 
   chat: {
     getMessages: async (contactId: string): Promise<Message[]> => {
-      await delay(300);
-      return MOCK_MESSAGES; // In real app, filter by contactId
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('contact_id', contactId)
+        .order('timestamp', { ascending: true });
+      
+      handleError(error);
+      return data as Message[];
     },
     sendMessage: async (contactId: string, content: string, type: MessageType = MessageType.TEXT): Promise<Message> => {
-      await delay(300);
-      return {
-        id: Date.now().toString(),
-        content,
-        senderId: 'me',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        type,
-        status: 'sent',
-        channel: 'whatsapp'
-      };
+      const { data: newMessage, error } = await supabase
+        .from('messages')
+        .insert([{
+          contact_id: contactId,
+          content,
+          type,
+          sender_id: 'me', // In a real app, this would be the logged-in user's ID
+          status: 'sent',
+          timestamp: new Date().toISOString()
+        }])
+        .select()
+        .single();
+      
+      handleError(error);
+      return newMessage as Message;
     },
     getQuickReplies: async (): Promise<QuickReply[]> => {
-      await delay(200);
-      return MOCK_QUICK_REPLIES;
+      const { data, error } = await supabase
+        .from('quick_replies')
+        .select('*');
+      
+      handleError(error);
+      return data as QuickReply[];
     }
   },
 
   tasks: {
     list: async (): Promise<Task[]> => {
-      await delay(200);
-      return MOCK_TASKS;
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('due_date', { ascending: true });
+      
+      handleError(error);
+      return data as Task[];
     },
     create: async (task: Partial<Task>): Promise<Task> => {
-      await delay(200);
-      const newTask = { 
-        ...task, 
-        id: Date.now().toString(), 
-        completed: false,
-        subtasks: task.subtasks || []
-      } as Task;
-      MOCK_TASKS = [newTask, ...MOCK_TASKS];
-      return newTask;
+      const { data: newTask, error } = await supabase
+        .from('tasks')
+        .insert([task])
+        .select()
+        .single();
+      
+      handleError(error);
+      return newTask as Task;
     },
     update: async (id: string, updates: Partial<Task>): Promise<Task> => {
-      await delay(200);
-      MOCK_TASKS = MOCK_TASKS.map(t => t.id === id ? { ...t, ...updates } : t);
-      return MOCK_TASKS.find(t => t.id === id)!;
+      const { data: updatedTask, error } = await supabase
+        .from('tasks')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      handleError(error);
+      return updatedTask as Task;
     },
     delete: async (id: string): Promise<void> => {
-      await delay(200);
-      MOCK_TASKS = MOCK_TASKS.filter(t => t.id !== id);
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', id);
+      
+      handleError(error);
     }
   },
 
   crm: {
     getPipelines: async (): Promise<Pipeline[]> => {
-      await delay(300);
-      return [
-        { id: 'default', name: 'Comercial', columns: MOCK_KANBAN_COLUMNS },
-        { id: 'finance', name: 'Financeiro', columns: [] },
-        { id: 'support', name: 'Suporte & Atendimento', columns: [] }
-      ];
+      // This assumes a more complex structure where pipelines and columns are related
+      const { data, error } = await supabase
+        .from('pipelines')
+        .select(`
+          *,
+          columns:kanban_columns(*)
+        `);
+      
+      handleError(error);
+      return data as Pipeline[];
     },
     moveCard: async (cardId: string, sourceColId: string, destColId: string) => {
-      await delay(200);
+      const { error } = await supabase
+        .from('kanban_cards')
+        .update({ column_id: destColId })
+        .eq('id', cardId);
+      
+      handleError(error);
       return true;
     }
   },
 
   campaigns: {
     list: async (): Promise<Campaign[]> => {
-      await delay(300);
-      return [];
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('*');
+      
+      handleError(error);
+      return data as Campaign[];
     },
     create: async (data: any): Promise<Campaign> => {
-      await delay(800);
-      return {
-        id: Date.now().toString(),
-        name: data.name,
-        status: data.scheduledFor ? 'scheduled' : 'sending',
-        createdAt: new Date().toISOString(),
-        connectionId: data.connectionId,
-        scheduledFor: data.scheduledFor,
-        stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 }
-      };
+      const { data: newCampaign, error } = await supabase
+        .from('campaigns')
+        .insert([{
+          name: data.name,
+          status: data.scheduledFor ? 'scheduled' : 'sending',
+          connection_id: data.connectionId,
+          scheduled_for: data.scheduledFor,
+          stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 }
+        }])
+        .select()
+        .single();
+      
+      handleError(error);
+      return newCampaign as Campaign;
     }
   },
   
   ai: {
     generateInsight: async (context: 'chat' | 'kanban', data: any): Promise<AIInsight[]> => {
-      await delay(1500); // Simulate thinking
+      // AI insights would typically call an Edge Function or external API
+      // For now, we keep the simulation but it could be integrated with Supabase Edge Functions
+      await new Promise(resolve => setTimeout(resolve, 1000));
       if (context === 'chat') {
         return [
-          { type: 'sentiment', content: 'O cliente demonstra interesse, mas está cauteloso sobre valores. Tom amigável.', confidence: 0.9 },
-          { type: 'suggestion', content: 'Sugira uma demonstração gratuita para aumentar a confiança.', confidence: 0.85 },
-          { type: 'risk', content: 'Risco de objeção de preço detectado. Prepare argumentos de ROI.', confidence: 0.7 }
+          { type: 'sentiment', content: 'O cliente demonstra interesse, mas está cauteloso sobre valores.', confidence: 0.9 },
+          { type: 'suggestion', content: 'Sugira uma demonstração gratuita.', confidence: 0.85 }
         ];
       }
       return [
-        { type: 'crm_action', content: 'Este lead está estagnado em "Novo Lead" há 3 dias. Sugiro contato urgente.', confidence: 0.95 }
+        { type: 'crm_action', content: 'Lead estagnado há 3 dias. Sugiro contato.', confidence: 0.95 }
       ];
     }
   }
