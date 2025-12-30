@@ -600,7 +600,7 @@ const Tasks: React.FC = () => {
                               {['p1', 'p2', 'p3', 'p4'].map((p) => (
                                   <button
                                     key={p}
-                                    className="w-full px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-xs text-left"
+                                    className="w-full px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 text-xs text-left"
                                     onClick={() => updateTaskPriority(task.id, p as TaskPriority)}
                                   >
                                     <PriorityFlag p={p as TaskPriority} />
@@ -832,7 +832,7 @@ const Tasks: React.FC = () => {
                     <div className="relative">
                        <input 
                          type="datetime-local" 
-                         className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                         className="absolute inset-0 opacity-0 cursor-pointer w-full z-10"
                          value={quickAddDate}
                          onChange={(e) => setQuickAddDate(e.target.value)}
                          title="Escolher data e hora"

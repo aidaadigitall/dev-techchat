@@ -32,13 +32,20 @@ const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
 
 // Ensure valid URL format to prevent crash during initialization if env vars are missing
+// We use a valid-looking dummy URL to satisfy the library's constructor validation
 const validUrl = supabaseUrl && supabaseUrl.startsWith('http') ? supabaseUrl : 'https://placeholder.supabase.co';
 const validKey = supabaseAnonKey || 'placeholder-key';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase URLs not found. Please check your .env file and ensure variables start with VITE_, REACT_APP_ or NEXT_PUBLIC_.');
-} else {
-  console.log('Supabase Connection Initialized');
+let client;
+
+try {
+    client = createClient(validUrl, validKey);
+} catch (error) {
+    console.error("Supabase Client Init Error:", error);
 }
 
-export const supabase = createClient(validUrl, validKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.info('%c MODO DEMONSTRAÇÃO ', 'background: #9333ea; color: #fff; padding: 2px 5px; border-radius: 3px;', 'Variáveis de ambiente do Supabase não detectadas. O sistema utilizará dados locais (Mocks).');
+}
+
+export const supabase = client || createClient('https://placeholder.supabase.co', 'placeholder');
