@@ -17,7 +17,7 @@ import Modal from '../components/Modal';
 // Expanded Emoji List
 const COMMON_EMOJIS = [
   "😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞", "👀", "🚀", "✨", "💯",
-  "😊", "🥺", "😭", "😤", "😴", "😷", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
+  "😊", "🥺", "😭", "😤", "😴", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
 ];
 
 const DEPARTMENTS = [
@@ -134,8 +134,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         setContacts(fetchedContacts);
         
         if (!selectedContact && fetchedContacts.length > 0) {
-            const initial = fetchedContacts.find(c => c.status === activeTab) || fetchedContacts[0];
-            if (initial && initial.status === activeTab) setSelectedContact(initial);
+            // Only set initial contact on desktop, on mobile keep null to show list
+            if (window.innerWidth >= 768) {
+               const initial = fetchedContacts.find(c => c.status === activeTab) || fetchedContacts[0];
+               if (initial && initial.status === activeTab) setSelectedContact(initial);
+            }
         }
     };
     loadInit();
@@ -710,9 +713,9 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   };
 
   return (
-    <div className="flex h-full bg-white overflow-hidden">
+    <div className="flex h-full bg-white overflow-hidden relative">
       {/* 1. Sidebar - Contact List */}
-      <div className="w-80 border-r border-gray-200 flex flex-col bg-gray-50 h-full">
+      <div className={`w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50 h-full absolute md:relative z-20 md:z-auto transition-transform duration-300 ${selectedContact ? '-translate-x-full md:translate-x-0' : 'translate-x-0'}`}>
          <div className="p-4 bg-white border-b border-gray-100">
            <div className="relative mb-3">
               <input 
@@ -757,9 +760,12 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                         <span className="text-[10px] text-gray-400 flex-shrink-0">{contact.lastMessageTime}</span>
                      </div>
                      <div className="flex justify-between items-center">
-                        <p className="text-xs text-gray-500 truncate max-w-[140px]">{contact.lastMessage}</p>
+                        <div className="flex items-center overflow-hidden flex-1 mr-2">
+                            {contact.channel === 'whatsapp' && <MessageSquare size={12} className="text-gray-400 mr-1 flex-shrink-0" />}
+                            <p className="text-xs text-gray-500 truncate">{contact.lastMessage}</p>
+                        </div>
                         {contact.unreadCount && contact.unreadCount > 0 && (
-                           <span className="bg-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                           <span className="bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">
                              {contact.unreadCount}
                            </span>
                         )}
@@ -776,25 +782,35 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       </div>
 
       {/* 2. Chat Area */}
-      <div className="flex-1 flex flex-col relative bg-[#efeae2]">
+      <div className={`flex-1 flex flex-col relative bg-[#efeae2] h-full w-full absolute md:relative transition-transform duration-300 ${selectedContact ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
          {selectedContact ? (
            <>
              {/* Chat Header */}
              <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-10 shadow-sm">
-                <div className="flex items-center cursor-pointer" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
-                   <img src={selectedContact.avatar} alt="Profile" className="w-9 h-9 rounded-full object-cover" />
-                   <div className="ml-3">
-                      <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
-                      <p className="text-xs text-gray-500 flex items-center">
-                         {selectedContact.company || 'Pessoa Física'} • <span className="text-green-600 ml-1">Online</span>
-                      </p>
+                <div className="flex items-center">
+                   {/* Mobile Back Button */}
+                   <button 
+                       onClick={() => setSelectedContact(null)} 
+                       className="md:hidden mr-3 text-gray-600 hover:bg-gray-100 p-1 rounded-full transition-colors"
+                   >
+                       <ChevronLeft size={24} />
+                   </button>
+
+                   <div className="flex items-center cursor-pointer" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+                      <img src={selectedContact.avatar} alt="Profile" className="w-9 h-9 rounded-full object-cover" />
+                      <div className="ml-3">
+                         <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
+                         <p className="text-xs text-gray-500 flex items-center">
+                            {selectedContact.company || 'Pessoa Física'} • <span className="text-green-600 ml-1">Online</span>
+                         </p>
+                      </div>
                    </div>
                 </div>
                 
                 <div className="flex items-center space-x-2">
                    <button 
                       onClick={handleResolveTicket} 
-                      className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg hover:bg-green-100 hover:text-green-700 transition-colors flex items-center border border-gray-200"
+                      className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg hover:bg-green-100 hover:text-green-700 transition-colors flex items-center border border-gray-200 hidden sm:flex"
                    >
                       <CheckSquare size={14} className="mr-1" /> Resolver
                    </button>
@@ -837,7 +853,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
                 {messages.map((msg, idx) => (
                    <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} group mb-2`}>
-                      <div className={`max-w-[70%] relative shadow-sm rounded-lg px-3 py-2 text-sm ${
+                      <div className={`max-w-[85%] sm:max-w-[70%] relative shadow-sm rounded-lg px-3 py-2 text-sm ${
                          msg.senderId === 'me' 
                            ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' 
                            : 'bg-white text-gray-900 rounded-tl-none'
@@ -872,7 +888,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                          )}
 
                          {msg.type === MessageType.DOCUMENT && (
-                            <div className="flex items-center bg-gray-100 p-3 rounded-lg min-w-[240px] border border-gray-200 mb-1">
+                            <div className="flex items-center bg-gray-100 p-3 rounded-lg min-w-[200px] sm:min-w-[240px] border border-gray-200 mb-1">
                                <div className="bg-white p-2 rounded-full mr-3 text-red-500 shadow-sm">
                                   <FileText size={20} />
                                </div>
@@ -1112,7 +1128,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                    {/* Schedule Button */}
                    <button 
                      onClick={handleScheduleMessage}
-                     className="p-3 text-gray-500 hover:bg-gray-200 rounded-full transition-colors"
+                     className="p-3 text-gray-500 hover:bg-gray-200 rounded-full transition-colors hidden sm:block"
                      title="Agendar Mensagem"
                    >
                       <Clock size={20} />
@@ -1166,7 +1182,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
       {/* 3. Right Panel - Details & CRM & Starred */}
       {rightPanelOpen && selectedContact && (
-         <div className="w-80 bg-white border-l border-gray-200 h-full overflow-y-auto animate-slideInRight flex flex-col">
+         <div className="absolute right-0 top-0 bottom-0 w-80 bg-white border-l border-gray-200 z-30 shadow-2xl overflow-y-auto animate-slideInRight flex flex-col">
             <div className="p-4 border-b border-gray-100 flex items-center bg-gray-50 flex-shrink-0">
                <button onClick={() => {
                   if (rightPanelView === 'starred') setRightPanelView('info');
