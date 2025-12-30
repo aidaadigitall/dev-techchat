@@ -34,10 +34,20 @@ const adaptContact = (data: any): Contact => ({
   tags: data.tags || [],
   company: data.custom_fields?.company,
   status: data.status || 'open',
-  unreadCount: 0, // Calculated in real-time usually
+  unreadCount: 0, 
   lastMessage: '',
   lastMessageTime: data.last_message_at ? new Date(data.last_message_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '',
-  pipelineValue: data.pipeline_value || 0
+  pipelineValue: data.pipeline_value || 0,
+  
+  // Extra fields mapping
+  cpfCnpj: data.custom_fields?.cpfCnpj,
+  birthday: data.custom_fields?.birthday,
+  source: data.custom_fields?.source,
+  role: data.custom_fields?.role,
+  strategicNotes: data.custom_fields?.strategicNotes,
+  city: data.custom_fields?.city,
+  state: data.custom_fields?.state,
+  customFields: data.custom_fields
 });
 
 const adaptMessage = (data: any): Message => ({
@@ -109,23 +119,62 @@ export const api = {
         phone: contact.phone,
         email: contact.email,
         tags: contact.tags,
-        custom_fields: { company: contact.company },
-        status: contact.status
+        // We pack extended fields into custom_fields to avoid schema strictness issues
+        custom_fields: { 
+            company: contact.company,
+            cpfCnpj: contact.cpfCnpj,
+            birthday: contact.birthday,
+            source: contact.source,
+            role: contact.role,
+            strategicNotes: contact.strategicNotes,
+            city: contact.city,
+            state: contact.state
+        },
+        status: contact.status || 'open'
       };
+      
       const { data, error } = await supabase.from('contacts').insert(dbPayload).select().single();
-      if (error) throw error;
+      
+      if (error) {
+          console.error("Supabase Create Error Details:", error);
+          throw error;
+      }
       return adaptContact(data);
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
       const dbPayload: any = {};
-      if (updates.name) dbPayload.name = updates.name;
-      if (updates.phone) dbPayload.phone = updates.phone;
-      if (updates.email) dbPayload.email = updates.email;
-      if (updates.status) dbPayload.status = updates.status;
-      if (updates.company) dbPayload.custom_fields = { company: updates.company }; // Merge logic needed in real app
+      
+      // Direct columns
+      if (updates.name !== undefined) dbPayload.name = updates.name;
+      if (updates.phone !== undefined) dbPayload.phone = updates.phone;
+      if (updates.email !== undefined) dbPayload.email = updates.email;
+      if (updates.status !== undefined) dbPayload.status = updates.status;
+      if (updates.tags !== undefined) dbPayload.tags = updates.tags;
+
+      // Pack everything else into custom_fields merge
+      // Ideally we should fetch current custom_fields first to deep merge, 
+      // but for now we assume a flat merge logic or full replacement depending on DB config.
+      // A better approach for update is:
+      const customFieldsUpdate: any = {};
+      if(updates.company !== undefined) customFieldsUpdate.company = updates.company;
+      if(updates.cpfCnpj !== undefined) customFieldsUpdate.cpfCnpj = updates.cpfCnpj;
+      if(updates.birthday !== undefined) customFieldsUpdate.birthday = updates.birthday;
+      if(updates.source !== undefined) customFieldsUpdate.source = updates.source;
+      if(updates.role !== undefined) customFieldsUpdate.role = updates.role;
+      if(updates.strategicNotes !== undefined) customFieldsUpdate.strategicNotes = updates.strategicNotes;
+      if(updates.city !== undefined) customFieldsUpdate.city = updates.city;
+      if(updates.state !== undefined) customFieldsUpdate.state = updates.state;
+
+      if(Object.keys(customFieldsUpdate).length > 0) {
+          dbPayload.custom_fields = customFieldsUpdate; 
+      }
 
       const { data, error } = await supabase.from('contacts').update(dbPayload).eq('id', id).select().single();
-      if (error) throw error;
+      
+      if (error) {
+          console.error("Supabase Update Error Details:", error);
+          throw error;
+      }
       return adaptContact(data);
     }
   },

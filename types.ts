@@ -102,11 +102,14 @@ export interface Contact {
   blocked?: boolean;
   customFields?: Record<string, string>;
   
-  // New Fields
-  employees?: string;
-  role?: string;
+  // Enhanced Fields for Strategy
+  cpfCnpj?: string;
+  birthday?: string;
+  source?: string; // Origem (Instagram, Google, Indicação)
+  role?: string; // Cargo
+  strategicNotes?: string; // Notas específicas para estratégia
+  city?: string;
   state?: string;
-  importantInfo?: string;
 }
 
 // --- Kanban / CRM ---

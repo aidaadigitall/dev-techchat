@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
 import { Contact, Message, MessageType } from '../types';
 import { useToast } from '../components/ToastContext';
-import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles } from 'lucide-react';
+import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save } from 'lucide-react';
 import Modal from '../components/Modal';
 
 const Contacts: React.FC = () => {
@@ -75,9 +75,14 @@ const Contacts: React.FC = () => {
     setHistoryFilterDate('');
     setHistoryFilterType('ALL');
     
-    const msgs = await api.chat.getMessages(contact.id);
-    setHistoryMessages(msgs);
-    setLoadingHistory(false);
+    try {
+        const msgs = await api.chat.getMessages(contact.id);
+        setHistoryMessages(msgs);
+    } catch (e) {
+        console.error("Failed to load history", e);
+    } finally {
+        setLoadingHistory(false);
+    }
   };
 
   const handleAnalyzeHistory = async () => {
@@ -113,42 +118,46 @@ const Contacts: React.FC = () => {
   };
 
   const handleNewContact = () => {
-    const newContact: Contact = {
-      id: '', // Will be assigned by backend/mock
+    const newContact: Partial<Contact> = {
       name: '',
       phone: '',
+      email: '',
       tags: [],
       status: 'pending',
-      avatar: 'https://ui-avatars.com/api/?background=random'
+      avatar: '',
+      source: 'Indicação',
+      role: ''
     };
-    setSelectedContact(newContact);
+    setSelectedContact(newContact as Contact);
     setEditForm(newContact);
     setIsEditing(true);
   };
 
   const handleSaveContact = async () => {
     if (!editForm.name || !editForm.phone) {
-      addToast("Nome e Telefone são obrigatórios.", 'warning');
+      addToast("Campos obrigatórios: Nome e Telefone", 'warning');
       return;
     }
 
     try {
+        let savedContact: Contact;
         if (editForm.id && contacts.find(c => c.id === editForm.id)) {
             // Update
-            const updated = await api.contacts.update(editForm.id, editForm);
-            setContacts(prev => prev.map(c => c.id === updated.id ? updated : c));
-            addToast("Contato atualizado!", 'success');
+            savedContact = await api.contacts.update(editForm.id, editForm);
+            setContacts(prev => prev.map(c => c.id === savedContact.id ? savedContact : c));
+            addToast("Contato atualizado com sucesso!", 'success');
         } else {
             // Create
-            const created = await api.contacts.create(editForm);
-            setContacts(prev => [created, ...prev]); // Add to top
+            savedContact = await api.contacts.create(editForm);
+            setContacts(prev => [savedContact, ...prev]); // Add to top
             addToast("Contato criado com sucesso!", 'success');
         }
         setIsEditing(false);
         setSelectedContact(null);
-    } catch (e) {
-        console.error(e);
-        addToast("Erro ao salvar contato.", 'error');
+    } catch (e: any) {
+        console.error("Save Error:", e);
+        const errorMsg = e.message || e.details || e.hint || "Erro desconhecido ao salvar.";
+        addToast(`Erro ao salvar: ${errorMsg}`, 'error');
     }
   };
 
@@ -194,7 +203,8 @@ const Contacts: React.FC = () => {
                 <tr>
                   <th className="px-6 py-4">Nome</th>
                   <th className="px-6 py-4">Telefone</th>
-                  <th className="px-6 py-4">Email</th>
+                  <th className="px-6 py-4">Empresa / Cargo</th>
+                  <th className="px-6 py-4">Origem</th>
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
@@ -206,15 +216,23 @@ const Contacts: React.FC = () => {
                         <img className="h-10 w-10 rounded-full object-cover" src={contact.avatar} alt="" />
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">{contact.name}</div>
-                          <div className="text-xs text-gray-500">{contact.company || 'Pessoa Física'}</div>
+                          <div className="text-xs text-gray-500">{contact.email || '-'}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {contact.phone}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {contact.email || '-'}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{contact.company || 'Não inf.'}</div>
+                      <div className="text-xs text-gray-500">{contact.role || '-'}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                       {contact.source ? (
+                           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full border border-blue-100">
+                               {contact.source}
+                           </span>
+                       ) : <span className="text-gray-400 text-xs">-</span>}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
                       <button 
@@ -253,60 +271,187 @@ const Contacts: React.FC = () => {
       <Modal
         isOpen={!!selectedContact}
         onClose={() => setSelectedContact(null)}
-        title={isEditing ? (editForm.id ? `Editar Contato` : `Novo Contato`) : `Histórico: ${selectedContact?.name || ''}`}
+        title={isEditing ? (editForm.id ? `Editar Contato` : `Novo Cliente`) : `Histórico: ${selectedContact?.name || ''}`}
         size="lg"
       >
         {isEditing ? (
-           <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1 custom-scrollbar">
-              <div>
-                 <label className="block text-sm font-medium text-gray-700">Nome</label>
-                 <input 
-                   type="text" 
-                   className="w-full border rounded p-2 bg-white text-gray-900 placeholder:text-gray-400" 
-                   value={editForm.name || ''} 
-                   onChange={e => setEditForm({...editForm, name: e.target.value})} 
-                 />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Telefone</label>
-                    <input 
-                      type="text" 
-                      className="w-full border rounded p-2 bg-white text-gray-900 placeholder:text-gray-400" 
-                      value={editForm.phone || ''} 
-                      onChange={e => setEditForm({...editForm, phone: e.target.value})} 
-                    />
+           <div className="space-y-6 max-h-[75vh] overflow-y-auto p-1 custom-scrollbar">
+              
+              {/* Section 1: Basic Info */}
+              <div className="space-y-4">
+                 <h4 className="text-sm font-bold text-gray-800 uppercase flex items-center border-b border-gray-100 pb-2">
+                    <User size={16} className="mr-2 text-purple-600" /> Dados Básicos
+                 </h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Nome Completo *</label>
+                       <input 
+                         type="text" 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                         value={editForm.name || ''} 
+                         onChange={e => setEditForm({...editForm, name: e.target.value})} 
+                         placeholder="Ex: Maria Silva"
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Telefone (WhatsApp) *</label>
+                       <input 
+                         type="text" 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                         value={editForm.phone || ''} 
+                         onChange={e => setEditForm({...editForm, phone: e.target.value})} 
+                         placeholder="Ex: 11999999999"
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Email</label>
+                       <input 
+                         type="email" 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                         value={editForm.email || ''} 
+                         onChange={e => setEditForm({...editForm, email: e.target.value})} 
+                         placeholder="cliente@email.com"
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">CPF / CNPJ</label>
+                       <input 
+                         type="text" 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                         value={editForm.cpfCnpj || ''} 
+                         onChange={e => setEditForm({...editForm, cpfCnpj: e.target.value})} 
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Data de Nascimento</label>
+                       <input 
+                         type="date" 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                         value={editForm.birthday || ''} 
+                         onChange={e => setEditForm({...editForm, birthday: e.target.value})} 
+                       />
+                    </div>
                  </div>
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input 
-                      type="email" 
-                      className="w-full border rounded p-2 bg-white text-gray-900 placeholder:text-gray-400" 
-                      value={editForm.email || ''} 
-                      onChange={e => setEditForm({...editForm, email: e.target.value})} 
-                    />
+              </div>
+
+              {/* Section 2: Strategy & Business */}
+              <div className="space-y-4">
+                 <h4 className="text-sm font-bold text-gray-800 uppercase flex items-center border-b border-gray-100 pb-2 mt-4">
+                    <Target size={16} className="mr-2 text-blue-600" /> Inteligência Comercial
+                 </h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
+                       <div className="relative">
+                          <Building size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+                          <input 
+                            type="text" 
+                            className="w-full border border-gray-300 rounded-md pl-8 pr-2 py-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                            value={editForm.company || ''} 
+                            onChange={e => setEditForm({...editForm, company: e.target.value})} 
+                            placeholder="Nome da Organização"
+                          />
+                       </div>
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Cargo / Função</label>
+                       <div className="relative">
+                          <Briefcase size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+                          <input 
+                            type="text" 
+                            className="w-full border border-gray-300 rounded-md pl-8 pr-2 py-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                            value={editForm.role || ''} 
+                            onChange={e => setEditForm({...editForm, role: e.target.value})} 
+                            placeholder="Ex: Gerente de Compras"
+                          />
+                       </div>
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Origem do Lead</label>
+                       <select 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500"
+                         value={editForm.source || ''}
+                         onChange={e => setEditForm({...editForm, source: e.target.value})}
+                       >
+                          <option value="">Selecione...</option>
+                          <option value="Google Ads">Google Ads</option>
+                          <option value="Instagram">Instagram</option>
+                          <option value="Indicação">Indicação</option>
+                          <option value="Prospecção Ativa">Prospecção Ativa</option>
+                          <option value="Evento">Evento / Networking</option>
+                       </select>
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Status Atual</label>
+                       <select 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500"
+                         value={editForm.status || 'open'}
+                         onChange={e => setEditForm({...editForm, status: e.target.value as any})}
+                       >
+                          <option value="open">Em Aberto</option>
+                          <option value="pending">Pendente / Negociação</option>
+                          <option value="resolved">Fechado / Resolvido</option>
+                       </select>
+                    </div>
+                    <div className="col-span-2">
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Anotações Estratégicas</label>
+                       <textarea 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm h-20 resize-none focus:ring-purple-500 focus:border-purple-500"
+                         value={editForm.strategicNotes || ''}
+                         onChange={e => setEditForm({...editForm, strategicNotes: e.target.value})}
+                         placeholder="Pontos importantes para negociação, dores do cliente, perfil comportamental..."
+                       />
+                    </div>
                  </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Nome da Empresa</label>
-                    <input 
-                      type="text" 
-                      className="w-full border rounded p-2 bg-white text-gray-900 placeholder:text-gray-400" 
-                      value={editForm.company || ''} 
-                      onChange={e => setEditForm({...editForm, company: e.target.value})} 
-                    />
+
+              {/* Section 3: Address */}
+              <div className="space-y-4">
+                 <h4 className="text-sm font-bold text-gray-800 uppercase flex items-center border-b border-gray-100 pb-2 mt-4">
+                    <MapPin size={16} className="mr-2 text-red-500" /> Endereço
+                 </h4>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Cidade</label>
+                       <input 
+                         type="text" 
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
+                         value={editForm.city || ''} 
+                         onChange={e => setEditForm({...editForm, city: e.target.value})} 
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-medium text-gray-500 mb-1">Estado (UF)</label>
+                       <input 
+                         type="text" 
+                         maxLength={2}
+                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500 uppercase" 
+                         value={editForm.state || ''} 
+                         onChange={e => setEditForm({...editForm, state: e.target.value.toUpperCase()})} 
+                         placeholder="SP"
+                       />
+                    </div>
                  </div>
               </div>
-              <div className="flex justify-end pt-2">
-                 <button onClick={handleSaveContact} className="bg-purple-600 text-white px-4 py-2 rounded">Salvar</button>
+
+              <div className="flex justify-end pt-4 border-t border-gray-100 mt-4">
+                 <button 
+                   onClick={handleSaveContact} 
+                   className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 font-medium shadow-sm flex items-center"
+                 >
+                    <Save size={18} className="mr-2" /> Salvar Cadastro
+                 </button>
               </div>
            </div>
         ) : (
           <div className="flex flex-col h-[500px]">
              {/* Read-only history view code... (kept same as before) */}
              <div className="flex-1 overflow-y-auto bg-[#efeae2] relative p-4 custom-scrollbar">
-                {/* ... mapping historyMessages ... */}
+                {historyMessages.length === 0 && (
+                    <div className="flex h-full items-center justify-center text-gray-400 text-sm">
+                        Nenhum histórico de mensagens encontrado.
+                    </div>
+                )}
                 {historyMessages.map((msg) => (
                     <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} mb-2`}>
                         <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm shadow-sm ${msg.senderId === 'me' ? 'bg-[#9333ea] text-white' : 'bg-white text-gray-800'}`}>
