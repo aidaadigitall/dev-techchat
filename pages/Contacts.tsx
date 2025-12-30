@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
 import { Contact, Message, MessageType } from '../types';
 import { useToast } from '../components/ToastContext';
-import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet } from 'lucide-react';
+import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import Modal from '../components/Modal';
 
 const Contacts: React.FC = () => {
@@ -35,6 +35,8 @@ const Contacts: React.FC = () => {
   // New Modals State
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null); // Modern Alert State
+
   const [syncConfig, setSyncConfig] = useState({
       startDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0],
@@ -118,14 +120,24 @@ const Contacts: React.FC = () => {
     setActionMenuOpenId(null);
   };
 
-  const handleDeleteContact = async (contactId: string, e?: React.MouseEvent) => {
+  const confirmDeleteContact = (contactId: string, e?: React.MouseEvent) => {
     if(e) e.stopPropagation();
-    if(confirm('Tem certeza que deseja excluir este contato?')) {
-      // In real app calls API
-      setContacts(prev => prev.filter(c => c.id !== contactId));
-      addToast('Contato excluído com sucesso!', 'success');
-    }
+    setDeleteConfirmationId(contactId);
     setActionMenuOpenId(null);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteConfirmationId) return;
+    
+    try {
+        await api.contacts.delete(deleteConfirmationId);
+        setContacts(prev => prev.filter(c => c.id !== deleteConfirmationId));
+        addToast('Contato excluído com sucesso!', 'success');
+    } catch (e) {
+        addToast('Erro ao excluir contato.', 'error');
+    } finally {
+        setDeleteConfirmationId(null);
+    }
   };
 
   const handleNewContact = () => {
@@ -335,7 +347,7 @@ const Contacts: React.FC = () => {
                              <Edit size={14} className="mr-2 text-purple-600" /> Editar
                            </button>
                            <button 
-                             onClick={(e) => handleDeleteContact(contact.id, e)}
+                             onClick={(e) => confirmDeleteContact(contact.id, e)}
                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center"
                            >
                              <Trash2 size={14} className="mr-2" /> Excluir
@@ -638,6 +650,38 @@ const Contacts: React.FC = () => {
                   </p>
               </div>
           </div>
+      </Modal>
+
+      {/* Modern Delete Confirmation Modal */}
+      <Modal 
+        isOpen={!!deleteConfirmationId} 
+        onClose={() => setDeleteConfirmationId(null)}
+        title="Excluir Contato"
+        size="sm"
+      >
+         <div className="text-center p-4">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+               <AlertTriangle className="h-6 w-6 text-red-600" />
+            </div>
+            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">Tem certeza?</h3>
+            <p className="text-sm text-gray-500 mb-6">
+               Esta ação excluirá permanentemente o contato e todo o histórico de conversas associado. Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex justify-center gap-3">
+               <button 
+                 onClick={() => setDeleteConfirmationId(null)}
+                 className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+               >
+                  Cancelar
+               </button>
+               <button 
+                 onClick={executeDelete}
+                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium shadow-sm"
+               >
+                  Sim, excluir
+               </button>
+            </div>
+         </div>
       </Modal>
     </div>
   );

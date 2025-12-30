@@ -77,19 +77,37 @@ const Dashboard: React.FC = () => {
             // 1. Fetch Contacts for "Contatos" card
             const contacts = await api.contacts.list();
             
-            // 2. Update Stats Array
+            // 2. Update Stats Array with REAL numbers (no fake multipliers)
             const newStats = [...DASHBOARD_STATS];
             
-            // Update "Contatos" (Index 3 usually)
+            // Total de Entradas (Assuming contacts is proxy for entries/conversations started)
+            newStats[0] = { 
+                ...newStats[0], 
+                value: contacts.length.toString(), 
+                change: '+Realtime' 
+            }; 
+
+            // Mensagens Hoje (Placeholder - needs message API filter)
+            newStats[1] = { 
+                ...newStats[1], 
+                value: '0', // Keep 0 if no real data source yet
+                change: '' 
+            }; 
+
+            // Conversas Abertas
+            const openChats = contacts.filter(c => c.status === 'open').length;
+            newStats[2] = { 
+                ...newStats[2], 
+                value: openChats.toString(), 
+                change: 'Status: Aberto' 
+            }; 
+
+            // Contatos Totais
             newStats[3] = { 
                 ...newStats[3], 
                 value: contacts.length.toString(), 
                 change: '+Realtime' 
             };
-
-            // Mocking other stats for demo purposes since we don't have full history API yet
-            newStats[0] = { ...newStats[0], value: (contacts.length * 5).toString(), change: '+12%' }; // Total Entradas
-            newStats[2] = { ...newStats[2], value: Math.floor(contacts.length / 2).toString(), change: '+2%' }; // Conversas Abertas
 
             setStats(newStats);
             setLoadingStats(false);
@@ -130,8 +148,8 @@ const Dashboard: React.FC = () => {
             <div>
               <p className="text-sm font-medium text-gray-500 mb-1">{stat.title}</p>
               <h3 className="text-2xl font-bold text-gray-900">{stat.value}</h3>
-              <span className={`text-xs font-medium ${stat.change.includes('+') ? 'text-green-600' : 'text-red-600'} bg-gray-50 px-2 py-0.5 rounded-full mt-2 inline-block`}>
-                {stat.change} vs ontem
+              <span className={`text-xs font-medium ${stat.change.includes('+') ? 'text-green-600' : 'text-gray-500'} bg-gray-50 px-2 py-0.5 rounded-full mt-2 inline-block`}>
+                {stat.change}
               </span>
             </div>
             <div className="p-3 bg-gray-50 rounded-lg">
