@@ -7,7 +7,9 @@ export enum AppRoute {
   KANBAN = 'KANBAN',
   CONTACTS = 'CONTACTS',
   CAMPAIGNS = 'CAMPAIGNS',
-  TASKS = 'TASKS', // Nova rota
+  PROPOSALS = 'PROPOSALS', // Nova rota
+  TASKS = 'TASKS',
+  AUTOMATIONS = 'AUTOMATIONS',
   REPORTS = 'REPORTS',
   SETTINGS = 'SETTINGS',
   
@@ -16,7 +18,7 @@ export enum AppRoute {
   ADMIN_COMPANIES = 'ADMIN_COMPANIES',
   ADMIN_PLANS = 'ADMIN_PLANS',
   ADMIN_FINANCE = 'ADMIN_FINANCE',
-  ADMIN_DATABASE = 'ADMIN_DATABASE' // Nova rota
+  ADMIN_DATABASE = 'ADMIN_DATABASE'
 }
 
 export interface NavItem {
@@ -32,6 +34,19 @@ export interface Branding {
   appName: string;
   primaryColor: string;
   logoUrl?: string;
+}
+
+// --- Metadata Entities ---
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface Sector {
+  id: string;
+  name: string;
+  color: string;
 }
 
 // --- Chat & Messaging ---
@@ -137,6 +152,19 @@ export interface Campaign {
   };
 }
 
+// --- Proposals ---
+export interface Proposal {
+  id: string;
+  clientId: string;
+  clientName: string;
+  title: string;
+  value: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'expired';
+  sentDate: string; // ISO Date
+  validUntil: string; // ISO Date
+  pdfUrl?: string;
+}
+
 // --- Tasks ---
 export type TaskPriority = 'p1' | 'p2' | 'p3' | 'p4';
 
@@ -153,6 +181,36 @@ export interface Task {
   subtasks?: Task[];
 }
 
+// --- Automations & AI ---
+export interface AIAgent {
+  id: string;
+  name: string;
+  model: string;
+  status: 'active' | 'training' | 'inactive';
+  sources: {
+    files: number;
+    links: number;
+    drive: boolean;
+  };
+}
+
+export interface AutomationFlow {
+  id: string;
+  name: string;
+  trigger: string;
+  steps: number;
+  active: boolean;
+}
+
+export interface Integration {
+  id: string;
+  name: string;
+  type: 'n8n' | 'typebot' | 'make' | 'webhook' | 'openai' | 'google';
+  status: 'connected' | 'disconnected';
+  icon?: string;
+  lastSync?: string;
+}
+
 // --- Settings & Auth ---
 export interface User {
   id: string;
@@ -162,14 +220,6 @@ export interface User {
   avatar: string;
   status: 'active' | 'inactive';
   companyId: string;
-}
-
-export interface Integration {
-  id: string;
-  name: string;
-  status: 'connected' | 'disconnected' | 'qr_needed';
-  phone?: string;
-  lastSync?: string;
 }
 
 // --- SaaS / Multi-Tenant Core ---
@@ -199,6 +249,10 @@ export interface Company {
   status: 'active' | 'trial' | 'suspended' | 'overdue';
   subscriptionEnd: string;
   userCount: number;
+  // AI Consumption Fields
+  aiUsage: number; // Current tokens used
+  aiLimit: number; // Max tokens allowed
+  useCustomKey: boolean; // If true, uses tenant's key, ignores limit
 }
 
 export interface SaasStats {

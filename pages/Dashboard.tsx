@@ -147,7 +147,7 @@ const Dashboard: React.FC = () => {
       {/* Charts Row 1: Fluxo & Vendas */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* CHART 1: FLUXO DE ATENDIMENTOS */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0">
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
             <h3 className="text-lg font-semibold text-gray-800">Fluxo de Atendimentos</h3>
             
@@ -209,7 +209,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* CHART 2: VENDAS (MANTIDO SIMPLES) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0">
            <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-gray-800">Vendas vs Metas</h3>
           </div>
@@ -228,7 +228,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* SECTION 2: TOTAL DE ATENDIMENTO POR USUÁRIO (CADASTRADOS NO SISTEMA) */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 min-w-0">
          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-100 pb-4">
             <h3 className="text-lg font-semibold text-gray-800">Total de Atendimento por Usuário</h3>
             
@@ -285,7 +285,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* SECTION 3: TOTAL DE ATENDIMENTOS (VOLUME) */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 min-w-0">
          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-100 pb-4">
             <div className="flex items-center gap-2">
                <h3 className="text-lg font-semibold text-gray-800">Total de Atendimentos</h3>

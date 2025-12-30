@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MOCK_COMPANIES, MOCK_PLANS } from '../constants';
-import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save } from 'lucide-react';
+import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw } from 'lucide-react';
 import Modal from '../components/Modal';
 import { Company } from '../types';
 
@@ -9,6 +9,11 @@ const SuperAdminCompanies: React.FC = () => {
   const [companies, setCompanies] = useState<Company[]>(MOCK_COMPANIES);
   const [selectedCompany, setSelectedCompany] = useState<Partial<Company> | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
+  
+  // AI Token Management Modal
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiManageData, setAiManageData] = useState<{id: string, limit: number, usage: number} | null>(null);
 
   const getPlanName = (id: string) => MOCK_PLANS.find(p => p.id === id)?.name || id;
 
@@ -27,7 +32,10 @@ const SuperAdminCompanies: React.FC = () => {
       status: 'active',
       planId: 'basic',
       userCount: 1,
-      subscriptionEnd: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+      subscriptionEnd: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+      aiLimit: 5000,
+      aiUsage: 0,
+      useCustomKey: false
     });
     setIsEditing(false);
   };
@@ -35,6 +43,13 @@ const SuperAdminCompanies: React.FC = () => {
   const handleOpenEdit = (company: Company) => {
     setSelectedCompany({ ...company });
     setIsEditing(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('Tem certeza que deseja excluir esta empresa? Todos os dados serão perdidos permanentemente.')) {
+      setCompanies(prev => prev.filter(c => c.id !== id));
+      setActionMenuOpenId(null);
+    }
   };
 
   const handleSave = () => {
@@ -56,8 +71,33 @@ const SuperAdminCompanies: React.FC = () => {
     setSelectedCompany(null);
   };
 
+  // AI Management Logic
+  const handleOpenAiManage = (company: Company) => {
+    setAiManageData({
+      id: company.id,
+      limit: company.aiLimit,
+      usage: company.aiUsage
+    });
+    setShowAiModal(true);
+    setActionMenuOpenId(null);
+  };
+
+  const handleSaveAiLimit = () => {
+    if (aiManageData) {
+      setCompanies(prev => prev.map(c => c.id === aiManageData.id ? { ...c, aiLimit: aiManageData.limit, aiUsage: aiManageData.usage } : c));
+      setShowAiModal(false);
+      setAiManageData(null);
+    }
+  };
+
+  const handleResetUsage = () => {
+    if(confirm("Zerar consumo mensal desta empresa?")) {
+      setAiManageData(prev => prev ? { ...prev, usage: 0 } : null);
+    }
+  };
+
   return (
-    <div className="p-8 h-full bg-gray-50 overflow-y-auto">
+    <div className="p-8 h-full bg-gray-50 overflow-y-auto" onClick={() => setActionMenuOpenId(null)}>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Empresas (Tenants)</h1>
@@ -97,8 +137,8 @@ const SuperAdminCompanies: React.FC = () => {
               <th className="px-6 py-4">Responsável</th>
               <th className="px-6 py-4">Plano</th>
               <th className="px-6 py-4">Usuários</th>
+              <th className="px-6 py-4">Consumo IA</th>
               <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Fim Assinatura</th>
               <th className="px-6 py-4 text-right">Ações</th>
             </tr>
           </thead>
@@ -122,18 +162,57 @@ const SuperAdminCompanies: React.FC = () => {
                   {company.userCount}
                 </td>
                 <td className="px-6 py-4">
+                   {company.useCustomKey ? (
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Chave Própria</span>
+                   ) : (
+                      <div className="w-24">
+                         <div className="flex justify-between text-[10px] mb-1">
+                            <span className="text-gray-600">{Math.round((company.aiUsage / company.aiLimit) * 100)}%</span>
+                         </div>
+                         <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div 
+                              className={`h-1.5 rounded-full ${company.aiUsage > company.aiLimit * 0.9 ? 'bg-red-500' : 'bg-purple-600'}`} 
+                              style={{ width: `${Math.min((company.aiUsage / company.aiLimit) * 100, 100)}%` }}
+                            ></div>
+                         </div>
+                         <div className="text-[9px] text-gray-400 mt-1">{company.aiUsage.toLocaleString()} / {company.aiLimit.toLocaleString()}</div>
+                      </div>
+                   )}
+                </td>
+                <td className="px-6 py-4">
                   {getStatusBadge(company.status)}
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-600">
-                  {new Date(company.subscriptionEnd).toLocaleDateString()}
-                </td>
-                <td className="px-6 py-4 text-right">
+                <td className="px-6 py-4 text-right relative">
                   <button 
-                    onClick={() => handleOpenEdit(company)}
+                    onClick={(e) => { e.stopPropagation(); setActionMenuOpenId(actionMenuOpenId === company.id ? null : company.id); }}
                     className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
                   >
                     <MoreHorizontal size={18} />
                   </button>
+                  
+                  {actionMenuOpenId === company.id && (
+                    <div className="absolute right-8 top-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-10 overflow-hidden text-left animate-fadeIn">
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); handleOpenEdit(company); setActionMenuOpenId(null); }}
+                         className="w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
+                       >
+                          <Edit size={16} className="mr-2 text-gray-400" /> Editar
+                       </button>
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); handleOpenAiManage(company); }}
+                         className="w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
+                       >
+                          <BrainCircuit size={16} className="mr-2 text-purple-600" /> Gerenciar Tokens IA
+                       </button>
+                       <div className="h-px bg-gray-100 my-1"></div>
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); handleDelete(company.id); }}
+                         className="w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center transition-colors"
+                       >
+                          <Trash2 size={16} className="mr-2" /> Excluir
+                       </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -141,19 +220,13 @@ const SuperAdminCompanies: React.FC = () => {
         </table>
       </div>
 
-      {/* Edit/Create Modal */}
+      {/* Edit/Create Modal (Standard Company Data) */}
       <Modal
         isOpen={!!selectedCompany}
         onClose={() => setSelectedCompany(null)}
         title={isEditing ? `Editar: ${selectedCompany?.name}` : 'Nova Empresa'}
       >
         <div className="space-y-4">
-           {isEditing && (
-             <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-sm text-yellow-800 mb-4">
-               ⚠️ Alterações aqui impactam diretamente o acesso do cliente.
-             </div>
-           )}
-           
            <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                  <label className="block text-sm font-medium text-gray-700">Nome da Empresa</label>
@@ -217,17 +290,6 @@ const SuperAdminCompanies: React.FC = () => {
               />
            </div>
 
-           {isEditing ? (
-             <div className="pt-4 flex gap-2 border-t border-gray-100 mt-4">
-                <button className="flex-1 flex items-center justify-center p-2 border border-red-200 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 bg-white">
-                   <Lock size={16} className="mr-2" /> Bloquear Acesso
-                </button>
-                <button className="flex-1 flex items-center justify-center p-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:bg-gray-50">
-                   <Power size={16} className="mr-2" /> Resetar Instância
-                </button>
-             </div>
-           ) : null}
-
            <div className="flex justify-end pt-4 border-t border-gray-100 mt-4">
               <button 
                 onClick={handleSave}
@@ -237,6 +299,53 @@ const SuperAdminCompanies: React.FC = () => {
               </button>
            </div>
         </div>
+      </Modal>
+
+      {/* AI Token Management Modal */}
+      <Modal 
+        isOpen={showAiModal} 
+        onClose={() => setShowAiModal(false)} 
+        title="Gestão de Consumo IA"
+        size="sm"
+      >
+         <div className="space-y-4">
+            <div className="bg-purple-50 border border-purple-100 rounded-lg p-4 text-center">
+               <p className="text-xs text-purple-700 uppercase font-bold mb-1">Consumo Atual</p>
+               <h2 className="text-3xl font-bold text-gray-900">{aiManageData?.usage.toLocaleString()}</h2>
+               <p className="text-sm text-gray-500">tokens utilizados</p>
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Limite Mensal de Tokens</label>
+               <div className="flex gap-2">
+                  <input 
+                    type="number" 
+                    className="flex-1 border border-gray-300 rounded-md p-2 text-center font-bold text-gray-800"
+                    value={aiManageData?.limit || 0}
+                    onChange={(e) => setAiManageData(prev => prev ? { ...prev, limit: parseInt(e.target.value) } : null)}
+                  />
+               </div>
+               <p className="text-xs text-gray-500 mt-1">Ajuste para liberar mais tokens sem alterar o plano base.</p>
+            </div>
+
+            <div className="pt-2">
+               <button 
+                 onClick={handleResetUsage}
+                 className="w-full border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 py-2 rounded-lg text-sm font-medium flex items-center justify-center"
+               >
+                  <RotateCcw size={16} className="mr-2" /> Zerar Ciclo Atual
+               </button>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-gray-100 mt-2">
+               <button 
+                 onClick={handleSaveAiLimit}
+                 className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 w-full"
+               >
+                  Salvar Limites
+               </button>
+            </div>
+         </div>
       </Modal>
     </div>
   );

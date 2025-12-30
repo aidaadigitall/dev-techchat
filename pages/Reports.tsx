@@ -1,30 +1,59 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  BarChart3, Download, Calendar as CalendarIcon, Filter, Target, 
+  BarChart3, Download, RefreshCw, Target, 
   MessageSquare, Users, Clock, ThumbsUp, TrendingUp, CheckCircle, 
-  AlertCircle, FileText, CheckSquare, PieChart, Activity, RefreshCw 
+  AlertCircle, FileText, CheckSquare, PieChart, Activity
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, 
-  BarChart, Bar, CartesianGrid, Legend, PieChart as RePieChart, Pie, Cell, LineChart, Line
+  BarChart, Bar, CartesianGrid, Legend, PieChart as RePieChart, Pie, Cell
 } from 'recharts';
 import Modal from '../components/Modal';
+import { api } from '../services/api';
+import { Proposal, Task } from '../types';
 
 const Reports: React.FC = () => {
   const [activeTab, setActiveTab] = useState('atendimento');
   const [dateRange, setDateRange] = useState('30');
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Mock data for charts
-  const attendanceData = [
-    { name: '01/12', tickets: 45, avgTime: 5 },
-    { name: '05/12', tickets: 52, avgTime: 4 },
-    { name: '10/12', tickets: 38, avgTime: 6 },
-    { name: '15/12', tickets: 65, avgTime: 4 },
-    { name: '20/12', tickets: 48, avgTime: 5 },
-    { name: '25/12', tickets: 20, avgTime: 3 },
-    { name: '30/12', tickets: 55, avgTime: 5 },
-  ];
+  // Data States
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  useEffect(() => {
+    loadData();
+  }, [dateRange]);
+
+  const loadData = async () => {
+    setLoading(true);
+    const [fetchedProposals, fetchedTasks] = await Promise.all([
+      api.proposals.list(),
+      api.tasks.list()
+    ]);
+    setProposals(fetchedProposals);
+    setTasks(fetchedTasks);
+    // Simulate slight delay for "update" feel
+    setTimeout(() => setLoading(false), 500);
+  };
+
+  // --- Mock Data Generators based on Date Range ---
+  // In a real app, these would come from the backend based on 'dateRange' param
+  
+  const getAttendanceData = () => {
+    const multiplier = dateRange === '7' ? 1 : dateRange === '30' ? 4 : 12;
+    // Hardcoded logic to simulate "Real" data based on screenshot requirements
+    return [
+      { name: '01/12', tickets: 45 * multiplier, avgTime: 5 },
+      { name: '05/12', tickets: 52 * multiplier, avgTime: 4 },
+      { name: '10/12', tickets: 38 * multiplier, avgTime: 6 },
+      { name: '15/12', tickets: 65 * multiplier, avgTime: 4 },
+      { name: '20/12', tickets: 48 * multiplier, avgTime: 5 },
+      { name: '25/12', tickets: 20 * multiplier, avgTime: 3 },
+      { name: '30/12', tickets: 55 * multiplier, avgTime: 5 },
+    ];
+  };
 
   const channelData = [
     { name: 'WhatsApp', value: 65, color: '#25D366' },
@@ -45,25 +74,58 @@ const Reports: React.FC = () => {
     { name: 'Ana Costa', tickets: 98, rating: 4.9, avgTime: '3m' },
   ];
 
+  // --- Metrics Calculation ---
+
+  const calculateProposalMetrics = () => {
+    // Filter by date range (mock logic for now, using all data)
+    const total = proposals.length;
+    const accepted = proposals.filter(p => p.status === 'accepted').length;
+    const rejected = proposals.filter(p => p.status === 'rejected' || p.status === 'expired').length;
+    
+    // Values
+    const totalValue = proposals.reduce((acc, curr) => acc + curr.value, 0);
+    const acceptedValue = proposals.filter(p => p.status === 'accepted').reduce((acc, curr) => acc + curr.value, 0);
+
+    return { total, accepted, rejected, totalValue, acceptedValue };
+  };
+
+  const calculateTaskMetrics = () => {
+    const total = tasks.length;
+    const completed = tasks.filter(t => t.completed).length;
+    const pending = tasks.filter(t => !t.completed).length;
+    return { total, completed, pending };
+  };
+
+  const handleExport = () => {
+    // Trigger browser print, optimized by CSS for PDF
+    window.print();
+  };
+
+  // --- Renderers ---
+
   const renderContent = () => {
+    if (loading) {
+      return <div className="h-96 flex items-center justify-center text-gray-500">Atualizando dados...</div>;
+    }
+
     switch (activeTab) {
       case 'atendimento':
         return (
           <div className="space-y-6 animate-fadeIn">
-            {/* KPI Cards */}
+            {/* KPI Cards - Matching Screenshot Data */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                {[
-                 { title: 'Total Atendimentos', value: '1,245', sub: '+12% vs anterior', color: 'text-purple-600', icon: <MessageSquare size={20} /> },
-                 { title: 'Tempo Médio Resposta', value: '4m 32s', sub: '-30s vs anterior', color: 'text-blue-600', icon: <Clock size={20} /> },
-                 { title: 'Resolução 1º Contato', value: '78%', sub: '+2% vs anterior', color: 'text-green-600', icon: <CheckCircle size={20} /> },
-                 { title: 'CSAT (Satisfação)', value: '4.8/5.0', sub: '96 avaliações', color: 'text-yellow-600', icon: <ThumbsUp size={20} /> },
+                 { title: 'Total Atendimentos', value: '1,245', sub: '+12% vs anterior', color: 'text-gray-900', icon: <MessageSquare size={20} className="text-green-600" /> },
+                 { title: 'Tempo Médio Resposta', value: '4m 32s', sub: '-30s vs anterior', color: 'text-gray-900', icon: <Clock size={20} className="text-blue-600" /> },
+                 { title: 'Resolução 1º Contato', value: '78%', sub: '+2% vs anterior', color: 'text-gray-900', icon: <CheckCircle size={20} className="text-green-600" /> },
+                 { title: 'CSAT (Satisfação)', value: '4.8/5.0', sub: '96 avaliações', color: 'text-gray-900', icon: <ThumbsUp size={20} className="text-yellow-500" /> },
                ].map((kpi, i) => (
                  <div key={i} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex justify-between items-start mb-2">
-                       <div className={`p-2 rounded-lg bg-gray-50 ${kpi.color}`}>{kpi.icon}</div>
-                       <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">{kpi.sub}</span>
+                       <div className="p-2 rounded-lg bg-gray-50">{kpi.icon}</div>
+                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${kpi.sub.includes('+') || kpi.sub.includes('-') ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{kpi.sub}</span>
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900">{kpi.value}</h3>
+                    <h3 className={`text-2xl font-bold ${kpi.color}`}>{kpi.value}</h3>
                     <p className="text-gray-500 text-xs font-medium uppercase mt-1">{kpi.title}</p>
                  </div>
                ))}
@@ -71,11 +133,11 @@ const Reports: React.FC = () => {
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-               <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+               <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm min-w-0">
                   <h3 className="font-semibold text-gray-800 mb-6">Volume de Atendimentos (Diário)</h3>
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                       <AreaChart data={attendanceData}>
+                       <AreaChart data={getAttendanceData()}>
                          <defs>
                            <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
                              <stop offset="5%" stopColor="#9333ea" stopOpacity={0.2}/>
@@ -92,7 +154,7 @@ const Reports: React.FC = () => {
                   </div>
                </div>
                
-               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm min-w-0">
                   <h3 className="font-semibold text-gray-800 mb-6">Canais de Entrada</h3>
                   <div className="h-72 flex flex-col items-center justify-center">
                      <ResponsiveContainer width="100%" height="100%">
@@ -175,7 +237,7 @@ const Reports: React.FC = () => {
                ))}
             </div>
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm min-w-0">
                <h3 className="font-semibold text-gray-800 mb-6">Funil de Vendas (Conversão por Etapa)</h3>
                <div className="h-80">
                  <ResponsiveContainer width="100%" height="100%">
@@ -197,6 +259,7 @@ const Reports: React.FC = () => {
         );
 
       case 'propostas':
+        const pMetrics = calculateProposalMetrics();
         return (
            <div className="space-y-6 animate-fadeIn">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -204,21 +267,23 @@ const Reports: React.FC = () => {
                     <div className="p-3 bg-blue-50 text-blue-600 rounded-full mr-4"><FileText size={24} /></div>
                     <div>
                        <p className="text-sm text-gray-500">Propostas Enviadas</p>
-                       <h3 className="text-2xl font-bold text-gray-900">28</h3>
+                       <h3 className="text-2xl font-bold text-gray-900">{pMetrics.total}</h3>
+                       <p className="text-xs text-gray-400">{pMetrics.totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
                     </div>
                  </div>
                  <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center">
                     <div className="p-3 bg-green-50 text-green-600 rounded-full mr-4"><CheckSquare size={24} /></div>
                     <div>
                        <p className="text-sm text-gray-500">Aceitas</p>
-                       <h3 className="text-2xl font-bold text-gray-900">12</h3>
+                       <h3 className="text-2xl font-bold text-gray-900">{pMetrics.accepted}</h3>
+                       <p className="text-xs text-gray-400">{pMetrics.acceptedValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
                     </div>
                  </div>
                  <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center">
                     <div className="p-3 bg-red-50 text-red-600 rounded-full mr-4"><AlertCircle size={24} /></div>
                     <div>
                        <p className="text-sm text-gray-500">Expiradas / Recusadas</p>
-                       <h3 className="text-2xl font-bold text-gray-900">4</h3>
+                       <h3 className="text-2xl font-bold text-gray-900">{pMetrics.rejected}</h3>
                     </div>
                  </div>
               </div>
@@ -238,17 +303,19 @@ const Reports: React.FC = () => {
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                       {[
-                         { client: 'Tech Corp', val: 'R$ 12.500', date: '20/12/2024', status: 'Aceita', color: 'bg-green-100 text-green-700' },
-                         { client: 'Padaria Central', val: 'R$ 3.200', date: '19/12/2024', status: 'Pendente', color: 'bg-yellow-100 text-yellow-700' },
-                         { client: 'Esc Solutions', val: 'R$ 8.900', date: '18/12/2024', status: 'Recusada', color: 'bg-red-100 text-red-700' },
-                       ].map((prop, i) => (
+                       {proposals.slice(0, 5).map((prop, i) => (
                           <tr key={i} className="hover:bg-gray-50">
-                             <td className="px-6 py-4 text-sm font-medium text-gray-900">{prop.client}</td>
-                             <td className="px-6 py-4 text-sm text-gray-600">{prop.val}</td>
-                             <td className="px-6 py-4 text-sm text-gray-500">{prop.date}</td>
+                             <td className="px-6 py-4 text-sm font-medium text-gray-900">{prop.clientName}</td>
+                             <td className="px-6 py-4 text-sm text-gray-600">{prop.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                             <td className="px-6 py-4 text-sm text-gray-500">{new Date(prop.sentDate).toLocaleDateString('pt-BR')}</td>
                              <td className="px-6 py-4">
-                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${prop.color}`}>{prop.status}</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                   prop.status === 'accepted' ? 'bg-green-100 text-green-700' :
+                                   prop.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                   'bg-red-100 text-red-700'
+                                }`}>
+                                   {prop.status === 'accepted' ? 'Aceita' : prop.status === 'pending' ? 'Pendente' : 'Recusada'}
+                                </span>
                              </td>
                           </tr>
                        ))}
@@ -259,55 +326,38 @@ const Reports: React.FC = () => {
         );
 
       case 'tarefas':
+        const tMetrics = calculateTaskMetrics();
         return (
            <div className="space-y-6 animate-fadeIn">
-              <h3 className="text-lg font-bold text-gray-800">Tarefas & Follow-ups</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                  {/* To Do Column */}
                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <h4 className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center justify-between">
-                       A Fazer <span className="bg-gray-200 text-gray-700 px-2 rounded-full text-xs">5</span>
+                       Pendente <span className="bg-gray-200 text-gray-700 px-2 rounded-full text-xs">{tMetrics.pending}</span>
                     </h4>
                     <div className="space-y-3">
-                       {[1, 2, 3].map(i => (
-                          <div key={i} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md cursor-pointer">
+                       {tasks.filter(t => !t.completed).map(task => (
+                          <div key={task.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md cursor-pointer">
                              <div className="flex justify-between mb-1">
-                                <span className="text-xs bg-red-50 text-red-600 px-1 rounded font-medium">Alta</span>
-                                <span className="text-xs text-gray-400">Hoje</span>
+                                <span className="text-xs bg-red-50 text-red-600 px-1 rounded font-medium capitalize">{task.priority}</span>
+                                <span className="text-xs text-gray-400">{task.dueDate ? new Date(task.dueDate).toLocaleDateString('pt-BR') : '-'}</span>
                              </div>
-                             <p className="text-sm font-medium text-gray-800">Ligar para fechamento - Cliente X</p>
+                             <p className="text-sm font-medium text-gray-800">{task.title}</p>
                           </div>
                        ))}
-                    </div>
-                 </div>
-                 {/* In Progress */}
-                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                    <h4 className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center justify-between">
-                       Em Andamento <span className="bg-gray-200 text-gray-700 px-2 rounded-full text-xs">2</span>
-                    </h4>
-                    <div className="space-y-3">
-                        <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md cursor-pointer">
-                             <div className="flex justify-between mb-1">
-                                <span className="text-xs bg-blue-50 text-blue-600 px-1 rounded font-medium">Média</span>
-                                <span className="text-xs text-gray-400">Amanhã</span>
-                             </div>
-                             <p className="text-sm font-medium text-gray-800">Preparar contrato Acme Corp</p>
-                          </div>
                     </div>
                  </div>
                  {/* Done */}
                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <h4 className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center justify-between">
-                       Concluído <span className="bg-gray-200 text-gray-700 px-2 rounded-full text-xs">12</span>
+                       Concluído <span className="bg-gray-200 text-gray-700 px-2 rounded-full text-xs">{tMetrics.completed}</span>
                     </h4>
                      <div className="space-y-3 opacity-60">
-                        <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                             <div className="flex justify-between mb-1">
-                                <span className="text-xs bg-green-50 text-green-600 px-1 rounded font-medium">Baixa</span>
-                                <span className="text-xs text-gray-400">Ontem</span>
-                             </div>
-                             <p className="text-sm font-medium text-gray-800 line-through">Reunião de alinhamento</p>
-                          </div>
+                        {tasks.filter(t => t.completed).map(task => (
+                           <div key={task.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                               <p className="text-sm font-medium text-gray-800 line-through">{task.title}</p>
+                            </div>
+                        ))}
                     </div>
                  </div>
               </div>
@@ -317,12 +367,12 @@ const Reports: React.FC = () => {
       case 'analytics':
          return (
             <div className="space-y-6 animate-fadeIn">
-               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm min-w-0">
                   <h3 className="font-semibold text-gray-800 mb-2">Tráfego de Mensagens</h3>
                   <p className="text-sm text-gray-500 mb-6">Volume total de mensagens enviadas e recebidas.</p>
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                       <BarChart data={attendanceData}>
+                       <BarChart data={getAttendanceData()}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis dataKey="name" />
                           <YAxis />
@@ -381,9 +431,15 @@ const Reports: React.FC = () => {
   };
 
   return (
-    <div className="p-6 h-full bg-gray-50 overflow-y-auto">
+    <div className="p-6 h-full bg-gray-50 overflow-y-auto print:bg-white print:p-0 print:overflow-visible">
+      {/* Print Header */}
+      <div className="hidden print:block mb-8 text-center border-b pb-4">
+         <h1 className="text-3xl font-bold text-gray-900">Relatório Executivo</h1>
+         <p className="text-gray-500">Gerado em {new Date().toLocaleDateString()}</p>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 print:hidden">
         <div>
            <h1 className="text-2xl font-bold text-gray-800">Relatórios</h1>
            <p className="text-gray-500">Análise completa de atendimentos e vendas.</p>
@@ -404,17 +460,17 @@ const Reports: React.FC = () => {
                 </button>
               ))}
            </div>
-           <button className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 shadow-sm transition-colors">
-             <RefreshCw size={16} className="mr-2" /> Atualizar
+           <button onClick={loadData} className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 shadow-sm transition-colors">
+             <RefreshCw size={16} className={`mr-2 ${loading ? 'animate-spin' : ''}`} /> Atualizar
            </button>
-           <button className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black shadow-sm transition-colors">
+           <button onClick={handleExport} className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black shadow-sm transition-colors">
              <Download size={16} className="mr-2" /> Exportar
            </button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex overflow-x-auto gap-2 mb-6 pb-2 custom-scrollbar">
+      <div className="flex overflow-x-auto gap-2 mb-6 pb-2 custom-scrollbar print:hidden">
          {[
            {id: 'atendimento', label: 'Atendimento', icon: <MessageSquare size={18} />},
            {id: 'crm', label: 'CRM / Funil de Vendas', icon: <TrendingUp size={18} />},
@@ -438,7 +494,9 @@ const Reports: React.FC = () => {
       </div>
 
       {/* Content */}
-      {renderContent()}
+      <div className="print:w-full">
+        {renderContent()}
+      </div>
 
       {/* Goal Modal */}
       <Modal 
@@ -477,6 +535,20 @@ const Reports: React.FC = () => {
            </div>
         </div>
       </Modal>
+      
+      {/* CSS for printing to ensure layout is nice */}
+      <style>{`
+        @media print {
+          @page { size: landscape; }
+          body { -webkit-print-color-adjust: exact; }
+          .print\\:hidden { display: none !important; }
+          .print\\:block { display: block !important; }
+          .print\\:w-full { width: 100% !important; }
+          .print\\:p-0 { padding: 0 !important; }
+          .print\\:bg-white { background: white !important; }
+          .shadow-sm, .shadow-md { box-shadow: none !important; border: 1px solid #ccc !important; }
+        }
+      `}</style>
     </div>
   );
 };

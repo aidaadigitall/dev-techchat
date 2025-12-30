@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './services/supabase';
 import Sidebar from './components/Sidebar';
 import MobileHeader from './components/MobileHeader';
 import { AppRoute, User, Branding } from './types';
-import { MOCK_USERS } from './constants';
+import { MOCK_USERS, APP_NAME } from './constants';
 
-// Tenant Pages
+// Pages
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Chat from './pages/Chat';
 import Kanban from './pages/Kanban';
 import Contacts from './pages/Contacts';
 import Campaigns from './pages/Campaigns';
 import Tasks from './pages/Tasks';
+import Automations from './pages/Automations';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Proposals from './pages/Proposals';
 
 // Admin Pages
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
@@ -21,48 +25,120 @@ import SuperAdminPlans from './pages/SuperAdminPlans';
 import SuperAdminDatabase from './pages/SuperAdminDatabase';
 
 const App: React.FC = () => {
+  const [session, setSession] = useState<any>(null);
+  const [loadingSession, setLoadingSession] = useState(true);
   const [activeRoute, setActiveRoute] = useState<AppRoute>(AppRoute.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // State for Current User (Profile Management)
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]);
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    // Fallback default user for UI rendering if auth data is minimal
+    return MOCK_USERS[0] || {
+      id: 'default_admin',
+      name: 'Admin User',
+      email: 'admin@techchat.com',
+      role: 'super_admin',
+      avatar: '',
+      status: 'active',
+      companyId: 'comp1'
+    };
+  });
   
   // State for Visual Identity (White Label)
-  const [branding, setBranding] = useState<Branding>({
-    appName: 'OmniConnect',
-    primaryColor: '#00a884', // Default WhatsApp Green Style
-    logoUrl: ''
+  const [branding, setBranding] = useState<Branding>(() => {
+    try {
+        const saved = localStorage.getItem('app_branding');
+        return saved ? JSON.parse(saved) : {
+          appName: APP_NAME,
+          primaryColor: '#00a884', // Default WhatsApp Green Style
+          logoUrl: '' // Empty by default, user can set in settings
+        };
+    } catch (e) {
+        return { appName: APP_NAME, primaryColor: '#00a884', logoUrl: '' };
+    }
   });
   
   // Simulation State for Role Switching
   const [isAdminMode, setIsAdminMode] = useState(false);
 
-  // Update document title when app name changes
+  // --- Auth & Session Management ---
+  useEffect(() => {
+    // 1. Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        syncUser(session.user);
+      }
+      setLoadingSession(false);
+    });
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session?.user) {
+        syncUser(session.user);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const syncUser = (authUser: any) => {
+    // Check if it's the Super Admin Credential
+    const isSuperAdminEmail = authUser.email === 'admin@techchat.com';
+    
+    if (isSuperAdminEmail) {
+      setIsAdminMode(true);
+      setActiveRoute(AppRoute.ADMIN_DASHBOARD);
+    }
+
+    setCurrentUser(prev => ({
+        ...prev,
+        id: authUser.id,
+        email: authUser.email || prev.email,
+        name: authUser.user_metadata?.full_name || prev.name || 'Usuário',
+        role: isSuperAdminEmail ? 'super_admin' : (authUser.app_metadata?.role || 'admin') 
+    }));
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setIsAdminMode(false); // Reset admin mode on logout
+  };
+
+  // Update document title and localStorage when branding changes
   useEffect(() => {
     document.title = branding.appName;
-  }, [branding.appName]);
+    localStorage.setItem('app_branding', JSON.stringify(branding));
+  }, [branding]);
+
+  // Save user to localStorage (optional caching)
+  useEffect(() => {
+    localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+  }, [currentUser]);
 
   // Router Logic
   const renderContent = () => {
-    // If in Admin Mode, restrict routes
     if (isAdminMode) {
       switch (activeRoute) {
         case AppRoute.ADMIN_DASHBOARD: return <SuperAdminDashboard />;
         case AppRoute.ADMIN_COMPANIES: return <SuperAdminCompanies />;
         case AppRoute.ADMIN_PLANS: return <SuperAdminPlans />;
         case AppRoute.ADMIN_DATABASE: return <SuperAdminDatabase />;
-        default: return <SuperAdminDashboard />; // Fallback for admin
+        default: return <SuperAdminDashboard />;
       }
     }
 
-    // Tenant Routes
     switch (activeRoute) {
       case AppRoute.DASHBOARD: return <Dashboard />;
-      case AppRoute.CHAT: return <Chat />;
+      case AppRoute.CHAT: return <Chat branding={branding} />;
       case AppRoute.KANBAN: return <Kanban />;
       case AppRoute.CONTACTS: return <Contacts />;
       case AppRoute.CAMPAIGNS: return <Campaigns />;
+      case AppRoute.PROPOSALS: return <Proposals />;
       case AppRoute.TASKS: return <Tasks />;
+      case AppRoute.AUTOMATIONS: return <Automations />;
       case AppRoute.REPORTS: return <Reports />;
       case AppRoute.SETTINGS: 
         return <Settings 
@@ -78,9 +154,22 @@ const App: React.FC = () => {
   const handleToggleAdmin = () => {
     const newMode = !isAdminMode;
     setIsAdminMode(newMode);
-    // Reset route when switching modes
     setActiveRoute(newMode ? AppRoute.ADMIN_DASHBOARD : AppRoute.DASHBOARD);
   };
+
+  // --- Render ---
+
+  if (loadingSession) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+        </div>
+    );
+  }
+
+  if (!session) {
+    return <Login branding={branding} onLoginSuccess={(s) => setSession(s)} />;
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
@@ -89,19 +178,14 @@ const App: React.FC = () => {
         :root {
           --primary-color: ${branding.primaryColor};
         }
-        /* Override Tailwind Purple classes with dynamic primary color */
         .bg-purple-600 { background-color: var(--primary-color) !important; }
         .text-purple-600 { color: var(--primary-color) !important; }
         .border-purple-600 { border-color: var(--primary-color) !important; }
-        
         .hover\\:bg-purple-700:hover { opacity: 0.9; background-color: var(--primary-color) !important; }
-        
-        .bg-purple-50 { background-color: ${branding.primaryColor}15 !important; } /* ~8% opacity */
-        .bg-purple-100 { background-color: ${branding.primaryColor}25 !important; } /* ~15% opacity */
-        
+        .bg-purple-50 { background-color: ${branding.primaryColor}15 !important; }
+        .bg-purple-100 { background-color: ${branding.primaryColor}25 !important; }
         .text-purple-700 { color: var(--primary-color) !important; filter: brightness(0.8); }
         .border-purple-200 { border-color: ${branding.primaryColor}40 !important; }
-        
         .focus\\:ring-purple-500:focus { --tw-ring-color: var(--primary-color) !important; }
         .focus\\:border-purple-500:focus { border-color: var(--primary-color) !important; }
       `}</style>
@@ -113,6 +197,7 @@ const App: React.FC = () => {
         onToggleAdminMode={handleToggleAdmin}
         currentUser={currentUser}
         branding={branding}
+        onLogout={handleLogout}
       />
       
       {/* Mobile Sidebar Overlay */}
@@ -130,6 +215,7 @@ const App: React.FC = () => {
                onToggleAdminMode={handleToggleAdmin}
                currentUser={currentUser}
                branding={branding}
+               onLogout={handleLogout}
              />
           </div>
         </div>

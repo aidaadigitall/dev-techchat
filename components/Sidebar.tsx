@@ -10,9 +10,10 @@ interface SidebarProps {
   onToggleAdminMode: () => void;
   currentUser: User;
   branding: Branding;
+  onLogout?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeRoute, onNavigate, isAdminMode, onToggleAdminMode, currentUser, branding }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeRoute, onNavigate, isAdminMode, onToggleAdminMode, currentUser, branding, onLogout }) => {
   
   // Filter items based on mode
   const displayedItems = NAVIGATION_ITEMS.filter(item => 
@@ -95,7 +96,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeRoute, onNavigate, isAdminMode,
             <p className="text-xs text-gray-500 truncate">{currentUser.email}</p>
           </div>
         </div>
-        <button className="w-full flex items-center px-3 py-2 text-sm font-medium text-red-600 rounded-md hover:bg-red-50 transition-colors">
+        <button 
+          onClick={onLogout}
+          className="w-full flex items-center px-3 py-2 text-sm font-medium text-red-600 rounded-md hover:bg-red-50 transition-colors"
+        >
           <LogOut size={18} className="mr-3" />
           Sair
         </button>

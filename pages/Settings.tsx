@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload } from 'lucide-react';
-import { User, Branding } from '../types';
+import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase } from 'lucide-react';
+import { User, Branding, Tag, Sector } from '../types';
 import { MOCK_USERS } from '../constants';
+import { api } from '../services/api';
+import Modal from '../components/Modal';
 
 interface SettingsProps {
   currentUser?: User;
@@ -11,7 +13,7 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding, onUpdateBranding }) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'branding' | 'company' | 'integrations' | 'team'>('company');
+  const [activeTab, setActiveTab] = useState<'profile' | 'branding' | 'company' | 'integrations' | 'team' | 'ai' | 'tags_sectors'>('company');
   const [loading, setLoading] = useState(false);
 
   // --- STATES ---
@@ -27,12 +29,15 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const [profileAvatarPreview, setProfileAvatarPreview] = useState<string>(currentUser?.avatar || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 2. Company State (Dados da Empresa)
-  const [companyForm, setCompanyForm] = useState({
-    name: 'Esc Solutions', // Default from screenshot mock
-    hoursStart: '08:00',
-    hoursEnd: '18:00',
-    greeting: 'Olá! Bem-vindo à Minha Empresa. Como podemos ajudar hoje?'
+  // 2. Company State (Dados da Empresa) - Persisted
+  const [companyForm, setCompanyForm] = useState(() => {
+    const saved = localStorage.getItem('app_company_settings');
+    return saved ? JSON.parse(saved) : {
+      name: 'Esc Solutions', // Default from screenshot mock
+      hoursStart: '08:00',
+      hoursEnd: '18:00',
+      greeting: 'Olá! Bem-vindo à Minha Empresa. Como podemos ajudar hoje?'
+    };
   });
 
   // 3. Branding State (White Label)
@@ -45,6 +50,44 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
   // 4. Team State
   const [users, setUsers] = useState(MOCK_USERS);
+
+  // 5. AI Settings State
+  const [aiSettings, setAiSettings] = useState({
+    apiKey: '',
+    useOwnKey: false,
+    model: 'gemini-3-pro-preview'
+  });
+
+  // 6. Tags & Sectors State
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [metadataModalOpen, setMetadataModalOpen] = useState(false);
+  const [editingType, setEditingType] = useState<'tag' | 'sector'>('tag');
+  const [metadataForm, setMetadataForm] = useState({ id: '', name: '', color: '#3B82F6' });
+
+  // Predefined Colors for Palette
+  const COLOR_PALETTE = [
+    '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#10B981', 
+    '#06B6D4', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', 
+    '#F43F5E', '#6B7280', '#000000'
+  ];
+
+  // --- EFFECTS ---
+
+  useEffect(() => {
+    if (activeTab === 'tags_sectors') {
+      loadMetadata();
+    }
+  }, [activeTab]);
+
+  const loadMetadata = async () => {
+    const [fetchedTags, fetchedSectors] = await Promise.all([
+      api.metadata.getTags(),
+      api.metadata.getSectors()
+    ]);
+    setTags(fetchedTags);
+    setSectors(fetchedSectors);
+  };
 
   // --- HANDLERS ---
 
@@ -67,8 +110,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const objectUrl = URL.createObjectURL(file);
-      setProfileAvatarPreview(objectUrl);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfileAvatarPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -91,6 +137,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const handleSaveCompany = () => {
     setLoading(true);
     setTimeout(() => {
+      localStorage.setItem('app_company_settings', JSON.stringify(companyForm));
       setLoading(false);
       alert('Dados da empresa salvos com sucesso!');
     }, 800);
@@ -100,8 +147,13 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const objectUrl = URL.createObjectURL(file);
-      setBrandingForm(prev => ({ ...prev, logoUrl: objectUrl }));
+      
+      // Use FileReader to convert to Base64 for persistence
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setBrandingForm(prev => ({ ...prev, logoUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -114,6 +166,66 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
       setLoading(false);
       alert('Identidade visual (White Label) aplicada com sucesso!');
     }, 500); // Faster update for visual feedback
+  };
+
+  // AI Handlers
+  const handleSaveAI = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      // In real app, this would validate the key
+      alert('Configurações de IA salvas com sucesso!');
+    }, 1000);
+  };
+
+  // Metadata (Tags & Sectors) Handlers
+  const handleOpenMetadataModal = (type: 'tag' | 'sector', item?: Tag | Sector) => {
+    setEditingType(type);
+    if (item) {
+      setMetadataForm({ id: item.id, name: item.name, color: item.color });
+    } else {
+      setMetadataForm({ id: '', name: '', color: COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)] });
+    }
+    setMetadataModalOpen(true);
+  };
+
+  const handleSaveMetadata = async () => {
+    if (!metadataForm.name) return;
+
+    if (editingType === 'tag') {
+      let newTags = [...tags];
+      if (metadataForm.id) {
+        newTags = newTags.map(t => t.id === metadataForm.id ? { ...metadataForm } as Tag : t);
+      } else {
+        newTags.push({ ...metadataForm, id: Date.now().toString() } as Tag);
+      }
+      setTags(newTags);
+      await api.metadata.saveTags(newTags);
+    } else {
+      let newSectors = [...sectors];
+      if (metadataForm.id) {
+        newSectors = newSectors.map(s => s.id === metadataForm.id ? { ...metadataForm } as Sector : s);
+      } else {
+        newSectors.push({ ...metadataForm, id: Date.now().toString() } as Sector);
+      }
+      setSectors(newSectors);
+      await api.metadata.saveSectors(newSectors);
+    }
+    setMetadataModalOpen(false);
+  };
+
+  const handleDeleteMetadata = async (type: 'tag' | 'sector', id: string) => {
+    if (!confirm(`Deseja realmente excluir este ${type === 'tag' ? 'etiqueta' : 'setor'}?`)) return;
+
+    if (type === 'tag') {
+      const newTags = tags.filter(t => t.id !== id);
+      setTags(newTags);
+      await api.metadata.saveTags(newTags);
+    } else {
+      const newSectors = sectors.filter(s => s.id !== id);
+      setSectors(newSectors);
+      await api.metadata.saveSectors(newSectors);
+    }
   };
 
   // --- RENDERERS ---
@@ -298,6 +410,189 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                     </>
                   )}
                 </button>
+             </div>
+          </div>
+        );
+
+      case 'tags_sectors':
+        return (
+          <div className="space-y-8 animate-fadeIn">
+             <div className="border-b border-gray-100 pb-4 mb-4">
+               <h2 className="text-xl font-semibold text-gray-800">Tags & Setores</h2>
+               <p className="text-sm text-gray-500">Gerencie as etiquetas de clientes e os departamentos de atendimento.</p>
+             </div>
+
+             {/* Tags Section */}
+             <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                      <TagIcon size={20} className="mr-2 text-purple-600" /> Etiquetas (Tags)
+                   </h3>
+                   <button 
+                     onClick={() => handleOpenMetadataModal('tag')}
+                     className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center transition-colors"
+                   >
+                      <Plus size={16} className="mr-1" /> Nova Tag
+                   </button>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                   {tags.map(tag => (
+                      <div key={tag.id} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:shadow-sm transition-shadow">
+                         <div className="flex items-center">
+                            <div className="w-4 h-4 rounded-full mr-2 shadow-sm" style={{ backgroundColor: tag.color }}></div>
+                            <span className="text-sm font-medium text-gray-700">{tag.name}</span>
+                         </div>
+                         <div className="flex gap-1">
+                            <button onClick={() => handleOpenMetadataModal('tag', tag)} className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-white rounded"><Palette size={14}/></button>
+                            <button onClick={() => handleDeleteMetadata('tag', tag.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-white rounded"><Trash2 size={14}/></button>
+                         </div>
+                      </div>
+                   ))}
+                   {tags.length === 0 && <p className="text-gray-400 text-sm italic col-span-full">Nenhuma tag cadastrada.</p>}
+                </div>
+             </div>
+
+             {/* Sectors Section */}
+             <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                      <Briefcase size={20} className="mr-2 text-blue-600" /> Setores / Departamentos
+                   </h3>
+                   <button 
+                     onClick={() => handleOpenMetadataModal('sector')}
+                     className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center transition-colors"
+                   >
+                      <Plus size={16} className="mr-1" /> Novo Setor
+                   </button>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                   {sectors.map(sector => (
+                      <div key={sector.id} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:shadow-sm transition-shadow">
+                         <div className="flex items-center">
+                            <div className="w-4 h-4 rounded mr-2 shadow-sm flex items-center justify-center" style={{ backgroundColor: sector.color }}>
+                               <span className="text-[8px] text-white font-bold">{sector.name.charAt(0)}</span>
+                            </div>
+                            <span className="text-sm font-medium text-gray-700">{sector.name}</span>
+                         </div>
+                         <div className="flex gap-1">
+                            <button onClick={() => handleOpenMetadataModal('sector', sector)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-white rounded"><Palette size={14}/></button>
+                            <button onClick={() => handleDeleteMetadata('sector', sector.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-white rounded"><Trash2 size={14}/></button>
+                         </div>
+                      </div>
+                   ))}
+                   {sectors.length === 0 && <p className="text-gray-400 text-sm italic col-span-full">Nenhum setor cadastrado.</p>}
+                </div>
+             </div>
+          </div>
+        );
+
+      case 'ai':
+        return (
+          <div className="space-y-6 animate-fadeIn">
+             <div className="border-b border-gray-100 pb-4 mb-4">
+               <h2 className="text-xl font-semibold text-gray-800">Inteligência Artificial (Gemini)</h2>
+               <p className="text-sm text-gray-500">Configure a chave de API para habilitar agentes, transcrição e análise inteligente.</p>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="space-y-6">
+                  {/* Configuration Card */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                     <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                           <Key size={18} className="mr-2 text-purple-600" /> Configuração da Chave
+                        </h3>
+                        <div className="flex items-center">
+                           <label className="relative inline-flex items-center cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                className="sr-only peer" 
+                                checked={aiSettings.useOwnKey}
+                                onChange={e => setAiSettings({...aiSettings, useOwnKey: e.target.checked})}
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                              <span className="ml-3 text-sm font-medium text-gray-700">Usar minha chave (BYOK)</span>
+                           </label>
+                        </div>
+                     </div>
+
+                     {aiSettings.useOwnKey ? (
+                        <div className="space-y-4 animate-fadeIn">
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Google Gemini API Key</label>
+                              <div className="relative">
+                                 <input 
+                                   type="password" 
+                                   value={aiSettings.apiKey}
+                                   onChange={e => setAiSettings({...aiSettings, apiKey: e.target.value})}
+                                   className="w-full border border-gray-300 rounded-md p-2.5 pr-10 focus:ring-purple-500 focus:border-purple-500"
+                                   placeholder="AIzaSy..."
+                                 />
+                                 <Lock size={16} className="absolute right-3 top-3 text-gray-400" />
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">Sua chave é armazenada com criptografia e usada apenas para suas requisições.</p>
+                           </div>
+                           <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm border border-green-100 flex items-start">
+                              <Shield size={16} className="mr-2 mt-0.5 flex-shrink-0" />
+                              <span>Ao usar sua própria chave, você remove os limites de tokens impostos pelo plano e paga diretamente ao Google.</span>
+                           </div>
+                        </div>
+                     ) : (
+                        <div className="space-y-4 animate-fadeIn">
+                           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                              <p className="text-sm text-gray-600 mb-2">Você está utilizando a infraestrutura compartilhada da <strong>OmniConnect</strong>.</p>
+                              
+                              <div className="mb-1 flex justify-between text-xs font-semibold text-gray-700">
+                                 <span>Consumo Mensal</span>
+                                 <span>15.4k / 50k Tokens</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                 <div className="bg-purple-600 h-2.5 rounded-full" style={{ width: '30%' }}></div>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-2">Renova em 01/02/2025.</p>
+                           </div>
+                           <p className="text-xs text-gray-500">Para aumentar seu limite, faça upgrade do plano ou ative a opção "Usar minha chave".</p>
+                        </div>
+                     )}
+                  </div>
+               </div>
+
+               <div className="space-y-6">
+                  {/* Model Selection */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                     <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                        <BrainCircuit size={18} className="mr-2 text-blue-600" /> Preferências do Modelo
+                     </h3>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Modelo Padrão</label>
+                        <select 
+                           className="w-full border border-gray-300 rounded-md p-2.5 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                           value={aiSettings.model}
+                           onChange={e => setAiSettings({...aiSettings, model: e.target.value})}
+                        >
+                           <option value="gemini-3-pro-preview">Gemini 1.5 Pro (Mais inteligente)</option>
+                           <option value="gemini-3-flash-preview">Gemini 1.5 Flash (Mais rápido)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Define o modelo utilizado para resumo de conversas e respostas automáticas.</p>
+                     </div>
+                  </div>
+                  
+                  <div className="flex justify-end">
+                     <button 
+                        onClick={handleSaveAI}
+                        disabled={loading}
+                        className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 flex items-center font-medium shadow-sm transition-colors disabled:opacity-70"
+                     >
+                        {loading ? 'Salvando...' : (
+                           <>
+                              <Save size={18} className="mr-2" /> Salvar Configurações IA
+                           </>
+                        )}
+                     </button>
+                  </div>
+               </div>
              </div>
           </div>
         );
@@ -524,8 +819,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
           <nav className="flex-1 space-y-1 px-3">
              {[
                { id: 'profile', label: 'Meu Perfil', icon: <UserIcon size={18} /> },
-               { id: 'branding', label: 'Identidade Visual', icon: <Palette size={18} /> },
                { id: 'company', label: 'Empresa', icon: <Building size={18} /> },
+               { id: 'ai', label: 'IA & API', icon: <BrainCircuit size={18} /> },
+               { id: 'tags_sectors', label: 'Tags & Setores', icon: <TagIcon size={18} /> },
+               { id: 'branding', label: 'Identidade Visual', icon: <Palette size={18} /> },
                { id: 'integrations', label: 'Conexões', icon: <Smartphone size={18} /> },
                { id: 'team', label: 'Equipe', icon: <Shield size={18} /> },
              ].map(item => (
@@ -550,6 +847,48 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
              {renderContent()}
           </div>
        </div>
+
+       {/* Metadata Edit Modal */}
+       <Modal 
+         isOpen={metadataModalOpen} 
+         onClose={() => setMetadataModalOpen(false)}
+         title={editingType === 'tag' ? (metadataForm.id ? 'Editar Tag' : 'Nova Tag') : (metadataForm.id ? 'Editar Setor' : 'Novo Setor')}
+         size="sm"
+         footer={
+            <div className="flex justify-end gap-2">
+               <button onClick={() => setMetadataModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Cancelar</button>
+               <button onClick={handleSaveMetadata} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium">Salvar</button>
+            </div>
+         }
+       >
+          <div className="space-y-4">
+             <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                <input 
+                  type="text" 
+                  className="w-full border border-gray-300 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-purple-500"
+                  value={metadataForm.name}
+                  onChange={e => setMetadataForm({...metadataForm, name: e.target.value})}
+                  placeholder={editingType === 'tag' ? "Ex: Lead Quente" : "Ex: Financeiro"}
+                />
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cor</label>
+                <div className="flex flex-wrap gap-2">
+                   {COLOR_PALETTE.map(color => (
+                      <button
+                        key={color}
+                        onClick={() => setMetadataForm({...metadataForm, color})}
+                        className={`w-8 h-8 rounded-full shadow-sm transition-transform hover:scale-110 flex items-center justify-center ${metadataForm.color === color ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
+                        style={{ backgroundColor: color }}
+                      >
+                         {metadataForm.color === color && <span className="text-white text-xs">✓</span>}
+                      </button>
+                   ))}
+                </div>
+             </div>
+          </div>
+       </Modal>
     </div>
   );
 };

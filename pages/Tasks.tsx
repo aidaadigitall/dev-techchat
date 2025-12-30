@@ -4,7 +4,8 @@ import {
   CheckCircle2, Circle, MoreHorizontal, FileText, 
   Download, RefreshCw, ChevronRight, ChevronDown, 
   Trash2, X, Search, Filter, Eye, EyeOff, Edit, Save,
-  Clock, Upload, Users, AlertCircle, CornerDownRight
+  Clock, Upload, Users, AlertCircle, CornerDownRight, Tag as TagIcon,
+  Check, Maximize2
 } from 'lucide-react';
 import { MOCK_USERS } from '../constants';
 import { Task, TaskPriority } from '../types';
@@ -73,8 +74,8 @@ const UserAvatar: React.FC<{ userId?: string }> = ({ userId }) => {
   if (!user) return null;
   
   return (
-    <div className="w-6 h-6 rounded-full bg-gray-200 border border-white flex items-center justify-center text-[10px] font-bold text-gray-700 shadow-sm" title={user.name}>
-      {user.avatar ? <img src={user.avatar} className="w-full h-full rounded-full" /> : user.name.charAt(0)}
+    <div className="w-6 h-6 rounded-full bg-gray-200 border border-white flex items-center justify-center text-[10px] font-bold text-gray-700 shadow-sm overflow-hidden" title={user.name}>
+      {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user.name.charAt(0)}
     </div>
   );
 };
@@ -101,13 +102,20 @@ const Tasks: React.FC = () => {
   const [filterDateRange, setFilterDateRange] = useState<'all' | 'overdue' | 'today' | 'week'>('all');
   const [customDateFilter, setCustomDateFilter] = useState('');
 
-  // Simulação de Colaboração
+  // UI States
   const [collaboratorTyping, setCollaboratorTyping] = useState(false);
+  const [priorityMenuOpenId, setPriorityMenuOpenId] = useState<string | null>(null);
 
   // Estados para Modais
   const [activeModal, setActiveModal] = useState<boolean>(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [currentTask, setCurrentTask] = useState<Partial<Task>>({});
+  const [tagInput, setTagInput] = useState(''); 
+  
+  // Inline Edit State
+  const [quickEditingTaskId, setQuickEditingTaskId] = useState<string | null>(null);
+  const [quickEditForm, setQuickEditForm] = useState<{title: string, dueDate: string}>({ title: '', dueDate: '' });
+  
   const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -121,6 +129,13 @@ const Tasks: React.FC = () => {
       }
     }, 10000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Close menus on click outside
+  useEffect(() => {
+    const handleClickOutside = () => setPriorityMenuOpenId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
   const loadTasks = async () => {
@@ -205,6 +220,12 @@ const Tasks: React.FC = () => {
     }
   };
 
+  const updateTaskPriority = async (taskId: string, priority: TaskPriority) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, priority } : t));
+    setPriorityMenuOpenId(null);
+    await api.tasks.update(taskId, { priority });
+  };
+
   const toggleSubtaskExpand = (taskId: string) => {
     setExpandedTasks(prev => 
       prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
@@ -230,6 +251,44 @@ const Tasks: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // --- Inline Edit Handlers ---
+  const startQuickEdit = (task: Task, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault(); // Prevent double click default (selection)
+    setQuickEditingTaskId(task.id);
+    setQuickEditForm({
+      title: task.title,
+      dueDate: task.dueDate ? task.dueDate.slice(0, 10) : ''
+    });
+  };
+
+  const cancelQuickEdit = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setQuickEditingTaskId(null);
+  };
+
+  const saveQuickEdit = async (taskId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!quickEditForm.title.trim()) return;
+
+    // Optimistic Update
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, title: quickEditForm.title, dueDate: quickEditForm.dueDate || undefined } : t));
+    setQuickEditingTaskId(null);
+
+    await api.tasks.update(taskId, { 
+      title: quickEditForm.title, 
+      dueDate: quickEditForm.dueDate || undefined 
+    });
+  };
+
+  const handleQuickEditKeyDown = (e: React.KeyboardEvent, taskId: string) => {
+    if (e.key === 'Enter') {
+      saveQuickEdit(taskId);
+    } else if (e.key === 'Escape') {
+      cancelQuickEdit();
+    }
+  };
+
   // --- Importação CSV ---
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -242,15 +301,12 @@ const Tasks: React.FC = () => {
       
       const newTasks: Task[] = [];
       
-      // Assumindo CSV simples: Titulo, Descricao, Data(YYYY-MM-DD), Prioridade(p1-p4), ProjetoID
-      // Ignora header se existir 'titulo'
       const startIdx = lines[0].toLowerCase().includes('titulo') ? 1 : 0;
 
       for(let i = startIdx; i < lines.length; i++) {
         const line = lines[i].trim();
         if(!line) continue;
         
-        // CSV parser básico (não lida com vírgulas dentro de aspas complexas)
         const parts = line.split(',');
         if (parts.length >= 1) {
            const title = parts[0]?.trim();
@@ -315,12 +371,15 @@ const Tasks: React.FC = () => {
     loadTasks();
   };
 
+  // --- Modal Editing Logic ---
+
   const openEditModal = (task: Task) => {
     let formattedDate = '';
     if (task.dueDate) {
         formattedDate = task.dueDate.length > 16 ? task.dueDate.slice(0, 16) : task.dueDate;
     }
     setCurrentTask({ ...task, dueDate: formattedDate });
+    setTagInput('');
     setActiveModal(true);
   };
 
@@ -377,6 +436,19 @@ const Tasks: React.FC = () => {
     }
   };
 
+  const handleAddTag = () => {
+    if (!tagInput.trim()) return;
+    const newTags = [...(currentTask.tags || []), tagInput.trim()];
+    // Remove duplicates
+    const uniqueTags = Array.from(new Set(newTags));
+    setCurrentTask({ ...currentTask, tags: uniqueTags });
+    setTagInput('');
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setCurrentTask({ ...currentTask, tags: currentTask.tags?.filter(tag => tag !== tagToRemove) });
+  };
+
   // Renderizador de Lista de Tarefas
   const renderTaskList = () => {
     const filtered = getFilteredTasks();
@@ -393,95 +465,177 @@ const Tasks: React.FC = () => {
 
     return (
       <div className="space-y-1 print:space-y-4 pb-20">
-        {filtered.map(task => (
-          <div key={task.id} className="group">
-            {/* Task Row */}
-            <div className={`flex items-start py-3 px-2 hover:bg-gray-50 rounded-lg transition-colors group/row border-b border-gray-100 last:border-0 ${task.completed ? 'opacity-60 bg-gray-50/50' : ''}`}>
-              {/* Checkbox Area */}
-              <button 
-                onClick={() => toggleTaskCompletion(task.id)}
-                className={`mt-1 mr-3 flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                  task.completed ? 'bg-gray-400 border-gray-400 text-white' :
-                  task.priority === 'p1' ? 'border-red-400 hover:bg-red-50 text-red-600' : 
-                  task.priority === 'p2' ? 'border-orange-400 hover:bg-orange-50 text-orange-500' :
-                  task.priority === 'p3' ? 'border-blue-400 hover:bg-blue-50 text-blue-500' :
-                  'border-gray-300 hover:bg-gray-100 text-gray-400'
-                }`}
-              >
-                {task.completed && <CheckCircle2 size={14} />}
-              </button>
+        {filtered.map(task => {
+          const isQuickEditing = quickEditingTaskId === task.id;
 
-              {/* Content Area */}
+          return (
+            <div key={task.id} className="group">
+              {/* Task Row */}
               <div 
-                className="flex-1 min-w-0 cursor-pointer" 
-                onDoubleClick={() => openEditModal(task)}
+                className={`flex items-start py-3 px-2 hover:bg-gray-50 rounded-lg transition-colors group/row border-b border-gray-100 last:border-0 ${task.completed ? 'bg-gray-50/60' : ''}`}
+                onDoubleClick={() => !isQuickEditing && openEditModal(task)} // Fallback double click to modal if clicking on whitespace
               >
-                <div className="flex items-center">
-                  <span className={`text-sm font-medium mr-2 transition-all ${task.completed ? 'text-gray-500 line-through decoration-gray-400' : 'text-gray-800'}`}>{task.title}</span>
-                  {task.tags?.map(tag => (
-                    <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded font-medium mr-1 print:border print:border-gray-300 border border-gray-200">
-                      {tag}
-                    </span>
+                {/* Checkbox Area */}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); toggleTaskCompletion(task.id); }}
+                  className={`mt-1 mr-3 flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-300 active:scale-95 transform ${
+                    task.completed ? 'bg-purple-600 border-purple-600 text-white scale-100' :
+                    task.priority === 'p1' ? 'border-red-400 hover:bg-red-50 text-red-600' : 
+                    task.priority === 'p2' ? 'border-orange-400 hover:bg-orange-50 text-orange-500' :
+                    task.priority === 'p3' ? 'border-blue-400 hover:bg-blue-50 text-blue-500' :
+                    'border-gray-300 hover:bg-gray-100 text-gray-400'
+                  }`}
+                >
+                  <CheckCircle2 size={14} className={`transition-opacity duration-300 ${task.completed ? 'opacity-100' : 'opacity-0'}`} />
+                </button>
+
+                {/* Content Area */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center flex-wrap gap-1">
+                    {isQuickEditing ? (
+                      <input 
+                        type="text" 
+                        autoFocus
+                        className="flex-1 text-sm font-medium border border-purple-300 rounded px-2 py-0.5 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
+                        value={quickEditForm.title}
+                        onChange={(e) => setQuickEditForm({...quickEditForm, title: e.target.value})}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => handleQuickEditKeyDown(e, task.id)}
+                      />
+                    ) : (
+                      <span 
+                        className={`text-sm font-medium mr-1 transition-all duration-300 cursor-text ${task.completed ? 'text-gray-400 line-through decoration-gray-300' : 'text-gray-800'}`}
+                        onDoubleClick={(e) => startQuickEdit(task, e)}
+                        title="Duplo clique para editar o título"
+                      >
+                        {task.title}
+                      </span>
+                    )}
+                    
+                    {!isQuickEditing && task.tags?.map(tag => (
+                      <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded font-medium print:border print:border-gray-300 border border-gray-200">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  
+                  {!isQuickEditing && task.description && (
+                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{task.description}</p>
+                  )}
+
+                  {/* Metadata Row */}
+                  <div className="flex items-center mt-1.5 space-x-3">
+                    {/* Due Date - Editable */}
+                    <div className="flex items-center">
+                       {isQuickEditing ? (
+                          <input 
+                            type="date" 
+                            className="text-xs border border-purple-300 rounded px-1 py-0 bg-white"
+                            value={quickEditForm.dueDate}
+                            onChange={(e) => setQuickEditForm({...quickEditForm, dueDate: e.target.value})}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => handleQuickEditKeyDown(e, task.id)}
+                          />
+                       ) : (
+                          task.dueDate && (
+                            <div 
+                              className={`flex items-center text-xs cursor-pointer hover:bg-gray-100 rounded px-1 -ml-1 transition-colors ${!task.completed && new Date(task.dueDate) < new Date() ? 'text-red-600 font-medium' : 'text-gray-500'}`}
+                              onDoubleClick={(e) => startQuickEdit(task, e)}
+                              title="Duplo clique para alterar a data"
+                            >
+                              <Calendar size={12} className="mr-1" />
+                              {new Date(task.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )
+                       )}
+                    </div>
+                    
+                    {/* Subtasks Count / Expand */}
+                    {task.subtasks && task.subtasks.length > 0 && !isQuickEditing && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); toggleSubtaskExpand(task.id); }}
+                        className="flex items-center text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        <div className="flex items-center justify-center w-3 h-3 bg-gray-200 rounded-full mr-1 text-[8px] font-bold text-gray-600">
+                          {task.subtasks.filter(st => st.completed).length}/{task.subtasks.length}
+                        </div>
+                        <span className="text-[10px]">subtarefas</span>
+                        {expandedTasks.includes(task.id) ? <ChevronDown size={10} className="ml-1"/> : <ChevronRight size={10} className="ml-1"/>}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Actions */}
+                <div className={`flex items-center space-x-2 ${isQuickEditing ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'} transition-opacity print:hidden relative`}>
+                  {isQuickEditing ? (
+                    <>
+                      <button onClick={(e) => saveQuickEdit(task.id, e)} className="text-green-600 hover:bg-green-50 p-1 rounded" title="Salvar (Enter)">
+                        <Check size={16} />
+                      </button>
+                      <button onClick={(e) => cancelQuickEdit(e)} className="text-red-600 hover:bg-red-50 p-1 rounded" title="Cancelar (Esc)">
+                        <X size={16} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={(e) => startQuickEdit(task, e)} className="text-gray-400 hover:text-purple-600 p-1 rounded hover:bg-gray-100" title="Edição Rápida">
+                        <Edit size={14} />
+                      </button>
+                      <button onClick={() => openEditModal(task)} className="text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-gray-100" title="Ver Detalhes">
+                        <Maximize2 size={14} />
+                      </button>
+                      <UserAvatar userId={task.assigneeId} />
+                      
+                      {/* Priority Inline Dropdown */}
+                      <div className="relative">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setPriorityMenuOpenId(priorityMenuOpenId === task.id ? null : task.id); }}
+                          className="p-1 hover:bg-gray-100 rounded focus:outline-none"
+                        >
+                            <PriorityFlag p={task.priority} />
+                        </button>
+                        {priorityMenuOpenId === task.id && (
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-20 w-32 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+                              {['p1', 'p2', 'p3', 'p4'].map((p) => (
+                                  <button
+                                    key={p}
+                                    className="w-full px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-xs text-left"
+                                    onClick={() => updateTaskPriority(task.id, p as TaskPriority)}
+                                  >
+                                    <PriorityFlag p={p as TaskPriority} />
+                                    <span className="capitalize text-gray-700">{p.toUpperCase()}</span>
+                                    {task.priority === p && <CheckCircle2 size={12} className="ml-auto text-purple-600"/>}
+                                  </button>
+                              ))}
+                            </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Subtasks Render (Indented List) */}
+              {expandedTasks.includes(task.id) && task.subtasks && !isQuickEditing && (
+                <div className="pl-8 pr-2 pb-2 space-y-1">
+                  {task.subtasks.map(st => (
+                    <div key={st.id} className="flex items-center py-1.5 border-l-2 border-gray-200 pl-3 hover:bg-gray-50 rounded-r transition-colors group/sub">
+                      <button 
+                        onClick={() => toggleTaskCompletion(st.id)}
+                        className={`mr-3 w-3.5 h-3.5 rounded-full border flex items-center justify-center hover:bg-gray-100 ${st.completed ? 'bg-gray-400 border-gray-400' : 'border-gray-300'}`}
+                      >
+                        {st.completed && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                      </button>
+                      <span className={`text-xs flex-1 ${st.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{st.title}</span>
+                      <PriorityFlag p={st.priority} />
+                    </div>
                   ))}
                 </div>
-                
-                {task.description && (
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{task.description}</p>
-                )}
-
-                {/* Metadata Row */}
-                <div className="flex items-center mt-1.5 space-x-3">
-                  {/* Due Date */}
-                  {task.dueDate && (
-                    <div className={`flex items-center text-xs ${!task.completed && new Date(task.dueDate) < new Date() ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-                      <Calendar size={12} className="mr-1" />
-                      {new Date(task.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  )}
-                  
-                  {/* Subtasks Count / Expand */}
-                  {task.subtasks && task.subtasks.length > 0 && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); toggleSubtaskExpand(task.id); }}
-                      className="flex items-center text-xs text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      <div className="flex items-center justify-center w-3 h-3 bg-gray-200 rounded-full mr-1 text-[8px] font-bold text-gray-600">
-                        {task.subtasks.filter(st => st.completed).length}/{task.subtasks.length}
-                      </div>
-                      <span className="text-[10px]">subtarefas</span>
-                      {expandedTasks.includes(task.id) ? <ChevronDown size={10} className="ml-1"/> : <ChevronRight size={10} className="ml-1"/>}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Actions */}
-              <div className="flex items-center space-x-2 opacity-0 group-hover/row:opacity-100 transition-opacity print:hidden">
-                <button onClick={() => openEditModal(task)} className="text-gray-400 hover:text-gray-600 p-1"><EditIcon size={14} /></button>
-                <UserAvatar userId={task.assigneeId} />
-                <PriorityFlag p={task.priority} />
-              </div>
+              )}
             </div>
-
-            {/* Subtasks Render (Indented List) */}
-            {expandedTasks.includes(task.id) && task.subtasks && (
-              <div className="pl-8 pr-2 pb-2 space-y-1">
-                {task.subtasks.map(st => (
-                  <div key={st.id} className="flex items-center py-1.5 border-l-2 border-gray-200 pl-3 hover:bg-gray-50 rounded-r transition-colors group/sub">
-                    <button 
-                      onClick={() => toggleTaskCompletion(st.id)}
-                      className={`mr-3 w-3.5 h-3.5 rounded-full border flex items-center justify-center hover:bg-gray-100 ${st.completed ? 'bg-gray-400 border-gray-400' : 'border-gray-300'}`}
-                    >
-                      {st.completed && <div className="w-2 h-2 bg-white rounded-full"></div>}
-                    </button>
-                    <span className={`text-xs flex-1 ${st.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{st.title}</span>
-                    <PriorityFlag p={st.priority} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
@@ -613,7 +767,7 @@ const Tasks: React.FC = () => {
                   >
                     <option value="pending">Pendente</option>
                     <option value="completed">Concluído</option>
-                    <option value="all">Todos</option>
+                    <option value="all">Todas</option>
                   </select>
                </div>
                <div className="flex items-center">
@@ -733,12 +887,12 @@ const Tasks: React.FC = () => {
 
       {/* Edit Modal */}
       <Modal isOpen={activeModal} onClose={() => setActiveModal(false)} title="Editar Tarefa" size="lg">
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1 custom-scrollbar">
            <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
              <input 
                type="text" 
-               className="w-full border border-gray-300 rounded-md p-2 bg-white font-medium" 
+               className="w-full border border-gray-300 rounded-md p-2 bg-white font-medium focus:ring-purple-500" 
                value={currentTask.title || ''}
                onChange={e => setCurrentTask({...currentTask, title: e.target.value})}
                placeholder="O que precisa ser feito?"
@@ -748,7 +902,7 @@ const Tasks: React.FC = () => {
            <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
              <textarea 
-               className="w-full border border-gray-300 rounded-md p-2 bg-white h-20 resize-none text-sm" 
+               className="w-full border border-gray-300 rounded-md p-2 bg-white h-20 resize-none text-sm focus:ring-purple-500" 
                value={currentTask.description || ''}
                onChange={e => setCurrentTask({...currentTask, description: e.target.value})}
                placeholder="Detalhes adicionais..."
@@ -792,6 +946,46 @@ const Tasks: React.FC = () => {
                    <option key={p.id} value={p.id}>{p.name}</option>
                  ))}
               </select>
+           </div>
+
+           <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Responsável</label>
+              <select 
+                className="w-full border border-gray-300 rounded-md p-2 bg-white"
+                value={currentTask.assigneeId || ''}
+                onChange={e => setCurrentTask({...currentTask, assigneeId: e.target.value})}
+              >
+                 <option value="">Sem responsável</option>
+                 {MOCK_USERS.map(u => (
+                   <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                 ))}
+              </select>
+           </div>
+
+           {/* Tags Section */}
+           <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                 {currentTask.tags?.map(tag => (
+                    <span key={tag} className="flex items-center px-2 py-1 bg-purple-50 text-purple-700 rounded-full text-xs border border-purple-100">
+                       <TagIcon size={10} className="mr-1" /> {tag}
+                       <button onClick={() => handleRemoveTag(tag)} className="ml-1 hover:text-red-500"><X size={10} /></button>
+                    </span>
+                 ))}
+              </div>
+              <input 
+                 type="text" 
+                 placeholder="Digite uma tag e pressione Enter"
+                 className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm"
+                 value={tagInput}
+                 onChange={(e) => setTagInput(e.target.value)}
+                 onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                       e.preventDefault();
+                       handleAddTag();
+                    }
+                 }}
+              />
            </div>
 
            {/* Subtasks Section in Modal */}

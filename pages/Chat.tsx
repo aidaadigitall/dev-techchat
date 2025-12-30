@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MOCK_CONTACTS, MOCK_USERS } from '../constants';
+import { MOCK_CONTACTS, MOCK_USERS, MOCK_PROPOSALS } from '../constants';
 import { api } from '../services/api';
-import { Contact, Message, MessageType, QuickReply, AIInsight } from '../types';
+import { Contact, Message, MessageType, QuickReply, AIInsight, Proposal, Branding } from '../types';
 import { 
   Search, MoreVertical, Paperclip, Smile, Mic, Send, 
   Check, CheckCheck, Tag, Clock, User, MessageSquare,
@@ -9,12 +9,12 @@ import {
   Bot, ChevronDown, X, Loader2, ArrowRightLeft,
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
-  Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet
+  Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye
 } from 'lucide-react';
 import Modal from '../components/Modal';
 
 // Mock simple emoji list
-const COMMON_EMOJIS = ["😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞"];
+const COMMON_EMOJIS = ["😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞", "👀", "🚀", "✨", "💯"];
 
 const DEPARTMENTS = [
   { id: 'comercial', name: 'Comercial' },
@@ -23,7 +23,20 @@ const DEPARTMENTS = [
   { id: 'retencao', name: 'Retenção' }
 ];
 
-const Chat: React.FC = () => {
+const RECURRENCE_LABELS: Record<string, string> = {
+  none: 'Não',
+  daily: 'Diariamente',
+  weekly: 'Semanalmente',
+  biweekly: 'Quinzenalmente',
+  monthly: 'Mensalmente',
+  yearly: 'Anualmente'
+};
+
+interface ChatProps {
+  branding?: Branding;
+}
+
+const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [contacts, setContacts] = useState<Contact[]>(MOCK_CONTACTS);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [messageInput, setMessageInput] = useState('');
@@ -33,7 +46,7 @@ const Chat: React.FC = () => {
   // Right Panel States
   const [rightPanelOpen, setRightPanelOpen] = useState(false); // Contact Details
   const [rightPanelView, setRightPanelView] = useState<'info' | 'starred'>('info'); // View Mode
-  const [infoTab, setInfoTab] = useState<'crm' | 'notes' | 'media'>('crm');
+  const [infoTab, setInfoTab] = useState<'crm' | 'notes' | 'media' | 'proposals'>('crm');
   const [mediaFilter, setMediaFilter] = useState<'images' | 'docs'>('images');
 
   const [aiPanelOpen, setAiPanelOpen] = useState(false); // AI Copilot
@@ -46,6 +59,7 @@ const Chat: React.FC = () => {
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [messageMenuOpenId, setMessageMenuOpenId] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   
   // Call State
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'connected'>('idle');
@@ -57,6 +71,8 @@ const Chat: React.FC = () => {
   const [signatureEnabled, setSignatureEnabled] = useState(true); // Agent Signature
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [isCreatingQuickReply, setIsCreatingQuickReply] = useState(false);
+  const [newQuickReplyForm, setNewQuickReplyForm] = useState({ shortcut: '', content: '' });
 
   // Attachment State
   const [attachment, setAttachment] = useState<{ file?: File, preview?: string, type: MessageType, text?: string, location?: {lat: number, lng: number} } | null>(null);
@@ -66,6 +82,9 @@ const Chat: React.FC = () => {
     { id: '1', text: 'Cliente interessado no plano Enterprise.', date: '20/12/2024 10:00', author: 'Você' }
   ]);
   const [newNote, setNewNote] = useState('');
+  
+  // Proposals for this contact
+  const [contactProposals, setContactProposals] = useState<Proposal[]>([]);
 
   // AI State
   const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
@@ -76,8 +95,14 @@ const Chat: React.FC = () => {
   ]);
 
   // Modals State
-  const [activeModal, setActiveModal] = useState<'transfer' | 'export' | 'task' | 'schedule' | 'tags' | 'edit_contact' | 'forward' | 'quick_replies' | null>(null);
+  const [activeModal, setActiveModal] = useState<'transfer' | 'export' | 'schedule' | 'forward' | null>(null);
   const [transferData, setTransferData] = useState({ userId: '', sector: '' });
+  
+  // Scheduling State
+  const [scheduleData, setScheduleData] = useState({ date: '', time: '', recurrence: 'none' });
+  
+  // Forwarding State
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   
   // Edit Contact Form
   const [editContactForm, setEditContactForm] = useState<Partial<Contact>>({});
@@ -85,6 +110,11 @@ const Chat: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingIntervalRef = useRef<number | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Ref for typing debounce
+  
+  // Refs for Date/Time inputs to trigger picker programmatically
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const timeInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize selected contact if provided in props or default
   useEffect(() => {
@@ -101,6 +131,7 @@ const Chat: React.FC = () => {
       loadQuickReplies();
       setAttachment(null);
       setMessageInput('');
+      setReplyingTo(null);
       setIsTyping(false);
       setIsContactTyping(false);
       setHeaderMenuOpen(false);
@@ -110,12 +141,16 @@ const Chat: React.FC = () => {
       setAiInsights([]); // Reset AI
       setAiChatHistory([{ role: 'ai', content: 'Olá! Sou seu CEO Virtual. Analisei essa conversa e vejo uma oportunidade de upsell. Quer que eu escreva uma abordagem?' }]);
       setRightPanelView('info'); // Reset right panel
+      
+      // Load proposals for this contact (Mock logic)
+      const props = MOCK_PROPOSALS.filter(p => p.clientId === selectedContact.id);
+      setContactProposals(props);
     }
   }, [selectedContact]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping, attachment, isContactTyping]);
+  }, [messages, isTyping, attachment, isContactTyping, replyingTo]);
 
   const loadMessages = async (contactId: string) => {
     const data = await api.chat.getMessages(contactId);
@@ -125,6 +160,22 @@ const Chat: React.FC = () => {
   const loadQuickReplies = async () => {
     const data = await api.chat.getQuickReplies();
     setQuickReplies(data);
+  };
+
+  const handleCreateQuickReply = () => {
+    if (!newQuickReplyForm.shortcut || !newQuickReplyForm.content) return;
+    
+    const shortcut = newQuickReplyForm.shortcut.startsWith('/') ? newQuickReplyForm.shortcut : `/${newQuickReplyForm.shortcut}`;
+
+    const newReply: QuickReply = {
+        id: Date.now().toString(),
+        shortcut,
+        content: newQuickReplyForm.content
+    };
+    
+    setQuickReplies(prev => [...prev, newReply]);
+    setIsCreatingQuickReply(false);
+    setNewQuickReplyForm({ shortcut: '', content: '' });
   };
 
   // --- Call Handlers ---
@@ -149,6 +200,27 @@ const Chat: React.FC = () => {
     setMessageMenuOpenId(null);
   };
 
+  const handleDeleteMessage = (messageId: string) => {
+    if (confirm('Apagar esta mensagem?')) {
+      setMessages(prev => prev.filter(msg => msg.id !== messageId));
+    }
+    setMessageMenuOpenId(null);
+  };
+
+  const handleReplyMessage = (message: Message) => {
+    setReplyingTo(message);
+    setMessageMenuOpenId(null);
+    // Focus input
+    const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+    if (input) input.focus();
+  };
+
+  const handleForwardMessageInit = (message: Message) => {
+    setForwardMessage(message);
+    setActiveModal('forward');
+    setMessageMenuOpenId(null);
+  };
+
   // --- Workflow Actions (Status) ---
 
   const updateContactStatus = (contactId: string, newStatus: Contact['status']) => {
@@ -159,11 +231,6 @@ const Chat: React.FC = () => {
     // Switch tab if needed or keep user flow smooth
     if (newStatus === 'open') setActiveTab('open');
     if (newStatus === 'resolved') setActiveTab('resolved');
-  };
-
-  const handleAcceptTicket = () => {
-    if (!selectedContact) return;
-    updateContactStatus(selectedContact.id, 'open');
   };
 
   const handleResolveTicket = () => {
@@ -211,6 +278,46 @@ const Chat: React.FC = () => {
        setActiveModal(null);
        setTransferData({ userId: '', sector: '' });
     }
+  };
+
+  // --- Schedule Logic ---
+  const handleScheduleMessage = () => {
+    // Open modal even if empty input (for "Agendar Contato" functionality)
+    setActiveModal('schedule');
+  };
+
+  const confirmSchedule = () => {
+    if (!scheduleData.date || !scheduleData.time) {
+      alert("Selecione data e hora.");
+      return;
+    }
+    
+    // Simulate scheduling
+    const recurrenceLabel = RECURRENCE_LABELS[scheduleData.recurrence] || scheduleData.recurrence;
+    const systemMsg: Message = {
+      id: Date.now().toString(),
+      content: `Mensagem agendada para ${new Date(scheduleData.date + 'T' + scheduleData.time).toLocaleString('pt-BR')} (Recorrência: ${recurrenceLabel})`,
+      senderId: 'system',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      type: MessageType.TEXT,
+      status: 'read'
+    };
+    
+    setMessages(prev => [...prev, systemMsg]);
+    setActiveModal(null);
+    setMessageInput('');
+    setAttachment(null);
+    setScheduleData({ date: '', time: '', recurrence: 'none' });
+  };
+
+  // --- Forward Logic ---
+  const confirmForward = (targetContactId: string) => {
+    if (!forwardMessage) return;
+    const targetContact = contacts.find(c => c.id === targetContactId);
+    
+    alert(`Mensagem encaminhada para ${targetContact?.name}`);
+    setActiveModal(null);
+    setForwardMessage(null);
   };
 
   // --- AI Copilot Logic ---
@@ -284,19 +391,32 @@ const Chat: React.FC = () => {
   // --- Location Logic ---
   const handleSendLocation = () => {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        setAttachment({
-          type: MessageType.LOCATION,
-          text: 'Localização Atual',
-          location: {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          }
-        });
-        setAttachmentMenuOpen(false);
-      }, (error) => {
-        alert("Erro ao obter localização: " + error.message);
-      });
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setAttachment({
+            type: MessageType.LOCATION,
+            text: 'Localização Atual',
+            location: {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            }
+          });
+          setAttachmentMenuOpen(false);
+        }, 
+        (error) => {
+          console.error("Geolocation error:", error);
+          // Fallback simulation for demo purposes if permission denied or insecure context
+          setAttachment({
+            type: MessageType.LOCATION,
+            text: 'Localização Atual (Simulada)',
+            location: {
+              lat: -23.550520, 
+              lng: -46.633308
+            }
+          });
+          setAttachmentMenuOpen(false);
+        }
+      );
     } else {
       alert("Geolocalização não suportada neste navegador.");
     }
@@ -347,6 +467,11 @@ const Chat: React.FC = () => {
       contentToSend += `\n\n~ Admin User`;
     }
 
+    // Append Reply context if replying
+    if (replyingTo) {
+       // Ideally backend handles structure, we just simulate the rendering part
+    }
+
     const newMessage: Message = {
       id: Date.now().toString(),
       content: contentToSend,
@@ -363,6 +488,7 @@ const Chat: React.FC = () => {
     setMessages(prev => [...prev, newMessage]);
     setMessageInput('');
     setAttachment(null); 
+    setReplyingTo(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
 
     await api.chat.sendMessage(selectedContact.id, contentToSend, newMessage.type);
@@ -635,7 +761,7 @@ const Chat: React.FC = () => {
                            ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' 
                            : 'bg-white text-gray-900 rounded-tl-none'
                       }`}>
-                         {/* Reply Context (Example) */}
+                         {/* Reply Context (Example Hardcoded) - In real app, check a `replyToId` field */}
                          {idx === 2 && msg.senderId === 'me' && (
                             <div className="bg-black/5 rounded px-2 py-1 mb-2 border-l-4 border-purple-500 text-xs text-gray-600">
                                <p className="font-bold text-purple-700">Elisa Maria</p>
@@ -674,6 +800,21 @@ const Chat: React.FC = () => {
                             </div>
                          )}
 
+                         {msg.type === MessageType.DOCUMENT && (
+                            <div className="flex items-center bg-gray-100 p-3 rounded-lg min-w-[240px] border border-gray-200 mb-1">
+                               <div className="bg-white p-2 rounded-full mr-3 text-red-500 shadow-sm">
+                                  <FileText size={20} />
+                               </div>
+                               <div className="overflow-hidden flex-1">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{msg.fileName || 'Documento'}</p>
+                                  <p className="text-[10px] text-gray-500 uppercase">DOC • 240 KB</p>
+                               </div>
+                               <button className="ml-2 p-1 text-gray-500 hover:text-gray-700 bg-white rounded-full shadow-sm">
+                                  <Download size={16} />
+                               </button>
+                            </div>
+                         )}
+
                          {/* Metadata */}
                          <div className="flex items-center justify-end space-x-1 mt-1">
                             {msg.starred && <Star size={10} className="fill-yellow-400 text-yellow-400 mr-1" />}
@@ -693,17 +834,29 @@ const Chat: React.FC = () => {
 
                          {/* Message Context Menu */}
                          {messageMenuOpenId === msg.id && (
-                            <div className="absolute top-6 right-2 bg-white rounded shadow-lg border border-gray-100 z-20 w-32 overflow-hidden py-1">
+                            <div className="absolute top-6 right-2 bg-white rounded shadow-lg border border-gray-100 z-20 w-40 overflow-hidden py-1">
+                               <button 
+                                 onClick={() => handleReplyMessage(msg)}
+                                 className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center"
+                               >
+                                  <CornerDownRight size={12} className="mr-2" /> Responder
+                               </button>
                                <button 
                                  onClick={() => toggleStarMessage(msg.id)} 
                                  className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center"
                                >
                                   <Star size={12} className="mr-2" /> {msg.starred ? 'Desfavoritar' : 'Favoritar'}
                                </button>
-                               <button className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center">
-                                  <ArrowRightLeft size={12} className="mr-2" /> Responder
+                               <button 
+                                 onClick={() => handleForwardMessageInit(msg)}
+                                 className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center"
+                               >
+                                  <Share2 size={12} className="mr-2" /> Encaminhar
                                </button>
-                               <button className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center">
+                               <button 
+                                 onClick={() => handleDeleteMessage(msg.id)}
+                                 className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center"
+                               >
                                   <Trash2 size={12} className="mr-2" /> Apagar
                                </button>
                             </div>
@@ -727,25 +880,56 @@ const Chat: React.FC = () => {
 
              {/* Footer / Input Area */}
              <div className="bg-[#f0f2f5] px-4 py-2 border-t border-gray-200" onClick={() => setMessageMenuOpenId(null)}>
-                {/* ... (Existing Input Logic) */}
+                
+                {/* Reply Context Banner */}
+                {replyingTo && (
+                   <div className="mb-2 p-2 bg-white rounded-lg shadow-sm border-l-4 border-purple-500 animate-slideUp flex justify-between items-center">
+                      <div className="flex-1 overflow-hidden">
+                         <p className="text-xs font-bold text-purple-700">{replyingTo.senderId === 'me' ? 'Você' : selectedContact.name}</p>
+                         <p className="text-xs text-gray-500 truncate">{replyingTo.content || '[Mídia]'}</p>
+                      </div>
+                      <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-100 rounded-full">
+                         <X size={16} className="text-gray-500" />
+                      </button>
+                   </div>
+                )}
+
+                {/* Attachment Preview Banner */}
                 {attachment && (
                    <div className="mb-2 p-2 bg-white rounded-lg shadow-sm flex items-center justify-between border-l-4 border-green-500 animate-slideUp">
                       <div className="flex items-center">
                          {attachment.type === MessageType.IMAGE ? (
                             <img src={attachment.preview} className="w-10 h-10 object-cover rounded mr-3" />
+                         ) : attachment.type === MessageType.LOCATION ? (
+                            <div className="w-10 h-10 bg-red-100 rounded flex items-center justify-center mr-3 text-red-500">
+                               <MapPin size={20} />
+                            </div>
                          ) : (
                             <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 text-gray-500">
                                <FileText size={20} />
                             </div>
                          )}
                          <div>
-                            <p className="text-sm font-medium text-gray-800">{attachment.file?.name || 'Arquivo'}</p>
+                            <p className="text-sm font-medium text-gray-800">
+                              {attachment.type === MessageType.LOCATION ? 'Minha Localização' : (attachment.file?.name || 'Arquivo')}
+                            </p>
                             <p className="text-xs text-gray-500 uppercase">{attachment.type}</p>
                          </div>
                       </div>
                       <button onClick={clearAttachment} className="p-1 hover:bg-gray-100 rounded-full">
                          <X size={16} className="text-gray-500" />
                       </button>
+                   </div>
+                )}
+
+                {/* Signature Preview */}
+                {messageInput.trim() && signatureEnabled && !attachment && (
+                   <div className="absolute bottom-16 right-4 mb-2 bg-[#d9fdd3] p-2 rounded-lg rounded-br-none shadow-md border border-green-100 text-xs text-gray-800 max-w-[200px] animate-fadeIn z-20">
+                      <p className="line-clamp-3">{messageInput}</p>
+                      <div className="flex items-center justify-end mt-1 text-green-700 font-medium">
+                         <span className="text-[10px] mr-1">~ Admin User</span>
+                         <Check size={12} />
+                      </div>
                    </div>
                 )}
 
@@ -803,12 +987,22 @@ const Chat: React.FC = () => {
                         onChange={(e) => {
                            setMessageInput(e.target.value);
                            setIsTyping(true);
-                           setTimeout(() => setIsTyping(false), 2000);
+                           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+                           typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
                         }}
                         onKeyDown={handleKeyPress}
                         disabled={isRecording}
                       />
                    </div>
+
+                   {/* Schedule Button */}
+                   <button 
+                     onClick={handleScheduleMessage}
+                     className="p-3 text-gray-500 hover:bg-gray-200 rounded-full transition-colors"
+                     title="Agendar Mensagem"
+                   >
+                      <Clock size={20} />
+                   </button>
 
                    {/* Send / Mic Button */}
                    {messageInput || attachment ? (
@@ -837,15 +1031,28 @@ const Chat: React.FC = () => {
            </>
          ) : (
            <div className="flex-1 flex flex-col items-center justify-center bg-[#f0f2f5] border-l border-gray-200">
-              <div className="w-32 h-32 bg-gray-200 rounded-full flex items-center justify-center mb-6">
-                 <MessageSquare size={64} className="text-gray-400" />
+              <div className="mb-6 relative group">
+                 <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-sm overflow-hidden border-4 border-gray-100">
+                    {branding?.logoUrl ? (
+                        <img 
+                          src={branding.logoUrl} 
+                          alt={branding.appName} 
+                          className="w-20 h-20 object-contain"
+                        />
+                    ) : (
+                        <MessageSquare size={56} className="text-gray-300" style={{ color: branding?.primaryColor ? branding.primaryColor : undefined, opacity: 0.5 }} />
+                    )}
+                 </div>
               </div>
-              <h2 className="text-2xl font-light text-gray-600 mb-2">OmniConnect Web</h2>
-              <p className="text-gray-400 text-sm max-w-md text-center">
-                 Selecione um contato para iniciar o atendimento. Use o menu lateral para filtrar entre abertos, pendentes e resolvidos.
+              <h2 className="text-2xl font-medium text-gray-700 mb-3 tracking-tight">
+                 {branding?.appName || 'OmniConnect Web'}
+              </h2>
+              <p className="text-gray-500 text-sm max-w-md text-center leading-relaxed">
+                 Selecione um contato para iniciar o atendimento. <br/>
+                 Use o menu lateral para filtrar entre abertos, pendentes e resolvidos.
               </p>
-              <div className="mt-8 flex items-center text-xs text-gray-400">
-                 <Lock size={12} className="mr-1" /> Suas mensagens pessoais são protegidas.
+              <div className="mt-10 flex items-center text-xs text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full">
+                 <Lock size={10} className="mr-1.5" /> Suas mensagens pessoais são protegidas com criptografia.
               </div>
            </div>
          )}
@@ -899,6 +1106,15 @@ const Chat: React.FC = () => {
                            </button>
                            <span className="text-[10px] text-gray-500">Buscar</span>
                         </div>
+                        <div className="text-center">
+                           <button 
+                              onClick={() => setActiveModal('schedule')}
+                              className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-purple-100 hover:text-purple-600 transition-colors mx-auto mb-1"
+                           >
+                              <Calendar size={18} />
+                           </button>
+                           <span className="text-[10px] text-gray-500">Agendar</span>
+                        </div>
                      </div>
                   </div>
 
@@ -921,6 +1137,12 @@ const Chat: React.FC = () => {
                            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'media' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
                         >
                            Mídia
+                        </button>
+                        <button 
+                           onClick={() => setInfoTab('proposals')} 
+                           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'proposals' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                        >
+                           Propostas
                         </button>
                      </div>
                   </div>
@@ -1059,6 +1281,43 @@ const Chat: React.FC = () => {
                            </div>
                         </div>
                      )}
+
+                     {infoTab === 'proposals' && (
+                        <div className="space-y-3">
+                           {contactProposals.length === 0 ? (
+                              <div className="text-center py-8 text-gray-400 text-sm">
+                                 <FileText size={32} className="mx-auto mb-2 opacity-20" />
+                                 <p>Nenhuma proposta para este contato.</p>
+                              </div>
+                           ) : (
+                              contactProposals.map(prop => (
+                                 <div key={prop.id} className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow">
+                                    <div className="flex justify-between items-start mb-1">
+                                       <h4 className="text-sm font-bold text-gray-800 truncate pr-2">{prop.title}</h4>
+                                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                                          prop.status === 'accepted' ? 'bg-green-100 text-green-700' :
+                                          prop.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                          'bg-red-100 text-red-700'
+                                       }`}>
+                                          {prop.status === 'accepted' ? 'Aceita' : prop.status === 'pending' ? 'Pendente' : 'Recusada'}
+                                       </span>
+                                    </div>
+                                    <div className="flex justify-between items-end">
+                                       <div>
+                                          <p className="text-xs text-gray-500">Enviado: {new Date(prop.sentDate).toLocaleDateString()}</p>
+                                          <p className="text-sm font-bold text-purple-700 mt-1">
+                                             {prop.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                          </p>
+                                       </div>
+                                       <button className="text-gray-400 hover:text-purple-600">
+                                          <Eye size={16} />
+                                       </button>
+                                    </div>
+                                 </div>
+                              ))
+                           )}
+                        </div>
+                     )}
                   </div>
                </>
             ) : (
@@ -1150,27 +1409,70 @@ const Chat: React.FC = () => {
       )}
 
       {/* Quick Replies Modal */}
-      <Modal isOpen={showQuickReplies} onClose={() => setShowQuickReplies(false)} title="Respostas Rápidas">
+      <Modal isOpen={showQuickReplies} onClose={() => { setShowQuickReplies(false); setIsCreatingQuickReply(false); }} title="Respostas Rápidas">
          <div className="space-y-2">
-            {quickReplies.map(qr => (
-               <button 
-                 key={qr.id}
-                 onClick={() => {
-                    setMessageInput(prev => prev + qr.content);
-                    setShowQuickReplies(false);
-                 }}
-                 className="w-full text-left p-3 hover:bg-gray-50 rounded-lg border border-gray-200 group"
-               >
-                  <div className="flex justify-between">
-                     <span className="font-bold text-gray-800 text-sm">{qr.shortcut}</span>
-                     <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100">Usar</span>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">{qr.content}</p>
-               </button>
-            ))}
-            <button className="w-full py-2 border border-dashed border-gray-300 rounded text-gray-500 text-sm hover:bg-gray-50 mt-2">
-               + Criar nova resposta
-            </button>
+            {!isCreatingQuickReply ? (
+                <>
+                    {quickReplies.map(qr => (
+                       <button 
+                         key={qr.id}
+                         onClick={() => {
+                            setMessageInput(prev => prev + qr.content);
+                            setShowQuickReplies(false);
+                         }}
+                         className="w-full text-left p-3 hover:bg-gray-50 rounded-lg border border-gray-200 group transition-colors"
+                       >
+                          <div className="flex justify-between">
+                             <span className="font-bold text-gray-800 text-sm">{qr.shortcut}</span>
+                             <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100">Usar</span>
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">{qr.content}</p>
+                       </button>
+                    ))}
+                    <button 
+                        onClick={() => setIsCreatingQuickReply(true)}
+                        className="w-full py-3 border border-dashed border-gray-300 rounded-lg text-gray-500 text-sm hover:bg-gray-50 mt-2 flex items-center justify-center transition-colors"
+                    >
+                       <Plus size={16} className="mr-2" /> Criar nova resposta
+                    </button>
+                </>
+            ) : (
+                <div className="space-y-4 p-1">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Atalho</label>
+                        <input 
+                            type="text" 
+                            placeholder="/exemplo" 
+                            className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                            value={newQuickReplyForm.shortcut}
+                            onChange={e => setNewQuickReplyForm({...newQuickReplyForm, shortcut: e.target.value})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Mensagem</label>
+                        <textarea 
+                            placeholder="Digite a mensagem completa..." 
+                            className="w-full border border-gray-300 rounded-lg p-2 text-sm h-24 resize-none focus:ring-2 focus:ring-purple-500 outline-none"
+                            value={newQuickReplyForm.content}
+                            onChange={e => setNewQuickReplyForm({...newQuickReplyForm, content: e.target.value})}
+                        />
+                    </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                        <button 
+                            onClick={() => setIsCreatingQuickReply(false)}
+                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm"
+                        >
+                            Cancelar
+                        </button>
+                        <button 
+                            onClick={handleCreateQuickReply}
+                            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+                        >
+                            Salvar
+                        </button>
+                    </div>
+                </div>
+            )}
          </div>
       </Modal>
 
@@ -1198,7 +1500,7 @@ const Chat: React.FC = () => {
                   <div className="w-full border-t border-gray-300"></div>
                </div>
                <div className="relative flex justify-center">
-                  <span className="px-2 bg-white text-xs text-gray-500">OU</span>
+                  <span className="px-2 bg-white text-xs text-gray-500">E/OU</span>
                </div>
             </div>
 
@@ -1207,7 +1509,7 @@ const Chat: React.FC = () => {
                <select 
                  className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
                  value={transferData.userId}
-                 onChange={(e) => setTransferData({ ...transferData, userId: e.target.value, sector: '' })}
+                 onChange={(e) => setTransferData({ ...transferData, userId: e.target.value })}
                >
                   <option value="">Selecione um usuário...</option>
                   {MOCK_USERS.map(user => (
@@ -1224,6 +1526,116 @@ const Chat: React.FC = () => {
                   <ArrowRightLeft size={16} className="mr-2" /> Transferir Agora
                </button>
             </div>
+         </div>
+      </Modal>
+
+      {/* Schedule Message Modal */}
+      <Modal isOpen={activeModal === 'schedule'} onClose={() => setActiveModal(null)} title="Agendar Mensagem">
+         <div className="space-y-4">
+            <p className="text-sm text-gray-600 mb-2">Defina quando esta mensagem será enviada.</p>
+            
+            <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                  <div className="relative">
+                     <div 
+                        className="absolute inset-y-0 left-0 pl-3 flex items-center cursor-pointer text-gray-500 hover:text-purple-600"
+                        onClick={() => dateInputRef.current?.showPicker()}
+                     >
+                        <Calendar size={18} />
+                     </div>
+                     <input 
+                       ref={dateInputRef}
+                       type="date" 
+                       className="w-full border border-gray-300 rounded-lg pl-10 pr-2 py-2 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                       value={scheduleData.date}
+                       onChange={(e) => setScheduleData({ ...scheduleData, date: e.target.value })}
+                     />
+                  </div>
+               </div>
+               <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hora</label>
+                  <div className="relative">
+                     <div 
+                        className="absolute inset-y-0 left-0 pl-3 flex items-center cursor-pointer text-gray-500 hover:text-purple-600"
+                        onClick={() => timeInputRef.current?.showPicker()}
+                     >
+                        <Clock size={18} />
+                     </div>
+                     <input 
+                       ref={timeInputRef}
+                       type="time" 
+                       className="w-full border border-gray-300 rounded-lg pl-10 pr-2 py-2 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                       value={scheduleData.time}
+                       onChange={(e) => setScheduleData({ ...scheduleData, time: e.target.value })}
+                     />
+                  </div>
+               </div>
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Recorrência</label>
+               <select 
+                 className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
+                 value={scheduleData.recurrence}
+                 onChange={(e) => setScheduleData({ ...scheduleData, recurrence: e.target.value })}
+               >
+                  <option value="none">Não repetir (Apenas uma vez)</option>
+                  <option value="daily">Diariamente</option>
+                  <option value="weekly">Semanalmente</option>
+                  <option value="biweekly">Quinzenalmente</option>
+                  <option value="monthly">Mensalmente</option>
+                  <option value="yearly">Anualmente</option>
+               </select>
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Mensagem</label>
+               <textarea 
+                 className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                 rows={3}
+                 value={messageInput}
+                 onChange={(e) => setMessageInput(e.target.value)}
+                 placeholder="Digite a mensagem a ser agendada..."
+               />
+            </div>
+
+            <div className="flex justify-end pt-2 gap-2">
+               <button onClick={() => setActiveModal(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Cancelar</button>
+               <button 
+                 onClick={confirmSchedule}
+                 className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 flex items-center shadow-sm"
+               >
+                  <Clock size={16} className="mr-2" /> Agendar Envio
+               </button>
+            </div>
+         </div>
+      </Modal>
+
+      {/* Forward Message Modal */}
+      <Modal isOpen={activeModal === 'forward'} onClose={() => setActiveModal(null)} title="Encaminhar Mensagem">
+         <div className="space-y-4">
+            <p className="text-sm text-gray-600 mb-2">Selecione o contato para encaminhar a mensagem.</p>
+            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg custom-scrollbar">
+               {contacts.filter(c => c.id !== selectedContact?.id).map(contact => (
+                  <button 
+                    key={contact.id} 
+                    onClick={() => confirmForward(contact.id)}
+                    className="w-full text-left p-3 hover:bg-gray-50 flex items-center border-b border-gray-100 last:border-0"
+                  >
+                     <img src={contact.avatar} className="w-8 h-8 rounded-full mr-3" />
+                     <div>
+                        <p className="text-sm font-bold text-gray-800">{contact.name}</p>
+                        <p className="text-xs text-gray-500">{contact.phone}</p>
+                     </div>
+                  </button>
+               ))}
+            </div>
+            {forwardMessage && (
+               <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-600 italic">
+                  "{forwardMessage.content || '[Mídia]'}"
+               </div>
+            )}
          </div>
       </Modal>
 
