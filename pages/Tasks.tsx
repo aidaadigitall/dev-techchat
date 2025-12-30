@@ -830,9 +830,10 @@ const Tasks: React.FC = () => {
                 <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                   <div className="flex gap-2 items-center">
                     <div className="relative">
+                       {/* Ensure input covers the button and is clickable with cursor pointer */}
                        <input 
                          type="datetime-local" 
-                         className="absolute inset-0 opacity-0 cursor-pointer w-full z-10"
+                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                          value={quickAddDate}
                          onChange={(e) => setQuickAddDate(e.target.value)}
                          title="Escolher data e hora"

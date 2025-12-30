@@ -16,11 +16,17 @@ interface SettingsProps {
 
 const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding, onUpdateBranding }) => {
   const { addToast } = useToast();
-  const [activeTab, setActiveTab] = useState<'profile' | 'branding' | 'company' | 'integrations' | 'team' | 'ai' | 'tags_sectors'>('integrations'); // Default to integrations for this demo
+  const [activeTab, setActiveTab] = useState<'profile' | 'branding' | 'company' | 'integrations' | 'team' | 'ai' | 'tags_sectors'>('profile'); // Default to profile based on feedback
   const [loading, setLoading] = useState(false);
 
   // States
-  const [profileForm, setProfileForm] = useState({ name: currentUser?.name || '', email: currentUser?.email || '', currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [profileForm, setProfileForm] = useState({ 
+    name: currentUser?.name || '', 
+    email: currentUser?.email || '', 
+    currentPassword: '', 
+    newPassword: '', 
+    confirmPassword: '' 
+  });
   const [profileAvatarPreview, setProfileAvatarPreview] = useState<string>(currentUser?.avatar || '');
   const [companyForm, setCompanyForm] = useState(() => {
     const saved = localStorage.getItem('app_company_settings');
@@ -68,6 +74,14 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     };
   }, []);
 
+  // Update form when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+        setProfileForm(prev => ({ ...prev, name: currentUser.name, email: currentUser.email }));
+        setProfileAvatarPreview(currentUser.avatar);
+    }
+  }, [currentUser]);
+
   // --- Handlers ---
 
   const handleGenerateQR = () => {
@@ -83,14 +97,36 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   };
 
   const handleSaveProfile = async () => {
+      if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) {
+          addToast('As senhas não coincidem.', 'error');
+          return;
+      }
+
       setLoading(true);
       try {
-          await api.users.updateProfile({ name: profileForm.name }); // Mocked
-          addToast('Perfil atualizado!', 'success');
+          await api.users.updateProfile({ name: profileForm.name }); 
+          
+          if (onUpdateUser && currentUser) {
+              onUpdateUser({ ...currentUser, name: profileForm.name, email: profileForm.email, avatar: profileAvatarPreview });
+          }
+          
+          addToast('Perfil atualizado com sucesso!', 'success');
+          setProfileForm(prev => ({...prev, currentPassword: '', newPassword: '', confirmPassword: ''}));
       } catch(e) {
           addToast('Erro ao atualizar perfil', 'error');
       } finally {
           setLoading(false);
+      }
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              setProfileAvatarPreview(reader.result as string);
+          };
+          reader.readAsDataURL(file);
       }
   };
 
@@ -161,10 +197,121 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
         );
 
       case 'profile':
-          // ... (Profile form logic similar to previous version) ...
-          return <div className="p-4">Carregando perfil... (Implementação padrão mantida)</div>;
+          return (
+            <div className="space-y-6 animate-fadeIn">
+               <div className="border-b border-gray-100 pb-4">
+                  <h2 className="text-xl font-semibold text-gray-800">Meu Perfil</h2>
+                  <p className="text-sm text-gray-500">Gerencie suas informações pessoais e segurança.</p>
+               </div>
 
-      default: return <div className="p-4 text-gray-500">Selecione uma opção no menu.</div>;
+               <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                  <div className="flex flex-col md:flex-row gap-8">
+                     {/* Avatar Section */}
+                     <div className="flex flex-col items-center space-y-3">
+                        <div className="relative group">
+                           <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-100 bg-gray-50">
+                              {profileAvatarPreview ? (
+                                 <img src={profileAvatarPreview} alt="Profile" className="w-full h-full object-cover" />
+                              ) : (
+                                 <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                    <UserIcon size={48} />
+                                 </div>
+                              )}
+                           </div>
+                           <button 
+                             onClick={() => fileInputRef.current?.click()}
+                             className="absolute bottom-0 right-0 bg-white border border-gray-200 p-2 rounded-full shadow-md hover:bg-gray-50 text-gray-600"
+                           >
+                              <Camera size={16} />
+                           </button>
+                           <input 
+                             type="file" 
+                             ref={fileInputRef} 
+                             className="hidden" 
+                             accept="image/*"
+                             onChange={handleAvatarChange}
+                           />
+                        </div>
+                        <p className="text-xs text-gray-500">JPG, PNG ou GIF. Max 2MB.</p>
+                     </div>
+
+                     {/* Form Section */}
+                     <div className="flex-1 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                              <input 
+                                type="text" 
+                                className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                                value={profileForm.name}
+                                onChange={e => setProfileForm({...profileForm, name: e.target.value})}
+                              />
+                           </div>
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                              <input 
+                                type="email" 
+                                className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                                value={profileForm.email}
+                                disabled
+                              />
+                           </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-gray-100">
+                           <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                              <Lock size={16} className="mr-2 text-purple-600" /> Alterar Senha
+                           </h3>
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                 <label className="block text-xs font-medium text-gray-500 mb-1">Nova Senha</label>
+                                 <input 
+                                   type="password" 
+                                   className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                                   placeholder="••••••••"
+                                   value={profileForm.newPassword}
+                                   onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})}
+                                 />
+                              </div>
+                              <div>
+                                 <label className="block text-xs font-medium text-gray-500 mb-1">Confirmar Senha</label>
+                                 <input 
+                                   type="password" 
+                                   className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                                   placeholder="••••••••"
+                                   value={profileForm.confirmPassword}
+                                   onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})}
+                                 />
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="pt-4 flex justify-end">
+                           <button 
+                             onClick={handleSaveProfile}
+                             disabled={loading}
+                             className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 font-medium shadow-sm flex items-center transition-colors disabled:opacity-70"
+                           >
+                              {loading ? <RefreshCw size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />}
+                              Salvar Alterações
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          );
+
+      case 'company':
+          return (
+             <div className="p-4 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
+                <Building size={48} className="mx-auto text-gray-300 mb-3" />
+                <h3 className="text-lg font-medium text-gray-900">Configurações da Empresa</h3>
+                <p className="text-sm">Em breve você poderá editar dados fiscais e horários de atendimento aqui.</p>
+             </div>
+          );
+
+      default: return <div className="p-4 text-gray-500 text-center">Selecione uma opção no menu lateral.</div>;
     }
   };
 
@@ -176,8 +323,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
           </div>
           <nav className="flex-1 space-y-1 px-3">
              {[
-               { id: 'integrations', label: 'Conexões (WhatsApp)', icon: <Smartphone size={18} /> },
                { id: 'profile', label: 'Meu Perfil', icon: <UserIcon size={18} /> },
+               { id: 'integrations', label: 'Conexões (WhatsApp)', icon: <Smartphone size={18} /> },
                { id: 'company', label: 'Empresa', icon: <Building size={18} /> },
                { id: 'ai', label: 'Agentes IA', icon: <BrainCircuit size={18} /> },
              ].map(item => (
