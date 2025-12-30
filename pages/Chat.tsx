@@ -9,7 +9,7 @@ import {
   Bot, ChevronDown, X, Loader2, ArrowRightLeft,
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
-  Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye
+  Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply
 } from 'lucide-react';
 import Modal from '../components/Modal';
 
@@ -47,7 +47,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [rightPanelOpen, setRightPanelOpen] = useState(false); // Contact Details
   const [rightPanelView, setRightPanelView] = useState<'info' | 'starred'>('info'); // View Mode
   const [infoTab, setInfoTab] = useState<'crm' | 'notes' | 'media' | 'proposals'>('crm');
-  const [mediaFilter, setMediaFilter] = useState<'images' | 'docs'>('images');
+  const [mediaFilter, setMediaFilter] = useState<'images' | 'videos' | 'docs'>('images');
 
   const [aiPanelOpen, setAiPanelOpen] = useState(false); // AI Copilot
   
@@ -100,6 +100,9 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   
   // Scheduling State
   const [scheduleData, setScheduleData] = useState({ date: '', time: '', recurrence: 'none' });
+  const [scheduledMessages, setScheduledMessages] = useState<{id: string, date: string, message: string, recurrence: string}[]>([
+      { id: '1', date: '2025-02-15 09:00', message: 'Olá, gostaria de saber se você teve tempo de analisar a proposta.', recurrence: 'none' }
+  ]);
   
   // Forwarding State
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
@@ -294,20 +297,23 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     
     // Simulate scheduling
     const recurrenceLabel = RECURRENCE_LABELS[scheduleData.recurrence] || scheduleData.recurrence;
-    const systemMsg: Message = {
-      id: Date.now().toString(),
-      content: `Mensagem agendada para ${new Date(scheduleData.date + 'T' + scheduleData.time).toLocaleString('pt-BR')} (Recorrência: ${recurrenceLabel})`,
-      senderId: 'system',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      type: MessageType.TEXT,
-      status: 'read'
+    const dateStr = `${scheduleData.date} ${scheduleData.time}`;
+    
+    // Add to local list
+    const newScheduled = {
+        id: Date.now().toString(),
+        date: dateStr,
+        message: messageInput || '(Mídia)',
+        recurrence: recurrenceLabel
     };
     
-    setMessages(prev => [...prev, systemMsg]);
+    setScheduledMessages(prev => [...prev, newScheduled]);
+    
     setActiveModal(null);
     setMessageInput('');
     setAttachment(null);
     setScheduleData({ date: '', time: '', recurrence: 'none' });
+    alert("Mensagem agendada com sucesso!");
   };
 
   // --- Forward Logic ---
@@ -617,9 +623,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   };
 
   // --- Helper for Media ---
-  const getMediaMessages = (type: 'images' | 'docs') => {
+  const getMediaMessages = (type: 'images' | 'videos' | 'docs') => {
     return messages.filter(m => {
-      if (type === 'images') return m.type === MessageType.IMAGE || m.type === MessageType.VIDEO;
+      if (type === 'images') return m.type === MessageType.IMAGE;
+      if (type === 'videos') return m.type === MessageType.VIDEO;
       if (type === 'docs') return m.type === MessageType.DOCUMENT;
       return false;
     });
@@ -832,33 +839,38 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                             <ChevronDown size={12} className="text-gray-500" />
                          </button>
 
-                         {/* Message Context Menu */}
+                         {/* Improved Context Menu */}
                          {messageMenuOpenId === msg.id && (
-                            <div className="absolute top-6 right-2 bg-white rounded shadow-lg border border-gray-100 z-20 w-40 overflow-hidden py-1">
-                               <button 
-                                 onClick={() => handleReplyMessage(msg)}
-                                 className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center"
-                               >
-                                  <CornerDownRight size={12} className="mr-2" /> Responder
-                               </button>
-                               <button 
-                                 onClick={() => toggleStarMessage(msg.id)} 
-                                 className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center"
-                               >
-                                  <Star size={12} className="mr-2" /> {msg.starred ? 'Desfavoritar' : 'Favoritar'}
-                               </button>
-                               <button 
-                                 onClick={() => handleForwardMessageInit(msg)}
-                                 className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center"
-                               >
-                                  <Share2 size={12} className="mr-2" /> Encaminhar
-                               </button>
-                               <button 
-                                 onClick={() => handleDeleteMessage(msg.id)}
-                                 className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center"
-                               >
-                                  <Trash2 size={12} className="mr-2" /> Apagar
-                               </button>
+                            <div className="absolute top-6 right-2 bg-white rounded-lg shadow-xl border border-gray-100 z-50 w-44 overflow-hidden py-1 animate-fadeIn">
+                               <div className="px-1 py-1">
+                                   <button 
+                                     onClick={() => handleReplyMessage(msg)}
+                                     className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center rounded-md transition-colors"
+                                   >
+                                      <Reply size={16} className="mr-3 text-purple-600" /> Responder
+                                   </button>
+                                   <button 
+                                     onClick={() => toggleStarMessage(msg.id)} 
+                                     className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center rounded-md transition-colors"
+                                   >
+                                      <Star size={16} className={`mr-3 ${msg.starred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} /> {msg.starred ? 'Desfavoritar' : 'Favoritar'}
+                                   </button>
+                                   <button 
+                                     onClick={() => handleForwardMessageInit(msg)}
+                                     className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center rounded-md transition-colors"
+                                   >
+                                      <Share2 size={16} className="mr-3 text-gray-400" /> Encaminhar
+                                   </button>
+                               </div>
+                               <div className="h-px bg-gray-100 my-1"></div>
+                               <div className="px-1 pb-1">
+                                   <button 
+                                     onClick={() => handleDeleteMessage(msg.id)}
+                                     className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center rounded-md transition-colors font-medium"
+                                   >
+                                      <Trash2 size={16} className="mr-3" /> Apagar
+                                   </button>
+                               </div>
                             </div>
                          )}
                       </div>
@@ -1236,7 +1248,13 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                  onClick={() => setMediaFilter('images')}
                                  className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'images' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
                               >
-                                 Mídia
+                                 Fotos
+                              </button>
+                              <button 
+                                 onClick={() => setMediaFilter('videos')}
+                                 className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'videos' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
+                              >
+                                 Vídeos
                               </button>
                               <button 
                                  onClick={() => setMediaFilter('docs')}
@@ -1247,20 +1265,21 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                            </div>
                            
                            <div className="flex-1 overflow-y-auto">
-                              {mediaFilter === 'images' ? (
+                              {(mediaFilter === 'images' || mediaFilter === 'videos') ? (
                                  <div className="grid grid-cols-3 gap-2">
-                                    {getMediaMessages('images').map(m => (
+                                    {getMediaMessages(mediaFilter).map(m => (
                                        <div key={m.id} className="aspect-square bg-gray-100 rounded cursor-pointer overflow-hidden border border-gray-200">
                                           {m.type === MessageType.IMAGE ? (
                                              <img src={m.mediaUrl || 'https://via.placeholder.com/150'} className="w-full h-full object-cover" />
                                           ) : (
-                                             <div className="w-full h-full flex items-center justify-center bg-gray-800 text-white">
+                                             <div className="w-full h-full flex items-center justify-center bg-gray-800 text-white relative">
                                                 <PlayCircle size={24} />
+                                                <span className="absolute bottom-1 right-1 text-[8px] bg-black/50 px-1 rounded">0:15</span>
                                              </div>
                                           )}
                                        </div>
                                     ))}
-                                    {getMediaMessages('images').length === 0 && <p className="col-span-3 text-center text-xs text-gray-400 py-4">Nenhuma imagem</p>}
+                                    {getMediaMessages(mediaFilter).length === 0 && <p className="col-span-3 text-center text-xs text-gray-400 py-4">Nenhum arquivo encontrado.</p>}
                                  </div>
                               ) : (
                                  <div className="space-y-2">
@@ -1530,84 +1549,99 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       </Modal>
 
       {/* Schedule Message Modal */}
-      <Modal isOpen={activeModal === 'schedule'} onClose={() => setActiveModal(null)} title="Agendar Mensagem">
+      <Modal isOpen={activeModal === 'schedule'} onClose={() => setActiveModal(null)} title="Agendamentos">
          <div className="space-y-4">
-            <p className="text-sm text-gray-600 mb-2">Defina quando esta mensagem será enviada.</p>
-            
-            <div className="grid grid-cols-2 gap-4">
-               <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                  <div className="relative">
-                     <div 
-                        className="absolute inset-y-0 left-0 pl-3 flex items-center cursor-pointer text-gray-500 hover:text-purple-600"
-                        onClick={() => dateInputRef.current?.showPicker()}
-                     >
-                        <Calendar size={18} />
-                     </div>
-                     <input 
-                       ref={dateInputRef}
-                       type="date" 
-                       className="w-full border border-gray-300 rounded-lg pl-10 pr-2 py-2 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                       value={scheduleData.date}
-                       onChange={(e) => setScheduleData({ ...scheduleData, date: e.target.value })}
-                     />
-                  </div>
-               </div>
-               <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Hora</label>
-                  <div className="relative">
-                     <div 
-                        className="absolute inset-y-0 left-0 pl-3 flex items-center cursor-pointer text-gray-500 hover:text-purple-600"
-                        onClick={() => timeInputRef.current?.showPicker()}
-                     >
-                        <Clock size={18} />
-                     </div>
-                     <input 
-                       ref={timeInputRef}
-                       type="time" 
-                       className="w-full border border-gray-300 rounded-lg pl-10 pr-2 py-2 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                       value={scheduleData.time}
-                       onChange={(e) => setScheduleData({ ...scheduleData, time: e.target.value })}
-                     />
-                  </div>
-               </div>
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                    <Clock size={16} className="mr-2 text-purple-600" /> Novo Agendamento
+                </h4>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                   <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Data</label>
+                      <input 
+                        ref={dateInputRef}
+                        type="date" 
+                        className="w-full border border-gray-300 rounded-md p-1.5 text-sm bg-white"
+                        value={scheduleData.date}
+                        onChange={(e) => setScheduleData({ ...scheduleData, date: e.target.value })}
+                      />
+                   </div>
+                   <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Hora</label>
+                      <input 
+                        ref={timeInputRef}
+                        type="time" 
+                        className="w-full border border-gray-300 rounded-md p-1.5 text-sm bg-white"
+                        value={scheduleData.time}
+                        onChange={(e) => setScheduleData({ ...scheduleData, time: e.target.value })}
+                      />
+                   </div>
+                </div>
+
+                <div className="mb-3">
+                   <label className="block text-xs font-medium text-gray-500 mb-1">Recorrência</label>
+                   <select 
+                     className="w-full border border-gray-300 rounded-md p-1.5 text-sm bg-white"
+                     value={scheduleData.recurrence}
+                     onChange={(e) => setScheduleData({ ...scheduleData, recurrence: e.target.value })}
+                   >
+                      <option value="none">Não repetir (Apenas uma vez)</option>
+                      <option value="daily">Diariamente</option>
+                      <option value="weekly">Semanalmente</option>
+                      <option value="biweekly">Quinzenalmente</option>
+                      <option value="monthly">Mensalmente</option>
+                      <option value="yearly">Anualmente</option>
+                   </select>
+                </div>
+
+                <div className="mb-3">
+                   <label className="block text-xs font-medium text-gray-500 mb-1">Mensagem</label>
+                   <textarea 
+                     className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white resize-none"
+                     rows={2}
+                     value={messageInput}
+                     onChange={(e) => setMessageInput(e.target.value)}
+                     placeholder="Digite a mensagem..."
+                   />
+                </div>
+
+                <div className="flex justify-end">
+                   <button 
+                     onClick={confirmSchedule}
+                     className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 shadow-sm"
+                   >
+                      Agendar Envio
+                   </button>
+                </div>
             </div>
 
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Recorrência</label>
-               <select 
-                 className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
-                 value={scheduleData.recurrence}
-                 onChange={(e) => setScheduleData({ ...scheduleData, recurrence: e.target.value })}
-               >
-                  <option value="none">Não repetir (Apenas uma vez)</option>
-                  <option value="daily">Diariamente</option>
-                  <option value="weekly">Semanalmente</option>
-                  <option value="biweekly">Quinzenalmente</option>
-                  <option value="monthly">Mensalmente</option>
-                  <option value="yearly">Anualmente</option>
-               </select>
-            </div>
-
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Mensagem</label>
-               <textarea 
-                 className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                 rows={3}
-                 value={messageInput}
-                 onChange={(e) => setMessageInput(e.target.value)}
-                 placeholder="Digite a mensagem a ser agendada..."
-               />
-            </div>
-
-            <div className="flex justify-end pt-2 gap-2">
-               <button onClick={() => setActiveModal(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Cancelar</button>
-               <button 
-                 onClick={confirmSchedule}
-                 className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 flex items-center shadow-sm"
-               >
-                  <Clock size={16} className="mr-2" /> Agendar Envio
-               </button>
+            {/* Scheduled List */}
+            <div className="border-t border-gray-100 pt-2">
+                <h4 className="text-sm font-bold text-gray-800 mb-2">Agendamentos Futuros</h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                    {scheduledMessages.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic">Nenhum agendamento para este contato.</p>
+                    ) : (
+                        scheduledMessages.map(item => (
+                            <div key={item.id} className="p-2 border border-gray-200 rounded-lg bg-white flex justify-between items-start">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-bold text-purple-700 bg-purple-50 px-1.5 rounded">
+                                            {new Date(item.date).toLocaleDateString()} às {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                        </span>
+                                        {item.recurrence !== 'none' && (
+                                            <span className="text-[10px] text-gray-500 flex items-center bg-gray-100 px-1 rounded">
+                                                <Repeat size={10} className="mr-1"/> {item.recurrence}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-gray-600 line-clamp-1">{item.message}</p>
+                                </div>
+                                <button className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+                            </div>
+                        ))
+                    )}
+                </div>
             </div>
          </div>
       </Modal>

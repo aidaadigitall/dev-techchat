@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
 import { Contact, Message, MessageType } from '../types';
 import { useToast } from '../components/ToastContext';
-import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save } from 'lucide-react';
+import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet } from 'lucide-react';
 import Modal from '../components/Modal';
 
 const Contacts: React.FC = () => {
@@ -32,7 +32,18 @@ const Contacts: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Contact>>({});
   
+  // New Modals State
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [syncConfig, setSyncConfig] = useState({
+      startDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
+      syncHistory: true,
+      syncNewContacts: true
+  });
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadContacts();
@@ -161,17 +172,87 @@ const Contacts: React.FC = () => {
     }
   };
 
+  // --- Sync & Import/Export Logic ---
+
+  const handleSyncWhatsapp = () => {
+      setSyncModalOpen(true);
+  };
+
+  const performSync = () => {
+      setSyncModalOpen(false);
+      setLoading(true);
+      
+      // Simulate Sync Process
+      setTimeout(() => {
+          // Mock adding new contacts from sync
+          if (syncConfig.syncNewContacts) {
+              const newSyncedContacts: Contact[] = [
+                  { id: `sync_${Date.now()}_1`, name: 'Novo Cliente WhatsApp', phone: '5511988887777', tags: ['Importado'], status: 'open', avatar: '', source: 'WhatsApp Sync' },
+                  { id: `sync_${Date.now()}_2`, name: 'Lead Recente', phone: '5511977776666', tags: [], status: 'pending', avatar: '', source: 'WhatsApp Sync' }
+              ];
+              setContacts(prev => [...newSyncedContacts, ...prev]);
+          }
+          
+          setLoading(false);
+          addToast(`Sincronização concluída! Histórico de ${new Date(syncConfig.startDate).toLocaleDateString()} a ${new Date(syncConfig.endDate).toLocaleDateString()} atualizado.`, 'success');
+      }, 2000);
+  };
+
+  const handleExportContacts = () => {
+      const headers = "Nome,Telefone,Email,Empresa,Tags\n";
+      const rows = contacts.map(c => `${c.name},${c.phone},${c.email || ''},${c.company || ''},"${c.tags.join(',')}"`).join("\n");
+      const csvContent = "data:text/csv;charset=utf-8," + encodeURI(headers + rows);
+      const link = document.createElement("a");
+      link.setAttribute("href", csvContent);
+      link.setAttribute("download", "contatos_export.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      addToast('Exportação iniciada.', 'success');
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+          // Simulate import processing
+          setImportModalOpen(false);
+          setLoading(true);
+          setTimeout(() => {
+              setLoading(false);
+              addToast('15 contatos importados com sucesso!', 'success');
+              loadContacts(); // Refresh list logic
+          }, 1500);
+      }
+  };
+
   return (
     <div className="p-6 h-full bg-gray-50 overflow-y-auto" onClick={() => { setActionMenuOpenId(null); setShowFilter(false); }}>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
         <div>
            <h1 className="text-2xl font-bold text-gray-800">Contatos</h1>
            <p className="text-gray-500">Gerencie sua base de clientes ({contacts.length}).</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2">
+          <button 
+            onClick={() => setImportModalOpen(true)}
+            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium transition-colors"
+          >
+             <Upload size={16} className="mr-2" /> Importar
+          </button>
+          <button 
+            onClick={handleExportContacts}
+            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium transition-colors"
+          >
+             <Download size={16} className="mr-2" /> Exportar
+          </button>
+          <button 
+            onClick={handleSyncWhatsapp}
+            className="px-3 py-2 bg-green-50 border border-green-200 text-green-700 rounded-lg hover:bg-green-100 flex items-center text-sm font-medium transition-colors"
+          >
+             <RefreshCw size={16} className="mr-2" /> Sincronizar
+          </button>
           <button 
             onClick={handleNewContact}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center shadow-sm"
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center shadow-sm text-sm font-medium transition-colors"
           >
              <Plus size={18} className="mr-2" /> Novo Contato
           </button>
@@ -196,7 +277,10 @@ const Contacts: React.FC = () => {
         {/* Table */}
         <div className="overflow-x-auto min-h-[400px]">
           {loading ? (
-             <div className="p-10 text-center text-gray-500">Carregando contatos...</div>
+             <div className="p-10 flex flex-col items-center justify-center text-gray-500">
+                 <RefreshCw size={32} className="animate-spin mb-2 text-purple-600" />
+                 <p>Atualizando base de contatos...</p>
+             </div>
           ) : (
             <table className="w-full text-left">
               <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold tracking-wider">
@@ -213,7 +297,7 @@ const Contacts: React.FC = () => {
                   <tr key={contact.id} className="hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => handleViewHistory(contact)}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <img className="h-10 w-10 rounded-full object-cover" src={contact.avatar} alt="" />
+                        <img className="h-10 w-10 rounded-full object-cover" src={contact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}`} alt="" />
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">{contact.name}</div>
                           <div className="text-xs text-gray-500">{contact.email || '-'}</div>
@@ -379,6 +463,7 @@ const Contacts: React.FC = () => {
                           <option value="Indicação">Indicação</option>
                           <option value="Prospecção Ativa">Prospecção Ativa</option>
                           <option value="Evento">Evento / Networking</option>
+                          <option value="WhatsApp Sync">WhatsApp Sync</option>
                        </select>
                     </div>
                     <div>
@@ -462,6 +547,97 @@ const Contacts: React.FC = () => {
              </div>
           </div>
         )}
+      </Modal>
+
+      {/* Sync WhatsApp Modal */}
+      <Modal isOpen={syncModalOpen} onClose={() => setSyncModalOpen(false)} title="Sincronizar WhatsApp">
+          <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-lg border border-green-100 flex items-start">
+                  <RefreshCw className="text-green-600 mt-1 mr-3 flex-shrink-0" size={20} />
+                  <p className="text-sm text-green-800">
+                      Esta ação irá buscar mensagens antigas e novos contatos que conversaram com o número conectado.
+                  </p>
+              </div>
+
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Período de Sincronização</label>
+                  <div className="grid grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-xs text-gray-500 mb-1">De:</label>
+                          <input 
+                              type="date" 
+                              className="w-full border rounded p-2 text-sm bg-white"
+                              value={syncConfig.startDate}
+                              onChange={e => setSyncConfig({...syncConfig, startDate: e.target.value})}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs text-gray-500 mb-1">Até:</label>
+                          <input 
+                              type="date" 
+                              className="w-full border rounded p-2 text-sm bg-white"
+                              value={syncConfig.endDate}
+                              onChange={e => setSyncConfig({...syncConfig, endDate: e.target.value})}
+                          />
+                      </div>
+                  </div>
+              </div>
+
+              <div className="space-y-2">
+                  <label className="flex items-center space-x-2">
+                      <input 
+                          type="checkbox" 
+                          checked={syncConfig.syncHistory}
+                          onChange={e => setSyncConfig({...syncConfig, syncHistory: e.target.checked})}
+                          className="rounded text-green-600 focus:ring-green-500"
+                      />
+                      <span className="text-sm text-gray-700">Baixar histórico de mensagens</span>
+                  </label>
+                  <label className="flex items-center space-x-2">
+                      <input 
+                          type="checkbox" 
+                          checked={syncConfig.syncNewContacts}
+                          onChange={e => setSyncConfig({...syncConfig, syncNewContacts: e.target.checked})}
+                          className="rounded text-green-600 focus:ring-green-500"
+                      />
+                      <span className="text-sm text-gray-700">Adicionar novos contatos encontrados</span>
+                  </label>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                  <button onClick={performSync} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm font-medium flex items-center">
+                      <RefreshCw size={16} className="mr-2" /> Iniciar Sincronização
+                  </button>
+              </div>
+          </div>
+      </Modal>
+
+      {/* Import Modal */}
+      <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title="Importar Contatos">
+          <div className="space-y-6 text-center">
+              <div 
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() => importFileRef.current?.click()}
+              >
+                  <Upload size={40} className="mx-auto text-gray-400 mb-3" />
+                  <p className="text-sm font-medium text-gray-900">Clique para selecionar o arquivo CSV</p>
+                  <p className="text-xs text-gray-500 mt-1">Formato: Nome, Telefone, Email, Empresa, Tags</p>
+                  <input 
+                      type="file" 
+                      className="hidden" 
+                      ref={importFileRef} 
+                      accept=".csv"
+                      onChange={handleImportCSV}
+                  />
+              </div>
+              
+              <div className="bg-blue-50 p-3 rounded text-left border border-blue-100">
+                  <p className="text-xs text-blue-800 font-bold mb-1 flex items-center"><FileSpreadsheet size={14} className="mr-1"/> Dica:</p>
+                  <p className="text-xs text-blue-700">
+                      Certifique-se de que os números de telefone incluam o código do país (ex: 5511999999999) para integração correta com o WhatsApp.
+                  </p>
+              </div>
+          </div>
       </Modal>
     </div>
   );
