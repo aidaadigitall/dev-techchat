@@ -1,12 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MOCK_PLANS } from '../constants';
+import { api } from '../services/api';
 import { Check, X, Edit, Plus, Save } from 'lucide-react';
 import Modal from '../components/Modal';
 import { Plan } from '../types';
 
 const SuperAdminPlans: React.FC = () => {
-  const [plans, setPlans] = useState<Plan[]>(MOCK_PLANS);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editingPlan, setEditingPlan] = useState<Partial<Plan> | null>(null);
+
+  useEffect(() => {
+    loadPlans();
+  }, []);
+
+  const loadPlans = async () => {
+    setLoading(true);
+    const data = await api.plans.list();
+    setPlans(data);
+    setLoading(false);
+  };
 
   const handleEdit = (plan: Plan) => {
     setEditingPlan({ ...plan });
@@ -22,13 +35,17 @@ const SuperAdminPlans: React.FC = () => {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editingPlan?.name) return;
 
-    if (plans.find(p => p.id === editingPlan.id)) {
-      setPlans(plans.map(p => p.id === editingPlan.id ? editingPlan as Plan : p));
+    // Use API to save
+    const savedPlan = await api.plans.save(editingPlan as Plan);
+    
+    // Update local state
+    if (plans.find(p => p.id === savedPlan.id)) {
+      setPlans(plans.map(p => p.id === savedPlan.id ? savedPlan : p));
     } else {
-      setPlans([...plans, editingPlan as Plan]);
+      setPlans([...plans, savedPlan]);
     }
     setEditingPlan(null);
   };
@@ -60,69 +77,73 @@ const SuperAdminPlans: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         {plans.map(plan => (
-           <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
-              <div className="p-6 border-b border-gray-100">
-                 <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
-                    <button 
-                      onClick={() => handleEdit(plan)}
-                      className="text-gray-400 hover:text-purple-600"
-                    >
-                      <Edit size={18} />
-                    </button>
-                 </div>
-                 <div className="flex items-baseline">
-                    <span className="text-3xl font-extrabold text-gray-900">R$ {plan.price}</span>
-                    <span className="text-gray-500 ml-1">/mês</span>
-                 </div>
-              </div>
-              
-              <div className="p-6 flex-1 space-y-4">
-                 <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Limites</p>
-                    <ul className="space-y-2 text-sm text-gray-600">
-                       <li className="flex justify-between">
-                         <span>Usuários</span>
-                         <span className="font-bold">{plan.limits.users}</span>
-                       </li>
-                       <li className="flex justify-between">
-                         <span>Conexões (WhatsApp)</span>
-                         <span className="font-bold">{plan.limits.connections}</span>
-                       </li>
-                       <li className="flex justify-between">
-                         <span>Mensagens/mês</span>
-                         <span className="font-bold">{plan.limits.messages.toLocaleString()}</span>
-                       </li>
-                    </ul>
-                 </div>
+      {loading ? (
+         <div className="text-center py-12 text-gray-500">Carregando planos...</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {plans.map(plan => (
+            <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+                <div className="p-6 border-b border-gray-100">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
+                        <button 
+                        onClick={() => handleEdit(plan)}
+                        className="text-gray-400 hover:text-purple-600"
+                        >
+                        <Edit size={18} />
+                        </button>
+                    </div>
+                    <div className="flex items-baseline">
+                        <span className="text-3xl font-extrabold text-gray-900">R$ {plan.price}</span>
+                        <span className="text-gray-500 ml-1">/mês</span>
+                    </div>
+                </div>
+                
+                <div className="p-6 flex-1 space-y-4">
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Limites</p>
+                        <ul className="space-y-2 text-sm text-gray-600">
+                        <li className="flex justify-between">
+                            <span>Usuários</span>
+                            <span className="font-bold">{plan.limits.users}</span>
+                        </li>
+                        <li className="flex justify-between">
+                            <span>Conexões (WhatsApp)</span>
+                            <span className="font-bold">{plan.limits.connections}</span>
+                        </li>
+                        <li className="flex justify-between">
+                            <span>Mensagens/mês</span>
+                            <span className="font-bold">{plan.limits.messages.toLocaleString()}</span>
+                        </li>
+                        </ul>
+                    </div>
 
-                 <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Módulos</p>
-                    <ul className="space-y-2 text-sm">
-                       <li className="flex items-center">
-                          {plan.features.crm ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
-                          <span className={plan.features.crm ? 'text-gray-900' : 'text-gray-400'}>CRM Kanban</span>
-                       </li>
-                       <li className="flex items-center">
-                          {plan.features.campaigns ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
-                          <span className={plan.features.campaigns ? 'text-gray-900' : 'text-gray-400'}>Campanhas em Massa</span>
-                       </li>
-                       <li className="flex items-center">
-                          {plan.features.api ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
-                          <span className={plan.features.api ? 'text-gray-900' : 'text-gray-400'}>API Pública</span>
-                       </li>
-                    </ul>
-                 </div>
-              </div>
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Módulos</p>
+                        <ul className="space-y-2 text-sm">
+                        <li className="flex items-center">
+                            {plan.features.crm ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
+                            <span className={plan.features.crm ? 'text-gray-900' : 'text-gray-400'}>CRM Kanban</span>
+                        </li>
+                        <li className="flex items-center">
+                            {plan.features.campaigns ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
+                            <span className={plan.features.campaigns ? 'text-gray-900' : 'text-gray-400'}>Campanhas em Massa</span>
+                        </li>
+                        <li className="flex items-center">
+                            {plan.features.api ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
+                            <span className={plan.features.api ? 'text-gray-900' : 'text-gray-400'}>API Pública</span>
+                        </li>
+                        </ul>
+                    </div>
+                </div>
 
-              <div className="p-4 bg-gray-50 border-t border-gray-100 text-center">
-                 <button className="text-sm font-medium text-gray-600 hover:text-gray-900">Duplicar Plano</button>
-              </div>
-           </div>
-         ))}
-      </div>
+                <div className="p-4 bg-gray-50 border-t border-gray-100 text-center">
+                    <button className="text-sm font-medium text-gray-600 hover:text-gray-900">Duplicar Plano</button>
+                </div>
+            </div>
+            ))}
+        </div>
+      )}
 
       {/* Edit/Create Modal */}
       <Modal 

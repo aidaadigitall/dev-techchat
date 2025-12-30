@@ -118,19 +118,55 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     setLoading(true);
-    setTimeout(() => {
-      if (onUpdateUser && currentUser) {
-        onUpdateUser({
-          ...currentUser,
-          name: profileForm.name,
-          avatar: profileAvatarPreview
-        });
-      }
-      setLoading(false);
-      alert('Perfil atualizado com sucesso!');
-    }, 800);
+    try {
+        const payload: { name?: string, avatar?: string, password?: string } = {};
+        
+        if (profileForm.name !== currentUser?.name) {
+            payload.name = profileForm.name;
+        }
+        
+        if (profileAvatarPreview !== currentUser?.avatar) {
+            payload.avatar = profileAvatarPreview;
+        }
+
+        if (profileForm.newPassword) {
+            if (profileForm.newPassword !== profileForm.confirmPassword) {
+                alert("As senhas não conferem.");
+                setLoading(false);
+                return;
+            }
+            if (profileForm.newPassword.length < 6) {
+                alert("A senha deve ter no mínimo 6 caracteres.");
+                setLoading(false);
+                return;
+            }
+            payload.password = profileForm.newPassword;
+        }
+
+        if (Object.keys(payload).length > 0) {
+            await api.users.updateProfile(payload);
+            
+            if (onUpdateUser && currentUser) {
+                onUpdateUser({
+                  ...currentUser,
+                  name: profileForm.name,
+                  avatar: profileAvatarPreview
+                });
+            }
+            
+            alert('Perfil atualizado com sucesso!');
+            setProfileForm(prev => ({ ...prev, newPassword: '', confirmPassword: '', currentPassword: '' }));
+        } else {
+            alert('Nenhuma alteração detectada.');
+        }
+    } catch (error: any) {
+        console.error(error);
+        alert('Erro ao atualizar perfil: ' + (error.message || 'Erro desconhecido'));
+    } finally {
+        setLoading(false);
+    }
   };
 
   // Company Handlers
@@ -662,6 +698,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                             type="password" 
                             name="currentPassword"
                             placeholder="••••••••"
+                            value={profileForm.currentPassword}
+                            onChange={(e) => setProfileForm({...profileForm, currentPassword: e.target.value})}
                             className="w-full border border-gray-300 rounded-md p-2.5 bg-white shadow-sm" 
                           />
                        </div>
@@ -672,6 +710,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                               type="password" 
                               name="newPassword"
                               placeholder="••••••••"
+                              value={profileForm.newPassword}
+                              onChange={(e) => setProfileForm({...profileForm, newPassword: e.target.value})}
                               className="w-full border border-gray-300 rounded-md p-2.5 bg-white shadow-sm" 
                             />
                           </div>
@@ -681,6 +721,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                               type="password" 
                               name="confirmPassword"
                               placeholder="••••••••"
+                              value={profileForm.confirmPassword}
+                              onChange={(e) => setProfileForm({...profileForm, confirmPassword: e.target.value})}
                               className="w-full border border-gray-300 rounded-md p-2.5 bg-white shadow-sm" 
                             />
                           </div>

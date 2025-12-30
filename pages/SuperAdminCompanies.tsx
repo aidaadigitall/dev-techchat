@@ -1,19 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MOCK_COMPANIES, MOCK_PLANS } from '../constants';
-import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw, CheckSquare } from 'lucide-react';
+import { api } from '../services/api';
+import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw, CheckSquare, AlertTriangle } from 'lucide-react';
 import Modal from '../components/Modal';
 import { Company } from '../types';
 
 const SuperAdminCompanies: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [companies, setCompanies] = useState<Company[]>(MOCK_COMPANIES);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
+  
   const [selectedCompany, setSelectedCompany] = useState<Partial<Company> | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
   
-  // AI Token Management Modal
+  // Modals
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiManageData, setAiManageData] = useState<{id: string, limit: number, usage: number} | null>(null);
+  
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadCompanies();
+  }, []);
+
+  const loadCompanies = async () => {
+    setLoading(true);
+    const data = await api.companies.list();
+    setCompanies(data);
+    setLoading(false);
+  };
 
   const getPlanName = (id: string) => MOCK_PLANS.find(p => p.id === id)?.name || id;
 
@@ -47,7 +63,6 @@ const SuperAdminCompanies: React.FC = () => {
   };
 
   const handleOpenEdit = (company: Company) => {
-    // Ensure features object exists even if legacy data didn't have it
     const features = company.features || {
         crm: true,
         campaigns: true,
@@ -58,28 +73,31 @@ const SuperAdminCompanies: React.FC = () => {
     setIsEditing(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir esta empresa? Todos os dados serão perdidos permanentemente.')) {
-      setCompanies(prev => prev.filter(c => c.id !== id));
-      setActionMenuOpenId(null);
+  const confirmDelete = (id: string) => {
+    setDeleteConfirmationId(id);
+    setActionMenuOpenId(null);
+  };
+
+  const handleDelete = async () => {
+    if (deleteConfirmationId) {
+      await api.companies.delete(deleteConfirmationId);
+      setCompanies(prev => prev.filter(c => c.id !== deleteConfirmationId));
+      setDeleteConfirmationId(null);
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedCompany?.name || !selectedCompany?.email) {
       alert("Por favor, preencha os campos obrigatórios (Nome e Email).");
       return;
     }
 
     if (isEditing && selectedCompany.id) {
-      setCompanies(prev => prev.map(c => c.id === selectedCompany.id ? selectedCompany as Company : c));
+      const updated = await api.companies.update(selectedCompany.id, selectedCompany);
+      setCompanies(prev => prev.map(c => c.id === updated.id ? updated : c));
     } else {
-      const newComp = {
-        ...selectedCompany,
-        id: `comp${Date.now()}`,
-        userCount: 0
-      } as Company;
-      setCompanies([...companies, newComp]);
+      const created = await api.companies.create(selectedCompany);
+      setCompanies(prev => [...prev, created]);
     }
     setSelectedCompany(null);
   };
@@ -107,8 +125,12 @@ const SuperAdminCompanies: React.FC = () => {
     setActionMenuOpenId(null);
   };
 
-  const handleSaveAiLimit = () => {
+  const handleSaveAiLimit = async () => {
     if (aiManageData) {
+      await api.companies.update(aiManageData.id, { 
+        aiLimit: aiManageData.limit,
+        aiUsage: aiManageData.usage 
+      });
       setCompanies(prev => prev.map(c => c.id === aiManageData.id ? { ...c, aiLimit: aiManageData.limit, aiUsage: aiManageData.usage } : c));
       setShowAiModal(false);
       setAiManageData(null);
@@ -168,84 +190,88 @@ const SuperAdminCompanies: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {companies.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(company => (
-              <tr key={company.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="font-medium text-gray-900">{company.name}</div>
-                  <div className="text-xs text-gray-400">ID: {company.id}</div>
-                </td>
-                <td className="px-6 py-4">
-                   <div className="text-sm text-gray-900">{company.ownerName}</div>
-                   <div className="text-xs text-gray-500">{company.email}</div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-100">
-                    {getPlanName(company.planId)}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600">
-                  {company.userCount}
-                </td>
-                <td className="px-6 py-4">
-                   {company.useCustomKey ? (
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Chave Própria</span>
-                   ) : (
-                      <div className="w-24">
-                         <div className="flex justify-between text-[10px] mb-1">
-                            <span className="text-gray-600">{Math.round((company.aiUsage / company.aiLimit) * 100)}%</span>
-                         </div>
-                         <div className="w-full bg-gray-200 rounded-full h-1.5">
-                            <div 
-                              className={`h-1.5 rounded-full ${company.aiUsage > company.aiLimit * 0.9 ? 'bg-red-500' : 'bg-purple-600'}`} 
-                              style={{ width: `${Math.min((company.aiUsage / company.aiLimit) * 100, 100)}%` }}
-                            ></div>
-                         </div>
-                         <div className="text-[9px] text-gray-400 mt-1">{company.aiUsage.toLocaleString()} / {company.aiLimit.toLocaleString()}</div>
-                      </div>
-                   )}
-                </td>
-                <td className="px-6 py-4">
-                  {getStatusBadge(company.status)}
-                </td>
-                <td className="px-6 py-4 text-right relative">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setActionMenuOpenId(actionMenuOpenId === company.id ? null : company.id); }}
-                    className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
-                  >
-                    <MoreHorizontal size={18} />
-                  </button>
-                  
-                  {actionMenuOpenId === company.id && (
-                    <div className="absolute right-8 top-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-10 overflow-hidden text-left animate-fadeIn">
-                       <button 
-                         onClick={(e) => { e.stopPropagation(); handleOpenEdit(company); setActionMenuOpenId(null); }}
-                         className="w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
-                       >
-                          <Edit size={16} className="mr-2 text-gray-400" /> Editar
-                       </button>
-                       <button 
-                         onClick={(e) => { e.stopPropagation(); handleOpenAiManage(company); }}
-                         className="w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
-                       >
-                          <BrainCircuit size={16} className="mr-2 text-purple-600" /> Gerenciar Tokens IA
-                       </button>
-                       <div className="h-px bg-gray-100 my-1"></div>
-                       <button 
-                         onClick={(e) => { e.stopPropagation(); handleDelete(company.id); }}
-                         className="w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center transition-colors"
-                       >
-                          <Trash2 size={16} className="mr-2" /> Excluir
-                       </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {loading ? (
+                <tr><td colSpan={7} className="text-center py-8 text-gray-500">Carregando...</td></tr>
+            ) : (
+                companies.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(company => (
+                <tr key={company.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                    <div className="font-medium text-gray-900">{company.name}</div>
+                    <div className="text-xs text-gray-400">ID: {company.id}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900">{company.ownerName}</div>
+                    <div className="text-xs text-gray-500">{company.email}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                    <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-100">
+                        {getPlanName(company.planId)}
+                    </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                    {company.userCount}
+                    </td>
+                    <td className="px-6 py-4">
+                    {company.useCustomKey ? (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Chave Própria</span>
+                    ) : (
+                        <div className="w-24">
+                            <div className="flex justify-between text-[10px] mb-1">
+                                <span className="text-gray-600">{Math.round((company.aiUsage / company.aiLimit) * 100)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                <div 
+                                className={`h-1.5 rounded-full ${company.aiUsage > company.aiLimit * 0.9 ? 'bg-red-500' : 'bg-purple-600'}`} 
+                                style={{ width: `${Math.min((company.aiUsage / company.aiLimit) * 100, 100)}%` }}
+                                ></div>
+                            </div>
+                            <div className="text-[9px] text-gray-400 mt-1">{company.aiUsage.toLocaleString()} / {company.aiLimit.toLocaleString()}</div>
+                        </div>
+                    )}
+                    </td>
+                    <td className="px-6 py-4">
+                    {getStatusBadge(company.status)}
+                    </td>
+                    <td className="px-6 py-4 text-right relative">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); setActionMenuOpenId(actionMenuOpenId === company.id ? null : company.id); }}
+                        className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                    >
+                        <MoreHorizontal size={18} />
+                    </button>
+                    
+                    {actionMenuOpenId === company.id && (
+                        <div className="absolute right-8 top-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-10 overflow-hidden text-left animate-fadeIn">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleOpenEdit(company); setActionMenuOpenId(null); }}
+                            className="w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
+                        >
+                            <Edit size={16} className="mr-2 text-gray-400" /> Editar
+                        </button>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleOpenAiManage(company); }}
+                            className="w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
+                        >
+                            <BrainCircuit size={16} className="mr-2 text-purple-600" /> Gerenciar Tokens IA
+                        </button>
+                        <div className="h-px bg-gray-100 my-1"></div>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); confirmDelete(company.id); }}
+                            className="w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center transition-colors"
+                        >
+                            <Trash2 size={16} className="mr-2" /> Excluir
+                        </button>
+                        </div>
+                    )}
+                    </td>
+                </tr>
+                ))
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Edit/Create Modal (Standard Company Data) */}
+      {/* Edit/Create Modal */}
       <Modal
         isOpen={!!selectedCompany}
         onClose={() => setSelectedCompany(null)}
@@ -419,6 +445,38 @@ const SuperAdminCompanies: React.FC = () => {
                  className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 w-full"
                >
                   Salvar Limites
+               </button>
+            </div>
+         </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal 
+        isOpen={!!deleteConfirmationId} 
+        onClose={() => setDeleteConfirmationId(null)}
+        title="Excluir Empresa"
+        size="sm"
+      >
+         <div className="text-center p-4">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+               <AlertTriangle className="h-6 w-6 text-red-600" />
+            </div>
+            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">Tem certeza?</h3>
+            <p className="text-sm text-gray-500 mb-6">
+               Esta ação excluirá permanentemente a empresa e todos os dados associados (usuários, mensagens, contatos). Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex justify-center gap-3">
+               <button 
+                 onClick={() => setDeleteConfirmationId(null)}
+                 className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+               >
+                  Cancelar
+               </button>
+               <button 
+                 onClick={handleDelete}
+                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium shadow-sm"
+               >
+                  Sim, excluir
                </button>
             </div>
          </div>

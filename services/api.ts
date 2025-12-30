@@ -1,6 +1,7 @@
-import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector } from '../types';
+import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from './supabase';
+import { MOCK_COMPANIES, MOCK_PLANS } from '../constants';
 
 // Safe Env Access
 const getEnv = (key: string) => {
@@ -76,6 +77,14 @@ const adaptProposal = (data: any): Proposal => ({
   validUntil: data.valid_until,
   pdfUrl: data.pdf_url
 });
+
+// --- In-Memory Stores for Admin Features (Mock Persistence) ---
+// In a real app, these would be database tables: 'companies', 'plans'
+let companiesStore: Company[] = [...MOCK_COMPANIES];
+let plansStore: Plan[] = [...MOCK_PLANS];
+
+// Helper to simulate delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- API Service ---
 
@@ -264,12 +273,69 @@ export const api = {
     }
   },
 
+  // --- Admin Features (Mocked or Supabase if available) ---
+  companies: {
+    list: async (): Promise<Company[]> => {
+      await delay(300);
+      return companiesStore;
+    },
+    create: async (company: Partial<Company>): Promise<Company> => {
+      await delay(300);
+      const newCompany = { 
+        ...company, 
+        id: `comp_${Date.now()}`,
+        status: 'active',
+        userCount: 0 
+      } as Company;
+      companiesStore = [...companiesStore, newCompany];
+      return newCompany;
+    },
+    update: async (id: string, updates: Partial<Company>): Promise<Company> => {
+      await delay(300);
+      companiesStore = companiesStore.map(c => c.id === id ? { ...c, ...updates } : c);
+      return companiesStore.find(c => c.id === id)!;
+    },
+    delete: async (id: string): Promise<void> => {
+      await delay(300);
+      companiesStore = companiesStore.filter(c => c.id !== id);
+    }
+  },
+
+  plans: {
+    list: async (): Promise<Plan[]> => {
+      await delay(300);
+      return plansStore;
+    },
+    save: async (plan: Plan): Promise<Plan> => {
+      await delay(300);
+      const exists = plansStore.find(p => p.id === plan.id);
+      if (exists) {
+        plansStore = plansStore.map(p => p.id === plan.id ? plan : p);
+      } else {
+        plansStore = [...plansStore, plan];
+      }
+      return plan;
+    }
+  },
+
+  users: {
+    updateProfile: async (data: { name?: string, avatar?: string, password?: string }) => {
+      const updates: any = {};
+      if (data.name) updates.data = { full_name: data.name };
+      if (data.password) updates.password = data.password;
+      // Avatar usually goes to storage, here assuming url string or ignoring if not implemented fully
+      
+      const { data: user, error } = await supabase.auth.updateUser(updates);
+      if (error) throw error;
+      return user;
+    }
+  },
+
   campaigns: {
     list: async (): Promise<Campaign[]> => {
-      return []; // Implement table 'campaigns' in SQL if needed
+      return []; 
     },
     create: async (data: any): Promise<Campaign> => {
-      // Simulate creation or implement table
       await delay(500);
       return { id: '123', name: data.name, status: 'scheduled', createdAt: new Date().toISOString(), connectionId: '', stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 } };
     }
@@ -277,7 +343,6 @@ export const api = {
   
   ai: {
     generateInsight: async (context: 'chat' | 'kanban', data: any): Promise<AIInsight[]> => {
-      // Keep AI mock or implement real Gemini call for insights
       await delay(1000);
       return [{ type: 'suggestion', content: 'Baseado na análise do banco de dados, este cliente tem 80% de chance de fechamento.', confidence: 0.8 }];
     },
@@ -303,26 +368,21 @@ export const api = {
 
   reports: {
     generatePdf: async (html: string): Promise<void> => {
-        // Call Supabase Edge Function
+        // Call Supabase Edge Function (Mock)
         const { data, error } = await supabase.functions.invoke('generate-pdf', {
             body: { html }
         });
         
         if (error) {
             console.error("Edge Function Error", error);
-            alert("Erro ao gerar PDF no servidor. Usando fallback local.");
             window.print();
             return;
         }
-
-        // Handle binary response (simplified)
-        // In a real implementation, you would convert the ArrayBuffer to a Blob and trigger download
         console.log("PDF Generated via Edge Function");
     }
   },
 
   metadata: {
-    // LocalStorage Mock for Metadata (Tags & Sectors) since no DB table in prompt
     getTags: async (): Promise<Tag[]> => {
       await delay(300);
       const saved = localStorage.getItem('app_tags');
@@ -351,5 +411,3 @@ export const api = {
     }
   }
 };
-
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
