@@ -101,8 +101,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // Scheduling State
   const [scheduleData, setScheduleData] = useState({ date: '', time: '', recurrence: 'none' });
   const [scheduledMessages, setScheduledMessages] = useState<{id: string, date: string, message: string, recurrence: string}[]>([
-      { id: '1', date: '2025-02-15 09:00', message: 'Olá, gostaria de saber se você teve tempo de analisar a proposta.', recurrence: 'none' }
+      { id: '1', date: '2025-02-15 09:00', message: 'Olá, gostaria de saber se você teve tempo de analisar a proposta.', recurrence: 'none' },
+      { id: '2', date: '2023-12-01 10:00', message: 'Bom dia! Segue o orçamento.', recurrence: 'none' } // Historic example
   ]);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+
   
   // Forwarding State
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
@@ -291,7 +294,31 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // --- Schedule Logic ---
   const handleScheduleMessage = () => {
     // Open modal even if empty input (for "Agendar Contato" functionality)
+    setEditingScheduleId(null);
+    setScheduleData({ date: '', time: '', recurrence: 'none' });
+    // If there is text in input, pre-fill it for scheduling but don't clear it yet
     setActiveModal('schedule');
+  };
+
+  const handleEditSchedule = (scheduleItem: any) => {
+    setEditingScheduleId(scheduleItem.id);
+    const dateObj = new Date(scheduleItem.date);
+    const dateStr = dateObj.toISOString().split('T')[0];
+    const timeStr = dateObj.toTimeString().slice(0, 5);
+    
+    setScheduleData({
+        date: dateStr,
+        time: timeStr,
+        recurrence: Object.keys(RECURRENCE_LABELS).find(key => RECURRENCE_LABELS[key] === scheduleItem.recurrence) || 'none'
+    });
+    // Temporarily set message input to edit content
+    setMessageInput(scheduleItem.message);
+  };
+
+  const handleDeleteSchedule = (id: string) => {
+    if(confirm("Remover este agendamento?")) {
+        setScheduledMessages(prev => prev.filter(m => m.id !== id));
+    }
   };
 
   const confirmSchedule = () => {
@@ -304,21 +331,32 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     const recurrenceLabel = RECURRENCE_LABELS[scheduleData.recurrence] || scheduleData.recurrence;
     const dateStr = `${scheduleData.date} ${scheduleData.time}`;
     
-    // Add to local list
-    const newScheduled = {
-        id: Date.now().toString(),
-        date: dateStr,
-        message: messageInput || '(Mídia)',
-        recurrence: recurrenceLabel
-    };
-    
-    setScheduledMessages(prev => [...prev, newScheduled]);
+    if (editingScheduleId) {
+        // Update existing
+        setScheduledMessages(prev => prev.map(m => m.id === editingScheduleId ? {
+            ...m,
+            date: dateStr,
+            message: messageInput || m.message,
+            recurrence: recurrenceLabel
+        } : m));
+        alert("Agendamento atualizado!");
+    } else {
+        // Add new
+        const newScheduled = {
+            id: Date.now().toString(),
+            date: dateStr,
+            message: messageInput || '(Sem mensagem)',
+            recurrence: recurrenceLabel
+        };
+        setScheduledMessages(prev => [...prev, newScheduled]);
+        alert("Mensagem agendada com sucesso!");
+    }
     
     setActiveModal(null);
     setMessageInput('');
     setAttachment(null);
+    setEditingScheduleId(null);
     setScheduleData({ date: '', time: '', recurrence: 'none' });
-    alert("Mensagem agendada com sucesso!");
   };
 
   // --- Forward Logic ---
@@ -504,12 +542,17 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   };
 
   const simulateReply = () => {
+    // 1. Sent -> Delivered
     setTimeout(() => {
        setMessages(prev => prev.map(m => m.status === 'sent' ? { ...m, status: 'delivered' } : m));
-    }, 1000);
+    }, 1500);
 
+    // 2. Delivered -> Read & Typing Indicator
     setTimeout(() => {
        setMessages(prev => prev.map(m => m.status === 'delivered' ? { ...m, status: 'read' } : m));
+       
+       // Dynamic typing effect
+       const typingDuration = Math.random() * 2000 + 1500; // 1.5s to 3.5s
        setIsContactTyping(true);
        
        setTimeout(() => {
@@ -528,8 +571,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
               updateContactStatus(selectedContact.id, 'pending');
           }
 
-       }, 2000); 
-    }, 2000);
+       }, typingDuration); 
+    }, 3000);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -625,6 +668,14 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       if (type === 'docs') return m.type === MessageType.DOCUMENT;
       return false;
     });
+  };
+
+  // Helper for Message Status Icon
+  const StatusIcon = ({ status }: { status: string }) => {
+    if (status === 'sent') return <Check size={14} className="text-gray-400" />;
+    if (status === 'delivered') return <CheckCheck size={14} className="text-gray-400" />;
+    if (status === 'read') return <CheckCheck size={14} className="text-blue-500" />;
+    return <Clock size={14} className="text-gray-300" />; // Fallback/Pending
   };
 
   return (
@@ -804,12 +855,16 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                             </div>
                          )}
 
-                         {/* Metadata */}
+                         {/* Metadata and Status */}
                          <div className="flex items-center justify-end space-x-1 mt-1">
                             {msg.starred && <Star size={10} className="fill-yellow-400 text-yellow-400 mr-1" />}
                             <span className="text-[10px] text-gray-500">{msg.timestamp}</span>
+                            
+                            {/* Improved Status Indicators */}
                             {msg.senderId === 'me' && (
-                               msg.status === 'read' ? <CheckCheck size={14} className="text-[#53bdeb]" /> : <CheckCheck size={14} className="text-gray-400" />
+                               <div className="ml-1 flex items-end">
+                                  <StatusIcon status={msg.status} />
+                               </div>
                             )}
                          </div>
                          
@@ -859,9 +914,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                    </div>
                 ))}
                 
+                {/* Dynamic Typing Indicator */}
                 {isContactTyping && (
-                   <div className="flex justify-start animate-fadeIn">
-                      <div className="bg-white px-4 py-3 rounded-xl rounded-tl-none shadow-sm flex items-center space-x-1">
+                   <div className="flex justify-start animate-fadeIn transition-opacity duration-300">
+                      <div className="bg-white px-4 py-3 rounded-xl rounded-tl-none shadow-sm flex items-center space-x-1 border border-gray-100">
                          <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
                          <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-100"></div>
                          <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-200"></div>
@@ -1155,7 +1211,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                           </div>
                                           <div className="overflow-hidden">
                                              <p className="text-xs font-medium truncate text-gray-700">{m.fileName || 'Documento'}</p>
-                                             <p className="text-[10px] text-gray-400">{m.timestamp}</p>
+                                             <p className="text-xs text-gray-400">{m.timestamp}</p>
                                           </div>
                                        </div>
                                     ))}
@@ -1381,7 +1437,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
          <div className="space-y-4">
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                 <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
-                    <Clock size={16} className="mr-2 text-purple-600" /> Novo Agendamento
+                    <Clock size={16} className="mr-2 text-purple-600" /> 
+                    {editingScheduleId ? 'Editar Agendamento' : 'Novo Agendamento'}
                 </h4>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                    <div>
@@ -1433,42 +1490,82 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                    />
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                   {editingScheduleId && (
+                       <button 
+                         onClick={() => { setEditingScheduleId(null); setScheduleData({date:'', time:'', recurrence:'none'}); setMessageInput(''); }}
+                         className="px-3 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100"
+                       >
+                         Cancelar Edição
+                       </button>
+                   )}
                    <button 
                      onClick={confirmSchedule}
                      className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 shadow-sm"
                    >
-                      Agendar Envio
+                      {editingScheduleId ? 'Atualizar Agendamento' : 'Agendar Envio'}
                    </button>
                 </div>
             </div>
 
-            {/* Scheduled List */}
-            <div className="border-t border-gray-100 pt-2">
-                <h4 className="text-sm font-bold text-gray-800 mb-2">Agendamentos Futuros</h4>
-                <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
-                    {scheduledMessages.length === 0 ? (
-                        <p className="text-xs text-gray-400 italic">Nenhum agendamento para este contato.</p>
-                    ) : (
-                        scheduledMessages.map(item => (
-                            <div key={item.id} className="p-2 border border-gray-200 rounded-lg bg-white flex justify-between items-start">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-bold text-purple-700 bg-purple-50 px-1.5 rounded">
-                                            {new Date(item.date).toLocaleDateString()} às {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                        </span>
-                                        {item.recurrence !== 'none' && (
-                                            <span className="text-[10px] text-gray-500 flex items-center bg-gray-100 px-1 rounded">
-                                                <Repeat size={10} className="mr-1"/> {item.recurrence}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-gray-600 line-clamp-1">{item.message}</p>
-                                </div>
-                                <button className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
-                            </div>
-                        ))
-                    )}
+            {/* Scheduled List - Split Future/History */}
+            <div className="border-t border-gray-100 pt-2 space-y-4">
+                
+                {/* Future */}
+                <div>
+                   <h4 className="text-sm font-bold text-gray-800 mb-2">Agendados (Futuros)</h4>
+                   <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                       {scheduledMessages.filter(m => new Date(m.date) > new Date()).length === 0 ? (
+                           <p className="text-xs text-gray-400 italic">Nenhum agendamento futuro.</p>
+                       ) : (
+                           scheduledMessages.filter(m => new Date(m.date) > new Date()).map(item => (
+                               <div key={item.id} className="p-2 border border-gray-200 rounded-lg bg-white flex justify-between items-start group">
+                                   <div>
+                                       <div className="flex items-center gap-2 mb-1">
+                                           <span className="text-xs font-bold text-purple-700 bg-purple-50 px-1.5 rounded flex items-center">
+                                               <Calendar size={10} className="mr-1"/>
+                                               {new Date(item.date).toLocaleDateString()} às {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                           </span>
+                                           {item.recurrence !== 'none' && (
+                                               <span className="text-[10px] text-gray-500 flex items-center bg-gray-100 px-1 rounded">
+                                                   <Repeat size={10} className="mr-1"/> {item.recurrence}
+                                               </span>
+                                           )}
+                                       </div>
+                                       <p className="text-xs text-gray-600 line-clamp-1">{item.message}</p>
+                                   </div>
+                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                       <button onClick={() => handleEditSchedule(item)} className="text-gray-400 hover:text-purple-600 p-1"><Edit size={14}/></button>
+                                       <button onClick={() => handleDeleteSchedule(item.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+                                   </div>
+                               </div>
+                           ))
+                       )}
+                   </div>
+                </div>
+
+                {/* History */}
+                <div>
+                   <h4 className="text-sm font-bold text-gray-500 mb-2">Histórico (Enviados)</h4>
+                   <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                       {scheduledMessages.filter(m => new Date(m.date) <= new Date()).length === 0 ? (
+                           <p className="text-xs text-gray-400 italic">Nenhum histórico.</p>
+                       ) : (
+                           scheduledMessages.filter(m => new Date(m.date) <= new Date()).map(item => (
+                               <div key={item.id} className="p-2 border border-gray-100 rounded-lg bg-gray-50 flex justify-between items-start opacity-70">
+                                   <div>
+                                       <div className="flex items-center gap-2 mb-1">
+                                           <span className="text-xs font-bold text-gray-600 flex items-center">
+                                               <Check size={10} className="mr-1"/>
+                                               {new Date(item.date).toLocaleDateString()}
+                                           </span>
+                                       </div>
+                                       <p className="text-xs text-gray-500 line-clamp-1">{item.message}</p>
+                                   </div>
+                               </div>
+                           ))
+                       )}
+                   </div>
                 </div>
             </div>
          </div>
