@@ -3,6 +3,7 @@ import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, P
 import { User, Branding, Tag, Sector } from '../types';
 import { MOCK_USERS } from '../constants';
 import { api } from '../services/api';
+import { whatsappService, WhatsAppStatus } from '../services/whatsapp'; // New Service
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
 
@@ -30,47 +31,57 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const [tags, setTags] = useState<Tag[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   
-  // WhatsApp Connection State
+  // WhatsApp Connection State (Managed by Service)
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
-  const [whatsappStatus, setWhatsappStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppStatus>('disconnected');
   const [connectionModalOpen, setConnectionModalOpen] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Handlers ---
+  // --- Initial Load & Event Listeners ---
+  useEffect(() => {
+    // 1. Get initial status
+    setWhatsappStatus(whatsappService.getStatus());
+    setQrCodeData(whatsappService.getQrCode());
 
-  const handleGenerateQR = () => {
-    setWhatsappStatus('connecting');
-    setConnectionModalOpen(true);
-    setQrCodeData(null);
-
-    // Simulate API call to get QR
-    setTimeout(() => {
-        // Mock QR Code (Google Charts API for demo visual)
-        setQrCodeData('https://chart.googleapis.com/chart?cht=qr&chl=SimulatedWhatsAppConnection&chs=250x250&chld=L|0');
-    }, 1500);
-
-    // Simulate Connection Success after scanning
-    setTimeout(() => {
-        if(connectionModalOpen) { // Only if still open
-            setWhatsappStatus('connected');
+    // 2. Subscribe to status changes
+    const handleStatusChange = (status: WhatsAppStatus) => {
+        setWhatsappStatus(status);
+        if (status === 'connected') {
             setConnectionModalOpen(false);
             addToast('WhatsApp conectado com sucesso!', 'success');
         }
-    }, 8000); // 8 seconds to simulate user scanning
+    };
+
+    const handleQrCode = (qr: string) => {
+        setQrCodeData(qr);
+    };
+
+    whatsappService.on('status', handleStatusChange);
+    whatsappService.on('qr', handleQrCode);
+
+    return () => {
+        whatsappService.off('status', handleStatusChange);
+        whatsappService.off('qr', handleQrCode);
+    };
+  }, []);
+
+  // --- Handlers ---
+
+  const handleGenerateQR = () => {
+    setConnectionModalOpen(true);
+    whatsappService.connect();
   };
 
   const handleDisconnect = () => {
       if(confirm("Deseja realmente desconectar o WhatsApp?")) {
-          setWhatsappStatus('disconnected');
+          whatsappService.disconnect();
           addToast('WhatsApp desconectado.', 'info');
       }
   };
 
-  // ... (Other handlers like handleSaveProfile, handleSaveCompany remain similar but using addToast) ...
-  
   const handleSaveProfile = async () => {
       setLoading(true);
       try {
@@ -108,20 +119,28 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                               <p className="text-sm text-green-600 font-medium flex items-center">
                                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Conectado
                               </p>
+                          ) : whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' ? (
+                              <p className="text-sm text-yellow-500 font-medium flex items-center">
+                                 <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></span> Conectando...
+                              </p>
                           ) : (
                               <p className="text-sm text-red-500 font-medium flex items-center">
                                  <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Desconectado
                               </p>
                           )}
-                          <p className="text-xs text-gray-500">API: Baileys / WPPConnect (Simulado)</p>
+                          <p className="text-xs text-gray-500">API: Baileys / WPPConnect</p>
                        </div>
                     </div>
                     <div className="flex gap-2">
                        {whatsappStatus === 'connected' ? (
                            <button onClick={handleDisconnect} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-medium bg-white">Desconectar</button>
                        ) : (
-                           <button onClick={handleGenerateQR} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md">
-                               <QrCode size={18} className="mr-2" /> Conectar via QR Code
+                           <button 
+                             onClick={handleGenerateQR} 
+                             disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready'}
+                             className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50"
+                           >
+                               <QrCode size={18} className="mr-2" /> {whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' ? 'Aguarde...' : 'Conectar via QR Code'}
                            </button>
                        )}
                     </div>
@@ -200,7 +219,9 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                ) : (
                    <div className="flex flex-col items-center">
                        <RefreshCw size={40} className="text-green-600 animate-spin mb-4" />
-                       <p className="text-gray-600 font-medium">Gerando sessão segura...</p>
+                       <p className="text-gray-600 font-medium">
+                           {whatsappStatus === 'connecting' ? 'Gerando sessão segura...' : 'Iniciando serviço...'}
+                       </p>
                    </div>
                )}
            </div>

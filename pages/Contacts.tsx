@@ -156,9 +156,39 @@ const Contacts: React.FC = () => {
     setIsEditing(true);
   };
 
+  const validateForm = (form: Partial<Contact>) => {
+    // 1. Validate Name
+    if (!form.name || form.name.trim().length < 3) {
+      addToast("O nome deve ter pelo menos 3 caracteres.", 'warning');
+      return false;
+    }
+
+    // 2. Validate Phone
+    if (!form.phone) {
+      addToast("O telefone é obrigatório.", 'warning');
+      return false;
+    }
+    const cleanPhone = form.phone.replace(/\D/g, ''); // Remove non-digits
+    if (cleanPhone.length < 10 || cleanPhone.length > 13) {
+      addToast("Telefone inválido. Use formato com DDD (Ex: 11999999999).", 'warning');
+      return false;
+    }
+
+    // 3. Validate Email (Optional but strict if present)
+    if (form.email && form.email.trim() !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(form.email)) {
+        addToast("Formato de email inválido.", 'warning');
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   const handleSaveContact = async () => {
-    if (!editForm.name || !editForm.phone) {
-      addToast("Campos obrigatórios: Nome e Telefone", 'warning');
+    // Validation Step
+    if (!validateForm(editForm)) {
       return;
     }
 
