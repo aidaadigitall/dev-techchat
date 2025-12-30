@@ -37,7 +37,7 @@ interface ChatProps {
 }
 
 const Chat: React.FC<ChatProps> = ({ branding }) => {
-  const [contacts, setContacts] = useState<Contact[]>(MOCK_CONTACTS);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -121,11 +121,16 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
   // Initialize selected contact if provided in props or default
   useEffect(() => {
-    // If we have a contact in "pending" or "open" set it active if list not empty
-    if (!selectedContact && contacts.length > 0) {
-       const initial = contacts.find(c => c.status === activeTab) || contacts[0];
-       if (initial && initial.status === activeTab) setSelectedContact(initial);
-    }
+    const loadInit = async () => {
+        const fetchedContacts = await api.contacts.list();
+        setContacts(fetchedContacts);
+        
+        if (!selectedContact && fetchedContacts.length > 0) {
+            const initial = fetchedContacts.find(c => c.status === activeTab) || fetchedContacts[0];
+            if (initial && initial.status === activeTab) setSelectedContact(initial);
+        }
+    };
+    loadInit();
   }, [activeTab]);
 
   useEffect(() => {
@@ -473,11 +478,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       contentToSend += `\n\n~ Admin User`;
     }
 
-    // Append Reply context if replying
-    if (replyingTo) {
-       // Ideally backend handles structure, we just simulate the rendering part
-    }
-
     const newMessage: Message = {
       id: Date.now().toString(),
       content: contentToSend,
@@ -524,7 +524,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
           };
           setMessages(prev => [...prev, replyMessage]);
 
-          // Logic: If resolved, goes back to Pending or Open on customer reply
           if (selectedContact?.status === 'resolved') {
               updateContactStatus(selectedContact.id, 'pending');
           }
@@ -546,7 +545,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     if (!selectedContact) return;
     const isBlocked = !selectedContact.blocked;
     
-    // Optimistic Update
     const updatedContact = { ...selectedContact, blocked: isBlocked };
     setSelectedContact(updatedContact);
     setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
@@ -594,9 +592,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
               .contact { background-color: #fdf2f8; margin-right: auto; border: 1px solid #fce7f3; }
               .meta { font-size: 11px; color: #6b7280; margin-top: 6px; text-align: right; }
               .content { white-space: pre-wrap; }
-              @media print {
-                body { padding: 20px; }
-              }
+              @media print { body { padding: 20px; } }
             </style>
           </head>
           <body>
@@ -622,7 +618,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     }
   };
 
-  // --- Helper for Media ---
   const getMediaMessages = (type: 'images' | 'videos' | 'docs') => {
     return messages.filter(m => {
       if (type === 'images') return m.type === MessageType.IMAGE;
@@ -631,8 +626,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       return false;
     });
   };
-
-  // --- Rendering UI ---
 
   return (
     <div className="flex h-full bg-white overflow-hidden">
@@ -717,7 +710,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                 </div>
                 
                 <div className="flex items-center space-x-2">
-                   {/* Resolver Button (Outside Menu) */}
                    <button 
                       onClick={handleResolveTicket} 
                       className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg hover:bg-green-100 hover:text-green-700 transition-colors flex items-center border border-gray-200"
@@ -768,7 +760,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                            ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' 
                            : 'bg-white text-gray-900 rounded-tl-none'
                       }`}>
-                         {/* Reply Context (Example Hardcoded) - In real app, check a `replyToId` field */}
+                         {/* Reply Context */}
                          {idx === 2 && msg.senderId === 'me' && (
                             <div className="bg-black/5 rounded px-2 py-1 mb-2 border-l-4 border-purple-500 text-xs text-gray-600">
                                <p className="font-bold text-purple-700">Elisa Maria</p>
@@ -786,22 +778,12 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                             </div>
                          )}
                          
-                         {msg.type === MessageType.AUDIO && (
-                            <div className="flex items-center gap-2 min-w-[200px] py-1">
-                               <button className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-300">
-                                  <PlayCircle size={18} fill="currentColor" />
-                               </button>
-                               <div className="flex-1 h-1 bg-gray-300 rounded overflow-hidden">
-                                  <div className="h-full bg-gray-500 w-1/3"></div>
-                               </div>
-                               <span className="text-xs text-gray-500">0:45</span>
-                            </div>
-                         )}
-
                          {msg.type === MessageType.LOCATION && (
                             <div className="bg-gray-100 rounded p-1 mb-1">
-                               <div className="w-full h-32 bg-gray-300 rounded flex items-center justify-center text-gray-500 mb-2">
-                                  <MapPin size={24} />
+                               <div className="w-full h-32 bg-gray-300 rounded flex items-center justify-center text-gray-500 mb-2 relative overflow-hidden">
+                                  {/* Simulated Map View */}
+                                  <div className="absolute inset-0 bg-[url('https://maps.googleapis.com/maps/api/staticmap?center=-23.550520,-46.633308&zoom=14&size=400x200&key=YOUR_API_KEY_HERE')] bg-cover bg-center opacity-50"></div>
+                                  <MapPin size={24} className="text-red-600 z-10" />
                                </div>
                                <p className="text-xs font-bold text-center text-blue-600">Localização em Tempo Real</p>
                             </div>
@@ -1034,11 +1016,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                       </button>
                    )}
                 </div>
-                <div className="text-center mt-1">
-                   <p className="text-[10px] text-gray-400 flex items-center justify-center">
-                      <Lock size={8} className="mr-1" /> Protegido por criptografia de ponta-a-ponta
-                   </p>
-                </div>
              </div>
            </>
          ) : (
@@ -1063,9 +1040,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                  Selecione um contato para iniciar o atendimento. <br/>
                  Use o menu lateral para filtrar entre abertos, pendentes e resolvidos.
               </p>
-              <div className="mt-10 flex items-center text-xs text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full">
-                 <Lock size={10} className="mr-1.5" /> Suas mensagens pessoais são protegidas com criptografia.
-              </div>
            </div>
          )}
       </div>
@@ -1073,7 +1047,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       {/* 3. Right Panel - Details & CRM & Starred */}
       {rightPanelOpen && selectedContact && (
          <div className="w-80 bg-white border-l border-gray-200 h-full overflow-y-auto animate-slideInRight flex flex-col">
-            {/* ... Existing Right Panel Code ... */}
             <div className="p-4 border-b border-gray-100 flex items-center bg-gray-50 flex-shrink-0">
                <button onClick={() => {
                   if (rightPanelView === 'starred') setRightPanelView('info');
@@ -1095,67 +1068,24 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                      
                      <div className="flex gap-4 w-full justify-center">
                         <div className="text-center">
-                           <button 
-                              onClick={() => handleStartCall('audio')}
-                              className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-purple-100 hover:text-purple-600 transition-colors mx-auto mb-1"
-                           >
+                           <button onClick={() => handleStartCall('audio')} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-purple-100 hover:text-purple-600 transition-colors mx-auto mb-1">
                               <PhoneCall size={18} />
                            </button>
                            <span className="text-[10px] text-gray-500">Ligar</span>
                         </div>
                         <div className="text-center">
-                           <button 
-                              onClick={() => handleStartCall('video')}
-                              className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-purple-100 hover:text-purple-600 transition-colors mx-auto mb-1"
-                           >
+                           <button onClick={() => handleStartCall('video')} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-purple-100 hover:text-purple-600 transition-colors mx-auto mb-1">
                               <Video size={18} />
                            </button>
                            <span className="text-[10px] text-gray-500">Vídeo</span>
-                        </div>
-                        <div className="text-center">
-                           <button className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-purple-100 hover:text-purple-600 transition-colors mx-auto mb-1">
-                              <Search size={18} />
-                           </button>
-                           <span className="text-[10px] text-gray-500">Buscar</span>
-                        </div>
-                        <div className="text-center">
-                           <button 
-                              onClick={() => setActiveModal('schedule')}
-                              className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-purple-100 hover:text-purple-600 transition-colors mx-auto mb-1"
-                           >
-                              <Calendar size={18} />
-                           </button>
-                           <span className="text-[10px] text-gray-500">Agendar</span>
                         </div>
                      </div>
                   </div>
 
                   <div className="border-b border-gray-100 flex-shrink-0">
                      <div className="flex">
-                        <button 
-                           onClick={() => setInfoTab('crm')} 
-                           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'crm' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                        >
-                           CRM
-                        </button>
-                        <button 
-                           onClick={() => setInfoTab('notes')} 
-                           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'notes' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                        >
-                           Notas
-                        </button>
-                        <button 
-                           onClick={() => setInfoTab('media')} 
-                           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'media' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                        >
-                           Mídia
-                        </button>
-                        <button 
-                           onClick={() => setInfoTab('proposals')} 
-                           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'proposals' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                        >
-                           Propostas
-                        </button>
+                        <button onClick={() => setInfoTab('crm')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'crm' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>CRM</button>
+                        <button onClick={() => setInfoTab('media')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${infoTab === 'media' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>Mídia</button>
                      </div>
                   </div>
 
@@ -1170,31 +1100,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                     <span className="text-xs bg-white px-2 py-0.5 rounded text-purple-600 border border-purple-200">Em Negociação</span>
                                  </div>
                               </div>
-
                               <div>
                                  <label className="text-xs text-gray-500 font-bold uppercase">Empresa</label>
                                  <div className="flex items-center mt-1 text-sm text-gray-700 bg-gray-50 p-2 rounded">
                                     <Briefcase size={14} className="mr-2 text-gray-400" />
                                     {selectedContact.company || 'Não informado'}
-                                 </div>
-                              </div>
-
-                              <div>
-                                 <label className="text-xs text-gray-500 font-bold uppercase">Email</label>
-                                 <div className="flex items-center mt-1 text-sm text-gray-700 bg-gray-50 p-2 rounded">
-                                    <span className="truncate">{selectedContact.email || 'Não informado'}</span>
-                                 </div>
-                              </div>
-                              
-                              <div>
-                                 <label className="text-xs text-gray-500 font-bold uppercase">Tags</label>
-                                 <div className="flex flex-wrap gap-2 mt-2">
-                                    {selectedContact.tags.map(tag => (
-                                       <span key={tag} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full flex items-center">
-                                          <Tag size={10} className="mr-1" /> {tag}
-                                       </span>
-                                    ))}
-                                    <button className="text-xs text-purple-600 hover:underline px-1">+ Add</button>
                                  </div>
                               </div>
                            </div>
@@ -1212,56 +1122,12 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                         </>
                      )}
 
-                     {infoTab === 'notes' && (
-                        <div className="space-y-4">
-                           <div>
-                              <textarea 
-                                className="w-full border border-gray-200 rounded-lg p-2 text-sm focus:ring-purple-500 focus:border-purple-500 bg-gray-50"
-                                rows={3}
-                                placeholder="Adicionar nota interna..."
-                                value={newNote}
-                                onChange={e => setNewNote(e.target.value)}
-                              />
-                              <div className="flex justify-end mt-1">
-                                 <button className="text-xs bg-gray-900 text-white px-3 py-1 rounded hover:bg-black">Salvar Nota</button>
-                              </div>
-                           </div>
-
-                           <div className="space-y-3">
-                              {notes.map(note => (
-                                 <div key={note.id} className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 relative group">
-                                    <p className="text-sm text-gray-800 leading-snug">{note.text}</p>
-                                    <div className="flex justify-between items-center mt-2">
-                                       <span className="text-[10px] text-gray-400">{note.date} • {note.author}</span>
-                                       <button className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12} /></button>
-                                    </div>
-                                 </div>
-                              ))}
-                           </div>
-                        </div>
-                     )}
-
                      {infoTab === 'media' && (
                         <div className="h-full flex flex-col">
                            <div className="flex mb-3 border-b border-gray-100 pb-1">
-                              <button 
-                                 onClick={() => setMediaFilter('images')}
-                                 className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'images' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
-                              >
-                                 Fotos
-                              </button>
-                              <button 
-                                 onClick={() => setMediaFilter('videos')}
-                                 className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'videos' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
-                              >
-                                 Vídeos
-                              </button>
-                              <button 
-                                 onClick={() => setMediaFilter('docs')}
-                                 className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'docs' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
-                              >
-                                 Docs
-                              </button>
+                              <button onClick={() => setMediaFilter('images')} className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'images' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>Fotos</button>
+                              <button onClick={() => setMediaFilter('videos')} className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'videos' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>Vídeos</button>
+                              <button onClick={() => setMediaFilter('docs')} className={`flex-1 text-xs font-medium pb-2 ${mediaFilter === 'docs' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>Docs</button>
                            </div>
                            
                            <div className="flex-1 overflow-y-auto">
@@ -1274,7 +1140,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                           ) : (
                                              <div className="w-full h-full flex items-center justify-center bg-gray-800 text-white relative">
                                                 <PlayCircle size={24} />
-                                                <span className="absolute bottom-1 right-1 text-[8px] bg-black/50 px-1 rounded">0:15</span>
                                              </div>
                                           )}
                                        </div>
@@ -1298,43 +1163,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                  </div>
                               )}
                            </div>
-                        </div>
-                     )}
-
-                     {infoTab === 'proposals' && (
-                        <div className="space-y-3">
-                           {contactProposals.length === 0 ? (
-                              <div className="text-center py-8 text-gray-400 text-sm">
-                                 <FileText size={32} className="mx-auto mb-2 opacity-20" />
-                                 <p>Nenhuma proposta para este contato.</p>
-                              </div>
-                           ) : (
-                              contactProposals.map(prop => (
-                                 <div key={prop.id} className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow">
-                                    <div className="flex justify-between items-start mb-1">
-                                       <h4 className="text-sm font-bold text-gray-800 truncate pr-2">{prop.title}</h4>
-                                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                                          prop.status === 'accepted' ? 'bg-green-100 text-green-700' :
-                                          prop.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                                          'bg-red-100 text-red-700'
-                                       }`}>
-                                          {prop.status === 'accepted' ? 'Aceita' : prop.status === 'pending' ? 'Pendente' : 'Recusada'}
-                                       </span>
-                                    </div>
-                                    <div className="flex justify-between items-end">
-                                       <div>
-                                          <p className="text-xs text-gray-500">Enviado: {new Date(prop.sentDate).toLocaleDateString()}</p>
-                                          <p className="text-sm font-bold text-purple-700 mt-1">
-                                             {prop.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                          </p>
-                                       </div>
-                                       <button className="text-gray-400 hover:text-purple-600">
-                                          <Eye size={16} />
-                                       </button>
-                                    </div>
-                                 </div>
-                              ))
-                           )}
                         </div>
                      )}
                   </div>

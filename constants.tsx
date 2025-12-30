@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppRoute, User, Plan, Company, SaasStats, Contact, Message, KanbanColumn, Proposal } from './types';
+import { AppRoute, User, Plan, Company, SaasStats, Contact, Message, KanbanColumn, Proposal, MessageType } from './types';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -46,13 +46,70 @@ export const DASHBOARD_STATS = [
   { title: 'Contatos', value: '0', change: '', icon: <Users className="text-gray-600" /> },
 ];
 
-// Initialize empty arrays to prevent build errors in files that import them
-// These will now be populated by API calls in the components
-export const MOCK_USERS: User[] = [];
-export const MOCK_CONTACTS: Contact[] = [];
-export const MOCK_MESSAGES: Message[] = [];
-export const MOCK_KANBAN_COLUMNS: KanbanColumn[] = [];
-export const MOCK_PROPOSALS: Proposal[] = [];
+// --- Mock Data for Fallback ---
+
+export const MOCK_USERS: User[] = [
+  { id: '1', name: 'Admin User', email: 'admin@techchat.com', role: 'super_admin', avatar: '', status: 'active', companyId: 'comp1' },
+  { id: '2', name: 'João Silva', email: 'joao@techchat.com', role: 'user', avatar: 'https://ui-avatars.com/api/?name=Joao+Silva&background=random', status: 'active', companyId: 'comp1' },
+  { id: '3', name: 'Maria Souza', email: 'maria@techchat.com', role: 'admin', avatar: 'https://ui-avatars.com/api/?name=Maria+Souza&background=random', status: 'active', companyId: 'comp1' }
+];
+
+export const MOCK_CONTACTS: Contact[] = [
+  { 
+    id: 'c1', 
+    name: 'Elisa Maria', 
+    phone: '5562994772890', 
+    email: 'elisamaria01e@gmail.com', 
+    avatar: 'https://ui-avatars.com/api/?name=Elisa+Maria&background=FFE4E1',
+    tags: ['Interessado', 'Quente'],
+    company: 'Esc Solutions',
+    status: 'open',
+    unreadCount: 1,
+    lastMessage: 'Poderia me informar media de valores?',
+    lastMessageTime: '10:30',
+    pipelineValue: 1500,
+    channel: 'whatsapp'
+  },
+  { 
+    id: 'c2', 
+    name: 'Roberto Carlos', 
+    phone: '5511999998888', 
+    avatar: 'https://ui-avatars.com/api/?name=Roberto+Carlos&background=E0F7FA',
+    tags: ['Cliente'],
+    company: 'RC Empreendimentos',
+    status: 'pending',
+    unreadCount: 0,
+    lastMessage: 'Aguardando o contrato.',
+    lastMessageTime: 'Ontem',
+    pipelineValue: 5000,
+    channel: 'whatsapp'
+  },
+  { 
+    id: 'c3', 
+    name: 'Ana Julia', 
+    phone: '5521988887777', 
+    avatar: 'https://ui-avatars.com/api/?name=Ana+Julia&background=F3E5F5',
+    tags: ['Suporte'],
+    company: 'Design Co.',
+    status: 'resolved',
+    unreadCount: 0,
+    lastMessage: 'Obrigada pelo atendimento!',
+    lastMessageTime: '22/12',
+    channel: 'whatsapp'
+  }
+];
+
+export const MOCK_MESSAGES: Message[] = [
+  { id: 'm1', content: 'Olá, bom dia! Gostaria de saber mais sobre o sistema.', senderId: 'c1', timestamp: '10:00', type: MessageType.TEXT, status: 'read' },
+  { id: 'm2', content: 'Olá Elisa! Claro, como posso ajudar?', senderId: 'me', timestamp: '10:05', type: MessageType.TEXT, status: 'read' },
+  { id: 'm3', content: 'Poderia me informar media de valores?', senderId: 'c1', timestamp: '10:30', type: MessageType.TEXT, status: 'read' },
+];
+
+export const MOCK_KANBAN_COLUMNS: KanbanColumn[] = []; // Populated in API mock logic if needed
+export const MOCK_PROPOSALS: Proposal[] = [
+  { id: 'p1', clientId: 'c1', clientName: 'Elisa Maria', title: 'Implantação CRM', value: 1500, status: 'pending', sentDate: new Date().toISOString(), validUntil: new Date().toISOString() },
+  { id: 'p2', clientId: 'c2', clientName: 'Roberto Carlos', title: 'Renovação Anual', value: 5000, status: 'accepted', sentDate: '2023-12-01', validUntil: '2023-12-30' }
+];
 
 // Static Data for Admin/SaaS Logic (Can remain static or move to DB)
 export const MOCK_SAAS_STATS: SaasStats = {
