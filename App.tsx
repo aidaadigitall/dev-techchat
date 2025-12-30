@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import MobileHeader from './components/MobileHeader';
 import { AppRoute, User, Branding } from './types';
 import { MOCK_USERS, APP_NAME } from './constants';
+import { ToastProvider } from './components/ToastContext';
 
 // Pages
 import Login from './pages/Login';
@@ -168,66 +169,72 @@ const App: React.FC = () => {
   }
 
   if (!session) {
-    return <Login branding={branding} onLoginSuccess={(s) => setSession(s)} />;
+    return (
+      <ToastProvider>
+        <Login branding={branding} onLoginSuccess={(s) => setSession(s)} />
+      </ToastProvider>
+    );
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
-      {/* Dynamic Styles for White Label */}
-      <style>{`
-        :root {
-          --primary-color: ${branding.primaryColor};
-        }
-        .bg-purple-600 { background-color: var(--primary-color) !important; }
-        .text-purple-600 { color: var(--primary-color) !important; }
-        .border-purple-600 { border-color: var(--primary-color) !important; }
-        .hover\\:bg-purple-700:hover { opacity: 0.9; background-color: var(--primary-color) !important; }
-        .bg-purple-50 { background-color: ${branding.primaryColor}15 !important; }
-        .bg-purple-100 { background-color: ${branding.primaryColor}25 !important; }
-        .text-purple-700 { color: var(--primary-color) !important; filter: brightness(0.8); }
-        .border-purple-200 { border-color: ${branding.primaryColor}40 !important; }
-        .focus\\:ring-purple-500:focus { --tw-ring-color: var(--primary-color) !important; }
-        .focus\\:border-purple-500:focus { border-color: var(--primary-color) !important; }
-      `}</style>
+    <ToastProvider>
+      <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
+        {/* Dynamic Styles for White Label */}
+        <style>{`
+          :root {
+            --primary-color: ${branding.primaryColor};
+          }
+          .bg-purple-600 { background-color: var(--primary-color) !important; }
+          .text-purple-600 { color: var(--primary-color) !important; }
+          .border-purple-600 { border-color: var(--primary-color) !important; }
+          .hover\\:bg-purple-700:hover { opacity: 0.9; background-color: var(--primary-color) !important; }
+          .bg-purple-50 { background-color: ${branding.primaryColor}15 !important; }
+          .bg-purple-100 { background-color: ${branding.primaryColor}25 !important; }
+          .text-purple-700 { color: var(--primary-color) !important; filter: brightness(0.8); }
+          .border-purple-200 { border-color: ${branding.primaryColor}40 !important; }
+          .focus\\:ring-purple-500:focus { --tw-ring-color: var(--primary-color) !important; }
+          .focus\\:border-purple-500:focus { border-color: var(--primary-color) !important; }
+        `}</style>
 
-      <Sidebar 
-        activeRoute={activeRoute} 
-        onNavigate={setActiveRoute} 
-        isAdminMode={isAdminMode}
-        onToggleAdminMode={handleToggleAdmin}
-        currentUser={currentUser}
-        branding={branding}
-        onLogout={handleLogout}
-      />
-      
-      {/* Mobile Sidebar Overlay */}
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-gray-600 bg-opacity-75" onClick={() => setMobileMenuOpen(false)}></div>
-          <div className="absolute left-0 top-0 h-full bg-white z-50">
-             <Sidebar 
-               activeRoute={activeRoute} 
-               onNavigate={(route) => {
-                 setActiveRoute(route);
-                 setMobileMenuOpen(false);
-               }}
-               isAdminMode={isAdminMode}
-               onToggleAdminMode={handleToggleAdmin}
-               currentUser={currentUser}
-               branding={branding}
-               onLogout={handleLogout}
-             />
+        <Sidebar 
+          activeRoute={activeRoute} 
+          onNavigate={setActiveRoute} 
+          isAdminMode={isAdminMode}
+          onToggleAdminMode={handleToggleAdmin}
+          currentUser={currentUser}
+          branding={branding}
+          onLogout={handleLogout}
+        />
+        
+        {/* Mobile Sidebar Overlay */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            <div className="absolute inset-0 bg-gray-600 bg-opacity-75" onClick={() => setMobileMenuOpen(false)}></div>
+            <div className="absolute left-0 top-0 h-full bg-white z-50">
+              <Sidebar 
+                activeRoute={activeRoute} 
+                onNavigate={(route) => {
+                  setActiveRoute(route);
+                  setMobileMenuOpen(false);
+                }}
+                isAdminMode={isAdminMode}
+                onToggleAdminMode={handleToggleAdmin}
+                currentUser={currentUser}
+                branding={branding}
+                onLogout={handleLogout}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex-1 flex flex-col h-full w-full relative">
-        <MobileHeader onToggleMenu={() => setMobileMenuOpen(true)} branding={branding} />
-        <main className="flex-1 overflow-hidden relative">
-          {renderContent()}
-        </main>
+        <div className="flex-1 flex flex-col h-full w-full relative">
+          <MobileHeader onToggleMenu={() => setMobileMenuOpen(true)} branding={branding} />
+          <main className="flex-1 overflow-hidden relative">
+            {renderContent()}
+          </main>
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 };
 
