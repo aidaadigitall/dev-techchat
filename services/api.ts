@@ -29,6 +29,25 @@ const getAiClient = () => {
   return aiClientInstance;
 };
 
+// --- LocalStorage Helpers for Mock Persistence ---
+const STORAGE_KEYS = {
+    CONTACTS: 'app_mock_contacts'
+};
+
+const getLocalContacts = (): Contact[] => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEYS.CONTACTS);
+        if (stored) return JSON.parse(stored);
+    } catch (e) { console.error("LS Error", e); }
+    // Initialize with default mocks if empty
+    localStorage.setItem(STORAGE_KEYS.CONTACTS, JSON.stringify(MOCK_CONTACTS));
+    return MOCK_CONTACTS;
+};
+
+const saveLocalContacts = (contacts: Contact[]) => {
+    localStorage.setItem(STORAGE_KEYS.CONTACTS, JSON.stringify(contacts));
+};
+
 // --- Adapters (Convert DB snake_case to Frontend camelCase) ---
 
 const adaptContact = (data: any): Contact => ({
@@ -146,13 +165,19 @@ export const api = {
         if (error) throw error;
         return data.map(adaptContact);
       } catch (e) {
-        // Fallback silently to mock
-        return MOCK_CONTACTS;
+        // Fallback: Read from LocalStorage to ensure persistence in demo mode
+        return getLocalContacts();
       }
     },
     getById: async (id: string): Promise<Contact | undefined> => {
-      const { data } = await supabase.from('contacts').select('*').eq('id', id).single();
-      return data ? adaptContact(data) : undefined;
+      try {
+          const { data } = await supabase.from('contacts').select('*').eq('id', id).single();
+          if (data) return adaptContact(data);
+          throw new Error("Not found");
+      } catch (e) {
+          const locals = getLocalContacts();
+          return locals.find(c => c.id === id);
+      }
     },
     create: async (contact: Partial<Contact>): Promise<Contact> => {
       try {
@@ -178,12 +203,16 @@ export const api = {
           if (error) throw error;
           return adaptContact(data);
       } catch (e: any) {
-          // If in mock mode, simulate creation
-          // Also catch "Invalid API key" which might come from Supabase client misconfig or similar middleware
-          if (e.message?.includes('fetch') || e.code === 'PGRST301' || e.message === 'Invalid API key' || !getEnv('SUPABASE_URL')) {
-              return { ...contact, id: `mock_${Date.now()}` } as Contact;
-          }
-          throw e;
+          // Mock Persistence
+          const newContact = { 
+              ...contact, 
+              id: `mock_${Date.now()}`,
+              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name || 'User')}&background=random`
+          } as Contact;
+          
+          const locals = getLocalContacts();
+          saveLocalContacts([newContact, ...locals]);
+          return newContact;
       }
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
@@ -207,11 +236,22 @@ export const api = {
           if (error) throw error;
           return adaptContact(data);
       } catch (e) {
+          // Mock Persistence
+          const locals = getLocalContacts();
+          const updatedLocals = locals.map(c => c.id === id ? { ...c, ...updates } : c);
+          saveLocalContacts(updatedLocals);
           return { ...updates, id } as Contact;
       }
     },
     delete: async (id: string): Promise<void> => {
-      await supabase.from('contacts').delete().eq('id', id);
+      try {
+          await supabase.from('contacts').delete().eq('id', id);
+      } catch (e) {
+          // Mock Persistence
+          const locals = getLocalContacts();
+          const filtered = locals.filter(c => c.id !== id);
+          saveLocalContacts(filtered);
+      }
     }
   },
 

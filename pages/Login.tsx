@@ -64,6 +64,10 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                 }
             }
          };
+         
+         // Persistir sessão mock para não deslogar no refresh
+         localStorage.setItem('mock_session', JSON.stringify(mockSession));
+
          // Simula delay de rede para UX
          setTimeout(() => {
              onLoginSuccess(mockSession);
@@ -112,6 +116,9 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                 }
             }
          };
+         
+         localStorage.setItem('mock_session', JSON.stringify(mockSession));
+
          setTimeout(() => {
              onLoginSuccess(mockSession);
          }, 800);
@@ -134,6 +141,9 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                 }
             }
          };
+         
+         localStorage.setItem('mock_session', JSON.stringify(mockSession));
+
          setTimeout(() => {
              onLoginSuccess(mockSession);
          }, 800);

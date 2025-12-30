@@ -64,20 +64,37 @@ const App: React.FC = () => {
 
   // --- Auth & Session Management ---
   useEffect(() => {
-    // 1. Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        syncUser(session.user);
-      }
-      setLoadingSession(false);
-    });
+    // 1. Check active session (Supabase or Mock)
+    const initSession = async () => {
+        try {
+            const { data: { session: supabaseSession } } = await supabase.auth.getSession();
+            
+            if (supabaseSession) {
+                setSession(supabaseSession);
+                syncUser(supabaseSession.user);
+            } else {
+                // Fallback: Check for Mock Session in LocalStorage
+                const mockSession = localStorage.getItem('mock_session');
+                if (mockSession) {
+                    const parsed = JSON.parse(mockSession);
+                    setSession(parsed);
+                    syncUser(parsed.user);
+                }
+            }
+        } catch (e) {
+            console.error("Auth check error", e);
+        } finally {
+            setLoadingSession(false);
+        }
+    };
+
+    initSession();
 
     // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user) {
-        syncUser(session.user);
+      if (session) {
+          setSession(session);
+          syncUser(session.user);
       }
     });
 
@@ -104,6 +121,7 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('mock_session'); // Clear mock session
     setSession(null);
     setIsAdminMode(false); // Reset admin mode on logout
   };
