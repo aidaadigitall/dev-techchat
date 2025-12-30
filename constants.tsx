@@ -99,6 +99,12 @@ export const MOCK_COMPANIES: Company[] = [
     userCount: 8,
     aiUsage: 15400,
     aiLimit: 50000,
-    useCustomKey: false
+    useCustomKey: false,
+    features: {
+      crm: true,
+      campaigns: true,
+      automations: true,
+      reports: true
+    }
   }
 ];

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MOCK_COMPANIES, MOCK_PLANS } from '../constants';
-import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw } from 'lucide-react';
+import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw, CheckSquare } from 'lucide-react';
 import Modal from '../components/Modal';
 import { Company } from '../types';
 
@@ -35,13 +35,26 @@ const SuperAdminCompanies: React.FC = () => {
       subscriptionEnd: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
       aiLimit: 5000,
       aiUsage: 0,
-      useCustomKey: false
+      useCustomKey: false,
+      features: {
+        crm: true,
+        campaigns: false,
+        automations: false,
+        reports: true
+      }
     });
     setIsEditing(false);
   };
 
   const handleOpenEdit = (company: Company) => {
-    setSelectedCompany({ ...company });
+    // Ensure features object exists even if legacy data didn't have it
+    const features = company.features || {
+        crm: true,
+        campaigns: true,
+        automations: true,
+        reports: true
+    };
+    setSelectedCompany({ ...company, features });
     setIsEditing(true);
   };
 
@@ -54,7 +67,7 @@ const SuperAdminCompanies: React.FC = () => {
 
   const handleSave = () => {
     if (!selectedCompany?.name || !selectedCompany?.email) {
-      alert("Por favor, preencha os campos obrigatórios.");
+      alert("Por favor, preencha os campos obrigatórios (Nome e Email).");
       return;
     }
 
@@ -69,6 +82,18 @@ const SuperAdminCompanies: React.FC = () => {
       setCompanies([...companies, newComp]);
     }
     setSelectedCompany(null);
+  };
+
+  const toggleFeature = (feature: keyof NonNullable<Company['features']>) => {
+    if (selectedCompany && selectedCompany.features) {
+      setSelectedCompany({
+        ...selectedCompany,
+        features: {
+          ...selectedCompany.features,
+          [feature]: !selectedCompany.features[feature]
+        }
+      });
+    }
   };
 
   // AI Management Logic
@@ -226,7 +251,7 @@ const SuperAdminCompanies: React.FC = () => {
         onClose={() => setSelectedCompany(null)}
         title={isEditing ? `Editar: ${selectedCompany?.name}` : 'Nova Empresa'}
       >
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto p-1 custom-scrollbar">
            <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                  <label className="block text-sm font-medium text-gray-700">Nome da Empresa</label>
@@ -247,7 +272,7 @@ const SuperAdminCompanies: React.FC = () => {
                  />
               </div>
               <div>
-                 <label className="block text-sm font-medium text-gray-700">Email</label>
+                 <label className="block text-sm font-medium text-gray-700">Email (Login Principal)</label>
                  <input 
                    type="email" 
                    className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-white"
@@ -288,6 +313,57 @@ const SuperAdminCompanies: React.FC = () => {
                 value={selectedCompany?.subscriptionEnd ? new Date(selectedCompany.subscriptionEnd).toISOString().split('T')[0] : ''} 
                 onChange={e => setSelectedCompany({...selectedCompany, subscriptionEnd: e.target.value})}
               />
+           </div>
+
+           {/* Features Toggle Section */}
+           <div className="border-t border-gray-100 pt-4 mt-2">
+              <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                 <CheckSquare size={16} className="mr-2 text-purple-600" /> Funcionalidades Habilitadas
+              </h4>
+              <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                 <label className="flex items-center space-x-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 h-4 w-4"
+                      checked={selectedCompany?.features?.crm}
+                      onChange={() => toggleFeature('crm')}
+                    />
+                    <span className="text-sm text-gray-700">CRM & Kanban</span>
+                 </label>
+                 
+                 <label className="flex items-center space-x-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 h-4 w-4"
+                      checked={selectedCompany?.features?.campaigns}
+                      onChange={() => toggleFeature('campaigns')}
+                    />
+                    <span className="text-sm text-gray-700">Disparos em Massa</span>
+                 </label>
+
+                 <label className="flex items-center space-x-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 h-4 w-4"
+                      checked={selectedCompany?.features?.automations}
+                      onChange={() => toggleFeature('automations')}
+                    />
+                    <span className="text-sm text-gray-700">Automações (Chatbots)</span>
+                 </label>
+
+                 <label className="flex items-center space-x-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 h-4 w-4"
+                      checked={selectedCompany?.features?.reports}
+                      onChange={() => toggleFeature('reports')}
+                    />
+                    <span className="text-sm text-gray-700">Relatórios Avançados</span>
+                 </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 ml-1">
+                 Estas configurações definem o que este usuário principal e sua equipe podem acessar no painel.
+              </p>
            </div>
 
            <div className="flex justify-end pt-4 border-t border-gray-100 mt-4">

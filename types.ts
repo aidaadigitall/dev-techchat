@@ -253,6 +253,13 @@ export interface Company {
   aiUsage: number; // Current tokens used
   aiLimit: number; // Max tokens allowed
   useCustomKey: boolean; // If true, uses tenant's key, ignores limit
+  // Custom Feature Flags (Overrides Plan)
+  features?: {
+    crm: boolean;
+    campaigns: boolean;
+    automations: boolean;
+    reports: boolean;
+  };
 }
 
 export interface SaasStats {
