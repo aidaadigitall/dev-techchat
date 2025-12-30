@@ -134,7 +134,7 @@ const Contacts: React.FC = () => {
         setContacts(prev => prev.filter(c => c.id !== deleteConfirmationId));
         addToast('Contato excluído com sucesso!', 'success');
     } catch (e) {
-        addToast('Erro ao excluir contato.', 'error');
+        addToast('Erro ao excluir contato. Verifique se existem conversas vinculadas.', 'error');
     } finally {
         setDeleteConfirmationId(null);
     }
@@ -253,17 +253,106 @@ const Contacts: React.FC = () => {
       addToast('Exportação iniciada.', 'success');
   };
 
-  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files[0]) {
-          // Simulate import processing
-          setImportModalOpen(false);
-          setLoading(true);
-          setTimeout(() => {
-              setLoading(false);
-              addToast('15 contatos importados com sucesso!', 'success');
-              loadContacts(); // Refresh list logic
-          }, 1500);
+  // Helper to parse CSV row respecting quotes
+  const parseCSVRow = (row: string) => {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < row.length; i++) {
+          const char = row[i];
+          if (char === '"') {
+              inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+              result.push(current.trim());
+              current = '';
+          } else {
+              current += char;
+          }
       }
+      result.push(current.trim());
+      return result.map(cell => cell.replace(/^"|"$/g, '').replace(/""/g, '"'));
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setImportModalOpen(false);
+      setLoading(true);
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const text = event.target?.result as string;
+        if (!text) {
+            setLoading(false);
+            return;
+        }
+
+        const lines = text.split(/\r\n|\n/);
+        // Identify Headers (flexible matching)
+        const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
+        
+        const idxName = headers.findIndex(h => h.includes('nome'));
+        const idxPhone = headers.findIndex(h => h.includes('telefone') || h.includes('celular'));
+        const idxEmail = headers.findIndex(h => h.includes('email'));
+        const idxCompany = headers.findIndex(h => h.includes('empresa'));
+        const idxTags = headers.findIndex(h => h.includes('tags'));
+
+        // If vital columns are missing, assume default order based on provided template
+        // Default: ID, Nome, Telefone, Email, Empresa, Tags
+        const useDefaultOrder = idxName === -1 || idxPhone === -1;
+
+        const newContacts: Partial<Contact>[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const data = parseCSVRow(line);
+            
+            // Extract Data
+            let name = useDefaultOrder ? data[1] : (idxName > -1 ? data[idxName] : '');
+            let phone = useDefaultOrder ? data[2] : (idxPhone > -1 ? data[idxPhone] : '');
+            let email = useDefaultOrder ? data[3] : (idxEmail > -1 ? data[idxEmail] : '');
+            let company = useDefaultOrder ? data[4] : (idxCompany > -1 ? data[idxCompany] : '');
+            let tagsRaw = useDefaultOrder ? data[5] : (idxTags > -1 ? data[idxTags] : '');
+
+            // Cleanup Phone
+            if (phone) phone = phone.replace(/\D/g, ''); 
+
+            if (name && phone) {
+                newContacts.push({
+                    name,
+                    phone,
+                    email,
+                    company,
+                    tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim()) : [],
+                    status: 'pending',
+                    source: 'Importação CSV'
+                });
+            }
+        }
+
+        try {
+            // Process creation
+            let successCount = 0;
+            for (const contact of newContacts) {
+                await api.contacts.create(contact);
+                successCount++;
+            }
+            
+            await loadContacts(); // Refresh list logic
+            addToast(`${successCount} contatos importados com sucesso!`, 'success');
+        } catch (error) {
+            console.error("Import Error:", error);
+            addToast('Erro ao processar importação.', 'error');
+        } finally {
+            setLoading(false);
+            if (importFileRef.current) importFileRef.current.value = '';
+        }
+      };
+
+      reader.readAsText(file);
   };
 
   return (
