@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
 import { Contact, Message, MessageType } from '../types';
 import { useToast } from '../components/ToastContext';
-import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle, Clock } from 'lucide-react';
 import Modal from '../components/Modal';
 
 const Contacts: React.FC = () => {
@@ -572,17 +572,39 @@ const Contacts: React.FC = () => {
            </div>
         ) : (
           <div className="flex flex-col h-[500px]">
-             {/* Read-only history view code... (kept same as before) */}
-             <div className="flex-1 overflow-y-auto bg-[#efeae2] relative p-4 custom-scrollbar">
+             {/* History View with Chat Style Bubbles */}
+             <div className="flex-1 overflow-y-auto bg-[#efeae2] relative p-4 custom-scrollbar space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
                 {historyMessages.length === 0 && (
-                    <div className="flex h-full items-center justify-center text-gray-400 text-sm">
+                    <div className="flex h-full items-center justify-center text-gray-400 text-sm bg-white/80 p-4 rounded-lg shadow-sm">
                         Nenhum histórico de mensagens encontrado.
                     </div>
                 )}
-                {historyMessages.map((msg) => (
-                    <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} mb-2`}>
-                        <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm shadow-sm ${msg.senderId === 'me' ? 'bg-[#9333ea] text-white' : 'bg-white text-gray-800'}`}>
-                            <p>{msg.content}</p>
+                {historyMessages.map((msg, idx) => (
+                    <div key={msg.id || idx} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} mb-2 group`}>
+                        <div className={`max-w-[80%] relative shadow-sm rounded-lg px-3 py-2 text-sm ${
+                           msg.senderId === 'me' 
+                             ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' 
+                             : 'bg-white text-gray-900 rounded-tl-none'
+                        }`}>
+                            {/* Render Content */}
+                            {msg.type === 'IMAGE' ? (
+                                <div className="mb-1">
+                                    <img src={msg.mediaUrl || 'https://via.placeholder.com/150'} alt="Mídia" className="rounded-lg max-w-full h-auto" />
+                                    {msg.content && <p className="mt-2">{msg.content}</p>}
+                                </div>
+                            ) : (
+                                <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                            )}
+
+                            {/* Metadata */}
+                            <div className="flex items-center justify-end space-x-1 mt-1">
+                                <span className="text-[10px] text-gray-500">{msg.timestamp}</span>
+                                {msg.senderId === 'me' && (
+                                   <div className="ml-1">
+                                      {msg.status === 'read' ? <CheckCheck size={14} className="text-blue-500" /> : <Check size={14} className="text-gray-400" />}
+                                   </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 ))}

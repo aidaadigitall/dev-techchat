@@ -9,12 +9,16 @@ import {
   Bot, ChevronDown, X, Loader2, ArrowRightLeft,
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
-  Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply
+  Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
+  ArrowRight, StickyNote
 } from 'lucide-react';
 import Modal from '../components/Modal';
 
-// Mock simple emoji list
-const COMMON_EMOJIS = ["😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞", "👀", "🚀", "✨", "💯"];
+// Expanded Emoji List
+const COMMON_EMOJIS = [
+  "😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞", "👀", "🚀", "✨", "💯",
+  "😊", "🥺", "😭", "😤", "😴", "😷", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
+];
 
 const DEPARTMENTS = [
   { id: 'comercial', name: 'Comercial' },
@@ -46,7 +50,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // Right Panel States
   const [rightPanelOpen, setRightPanelOpen] = useState(false); // Contact Details
   const [rightPanelView, setRightPanelView] = useState<'info' | 'starred'>('info'); // View Mode
-  const [infoTab, setInfoTab] = useState<'crm' | 'notes' | 'media' | 'proposals'>('crm');
+  const [infoTab, setInfoTab] = useState<'crm' | 'media'>('crm');
   const [mediaFilter, setMediaFilter] = useState<'images' | 'videos' | 'docs'>('images');
 
   const [aiPanelOpen, setAiPanelOpen] = useState(false); // AI Copilot
@@ -77,11 +81,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // Attachment State
   const [attachment, setAttachment] = useState<{ file?: File, preview?: string, type: MessageType, text?: string, location?: {lat: number, lng: number} } | null>(null);
   
-  // Right Panel States (Notes & Follow Up)
-  const [notes, setNotes] = useState<{id: string, text: string, date: string, author: string}[]>([
-    { id: '1', text: 'Cliente interessado no plano Enterprise.', date: '20/12/2024 10:00', author: 'Você' }
-  ]);
+  // Right Panel Notes
   const [newNote, setNewNote] = useState('');
+  const [internalNotes, setInternalNotes] = useState<{id: string, text: string, date: string}[]>([
+      { id: 'n1', text: 'Cliente prefere contato pela manhã.', date: '20/12/2024' }
+  ]);
   
   // Proposals for this contact
   const [contactProposals, setContactProposals] = useState<Proposal[]>([]);
@@ -117,6 +121,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingIntervalRef = useRef<number | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Ref for typing debounce
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   
   // Refs for Date/Time inputs to trigger picker programmatically
   const dateInputRef = useRef<HTMLInputElement>(null);
@@ -163,6 +168,25 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping, attachment, isContactTyping, replyingTo]);
 
+  // Handle outside click for emoji picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmojiPicker]);
+
   const loadMessages = async (contactId: string) => {
     const data = await api.chat.getMessages(contactId);
     setMessages(data);
@@ -187,6 +211,13 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     setQuickReplies(prev => [...prev, newReply]);
     setIsCreatingQuickReply(false);
     setNewQuickReplyForm({ shortcut: '', content: '' });
+  };
+
+  // --- Right Panel Handlers ---
+  const handleAddNote = () => {
+      if (!newNote.trim()) return;
+      setInternalNotes(prev => [{ id: Date.now().toString(), text: newNote, date: new Date().toLocaleDateString() }, ...prev]);
+      setNewNote('');
   };
 
   // --- Call Handlers ---
@@ -890,7 +921,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                      onClick={() => toggleStarMessage(msg.id)} 
                                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center rounded-md transition-colors"
                                    >
-                                      <Star size={16} className={`mr-3 ${msg.starred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} /> {msg.starred ? 'Desfavoritar' : 'Favoritar'}
+                                      <Star size={16} className={`mr-3 ${msg.starred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} /> 
+                                      {msg.starred ? 'Desfavoritar mensagem' : 'Favoritar mensagem'}
                                    </button>
                                    <button 
                                      onClick={() => handleForwardMessageInit(msg)}
@@ -944,31 +976,63 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                    </div>
                 )}
 
-                {/* Attachment Preview Banner */}
+                {/* Enhanced Attachment Preview Banner */}
                 {attachment && (
-                   <div className="mb-2 p-2 bg-white rounded-lg shadow-sm flex items-center justify-between border-l-4 border-green-500 animate-slideUp">
-                      <div className="flex items-center">
-                         {attachment.type === MessageType.IMAGE ? (
-                            <img src={attachment.preview} className="w-10 h-10 object-cover rounded mr-3" />
+                   <div className="mb-3 p-3 bg-gray-50 rounded-xl shadow-lg border border-gray-200 animate-scaleIn relative group max-w-sm">
+                      <button 
+                        onClick={clearAttachment} 
+                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600 transition-colors z-10"
+                        title="Remover Anexo"
+                      >
+                         <X size={16} />
+                      </button>
+                      
+                      <div className="flex flex-col gap-2">
+                         {/* Media Preview */}
+                         {(attachment.type === MessageType.IMAGE || attachment.type === MessageType.VIDEO) ? (
+                            <div className="w-full h-40 bg-black/5 rounded-lg overflow-hidden flex items-center justify-center relative">
+                               {attachment.type === MessageType.IMAGE ? (
+                                  <img src={attachment.preview} className="w-full h-full object-contain" />
+                               ) : (
+                                  <div className="flex flex-col items-center text-gray-500">
+                                     <PlayCircle size={40} className="mb-2" />
+                                     <span className="text-xs font-medium">Pré-visualização de Vídeo</span>
+                                  </div>
+                               )}
+                            </div>
                          ) : attachment.type === MessageType.LOCATION ? (
-                            <div className="w-10 h-10 bg-red-100 rounded flex items-center justify-center mr-3 text-red-500">
-                               <MapPin size={20} />
+                            <div className="flex items-center gap-3 p-2">
+                               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-500 shrink-0">
+                                  <MapPin size={24} />
+                               </div>
+                               <div>
+                                  <p className="text-sm font-bold text-gray-800">Localização</p>
+                                  <p className="text-xs text-gray-500">Enviar posição atual</p>
+                               </div>
                             </div>
                          ) : (
-                            <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 text-gray-500">
-                               <FileText size={20} />
+                            <div className="flex items-center gap-3 p-2">
+                               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-blue-500 shrink-0">
+                                  <FileText size={24} />
+                               </div>
+                               <div className="overflow-hidden">
+                                  <p className="text-sm font-bold text-gray-800 truncate">{attachment.file?.name}</p>
+                                  <p className="text-xs text-gray-500 uppercase">{attachment.type}</p>
+                               </div>
                             </div>
                          )}
-                         <div>
-                            <p className="text-sm font-medium text-gray-800">
-                              {attachment.type === MessageType.LOCATION ? 'Minha Localização' : (attachment.file?.name || 'Arquivo')}
-                            </p>
-                            <p className="text-xs text-gray-500 uppercase">{attachment.type}</p>
-                         </div>
+                         
+                         {/* Caption Input */}
+                         {(attachment.type === MessageType.IMAGE || attachment.type === MessageType.VIDEO) && (
+                            <input 
+                              type="text" 
+                              placeholder="Adicionar legenda..." 
+                              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-1 focus:ring-purple-500 outline-none"
+                              value={messageInput}
+                              onChange={(e) => setMessageInput(e.target.value)}
+                            />
+                         )}
                       </div>
-                      <button onClick={clearAttachment} className="p-1 hover:bg-gray-100 rounded-full">
-                         <X size={16} className="text-gray-500" />
-                      </button>
                    </div>
                 )}
 
@@ -983,7 +1047,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                    </div>
                 )}
 
-                <div className="flex items-end gap-2">
+                <div className="flex items-end gap-2 relative">
                    {/* Attachments Menu */}
                    <div className="relative">
                       <button 
@@ -1022,9 +1086,9 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                       </button>
                       
                       {showEmojiPicker && (
-                         <div className="absolute bottom-12 left-0 bg-white border border-gray-200 shadow-lg rounded-lg p-2 grid grid-cols-6 gap-2 z-20 w-64">
+                         <div ref={emojiPickerRef} className="absolute bottom-12 left-0 bg-white border border-gray-200 shadow-xl rounded-lg p-3 grid grid-cols-8 gap-1 z-30 w-80 h-48 overflow-y-auto custom-scrollbar">
                             {COMMON_EMOJIS.map(e => (
-                               <button key={e} onClick={() => handleEmojiClick(e)} className="text-xl hover:bg-gray-100 rounded p-1">{e}</button>
+                               <button key={e} onClick={() => handleEmojiClick(e)} className="text-xl hover:bg-gray-100 rounded p-1 flex items-center justify-center h-8 w-8 transition-colors">{e}</button>
                             ))}
                          </div>
                       )}
@@ -1162,6 +1226,53 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                     <Briefcase size={14} className="mr-2 text-gray-400" />
                                     {selectedContact.company || 'Não informado'}
                                  </div>
+                              </div>
+                           </div>
+
+                           {/* Notes Section */}
+                           <div>
+                              <label className="text-xs text-gray-500 font-bold uppercase mb-2 block">Anotações Internas</label>
+                              <div className="space-y-2 mb-2">
+                                 {internalNotes.map(note => (
+                                    <div key={note.id} className="bg-yellow-50 p-2 rounded text-xs text-gray-700 border border-yellow-100">
+                                       <p>{note.text}</p>
+                                       <span className="text-[10px] text-gray-400 mt-1 block">{note.date}</span>
+                                    </div>
+                                 ))}
+                              </div>
+                              <div className="flex gap-2">
+                                 <input 
+                                    type="text" 
+                                    placeholder="Nova nota..." 
+                                    className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-purple-500 outline-none"
+                                    value={newNote}
+                                    onChange={e => setNewNote(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleAddNote()}
+                                 />
+                                 <button onClick={handleAddNote} className="bg-gray-100 p-1.5 rounded hover:bg-gray-200"><Plus size={14} /></button>
+                              </div>
+                           </div>
+
+                           {/* Quick Actions Grid */}
+                           <div>
+                              <label className="text-xs text-gray-500 font-bold uppercase mb-2 block">Ações Rápidas</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                 <button onClick={() => setActiveModal('transfer')} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
+                                    <ArrowRightLeft size={18} className="text-purple-600 mb-1 group-hover:scale-110 transition-transform" />
+                                    <span className="text-xs font-medium text-gray-700">Transferir</span>
+                                 </button>
+                                 <button onClick={() => alert("Criar Tarefa (Mock)")} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
+                                    <CheckSquare size={18} className="text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
+                                    <span className="text-xs font-medium text-gray-700">Criar Tarefa</span>
+                                 </button>
+                                 <button onClick={handleScheduleMessage} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
+                                    <Clock size={18} className="text-orange-600 mb-1 group-hover:scale-110 transition-transform" />
+                                    <span className="text-xs font-medium text-gray-700">Agendar</span>
+                                 </button>
+                                 <button onClick={() => alert("Adicionar Tags (Mock)")} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
+                                    <Tag size={18} className="text-green-600 mb-1 group-hover:scale-110 transition-transform" />
+                                    <span className="text-xs font-medium text-gray-700">Etiquetar</span>
+                                 </button>
                               </div>
                            </div>
                            
@@ -1403,7 +1514,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                   <div className="w-full border-t border-gray-300"></div>
                </div>
                <div className="relative flex justify-center">
-                  <span className="px-2 bg-white text-xs text-gray-500">E/OU</span>
+                  <span className="px-2 bg-white text-xs text-gray-500 font-bold">E/OU</span>
                </div>
             </div>
 
@@ -1412,7 +1523,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                <select 
                  className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
                  value={transferData.userId}
-                 onChange={(e) => setTransferData({ ...transferData, userId: e.target.value })}
+                 onChange={(e) => setTransferData({ ...transferData, userId: e.target.value, sector: '' })}
                >
                   <option value="">Selecione um usuário...</option>
                   {MOCK_USERS.map(user => (
@@ -1424,7 +1535,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
             <div className="flex justify-end pt-2">
                <button 
                  onClick={handleTransferTicket}
-                 className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 flex items-center"
+                 className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 flex items-center shadow-sm"
                >
                   <ArrowRightLeft size={16} className="mr-2" /> Transferir Agora
                </button>
@@ -1482,8 +1593,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                 <div className="mb-3">
                    <label className="block text-xs font-medium text-gray-500 mb-1">Mensagem</label>
                    <textarea 
-                     className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white resize-none"
-                     rows={2}
+                     className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white resize-none h-24"
+                     rows={3}
                      value={messageInput}
                      onChange={(e) => setMessageInput(e.target.value)}
                      placeholder="Digite a mensagem..."
@@ -1501,7 +1612,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                    )}
                    <button 
                      onClick={confirmSchedule}
-                     className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 shadow-sm"
+                     className="bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-purple-700 shadow-sm transition-colors"
                    >
                       {editingScheduleId ? 'Atualizar Agendamento' : 'Agendar Envio'}
                    </button>
@@ -1519,7 +1630,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                            <p className="text-xs text-gray-400 italic">Nenhum agendamento futuro.</p>
                        ) : (
                            scheduledMessages.filter(m => new Date(m.date) > new Date()).map(item => (
-                               <div key={item.id} className="p-2 border border-gray-200 rounded-lg bg-white flex justify-between items-start group">
+                               <div key={item.id} className="p-2 border border-gray-200 rounded-lg bg-white flex justify-between items-start group hover:shadow-sm transition-shadow">
                                    <div>
                                        <div className="flex items-center gap-2 mb-1">
                                            <span className="text-xs font-bold text-purple-700 bg-purple-50 px-1.5 rounded flex items-center">
@@ -1527,7 +1638,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                                {new Date(item.date).toLocaleDateString()} às {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                            </span>
                                            {item.recurrence !== 'none' && (
-                                               <span className="text-[10px] text-gray-500 flex items-center bg-gray-100 px-1 rounded">
+                                               <span className="text-[10px] text-gray-500 flex items-center bg-gray-100 px-1 rounded border border-gray-200">
                                                    <Repeat size={10} className="mr-1"/> {item.recurrence}
                                                </span>
                                            )}
@@ -1535,8 +1646,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                        <p className="text-xs text-gray-600 line-clamp-1">{item.message}</p>
                                    </div>
                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                       <button onClick={() => handleEditSchedule(item)} className="text-gray-400 hover:text-purple-600 p-1"><Edit size={14}/></button>
-                                       <button onClick={() => handleDeleteSchedule(item.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+                                       <button onClick={() => handleEditSchedule(item)} className="text-gray-400 hover:text-purple-600 p-1 rounded hover:bg-gray-100"><Edit size={14}/></button>
+                                       <button onClick={() => handleDeleteSchedule(item.id)} className="text-gray-400 hover:text-red-500 p-1 rounded hover:bg-gray-100"><Trash2 size={14}/></button>
                                    </div>
                                </div>
                            ))

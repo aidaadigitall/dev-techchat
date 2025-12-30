@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { KanbanColumn, Pipeline, KanbanCard } from '../types';
 import { api } from '../services/api';
-import { Plus, MoreHorizontal, DollarSign, Filter, Search, RotateCw, Clock, Save, X } from 'lucide-react';
+import { Plus, MoreHorizontal, DollarSign, Filter, Search, RotateCw, Clock, Save, X, AlignLeft } from 'lucide-react';
 import Modal from '../components/Modal';
 
 const Kanban: React.FC = () => {
@@ -20,7 +20,7 @@ const Kanban: React.FC = () => {
 
   // Edit Card State
   const [editingCard, setEditingCard] = useState<KanbanCard | null>(null);
-  const [editForm, setEditForm] = useState<{title: string, value: string}>({ title: '', value: '' });
+  const [editForm, setEditForm] = useState<{title: string, value: string, description: string}>({ title: '', value: '', description: '' });
 
   // Scroll Drag State
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -51,8 +51,6 @@ const Kanban: React.FC = () => {
   };
 
   const calculateTotal = (column: KanbanColumn) => {
-    // Calculate total based on ALL cards in column, not just filtered ones, typically. 
-    // Or filtered? Let's do filtered to be helpful.
     const relevantCards = getFilteredCards(column.cards);
     return relevantCards.reduce((acc, card) => acc + card.value, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
@@ -115,7 +113,6 @@ const Kanban: React.FC = () => {
   // --- Scroll Drag Handlers (Board) ---
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!scrollContainerRef.current) return;
-    // Don't trigger drag if clicking on a card or button
     if ((e.target as HTMLElement).closest('.card-draggable') || (e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input')) return;
     
     setIsDraggingBoard(true);
@@ -134,9 +131,14 @@ const Kanban: React.FC = () => {
   };
 
   // --- Edit Handlers ---
-  const handleCardDoubleClick = (card: KanbanCard) => {
+  const handleCardDoubleClick = (card: KanbanCard, e: React.MouseEvent) => {
+    e.stopPropagation();
     setEditingCard(card);
-    setEditForm({ title: card.contactName, value: card.value.toString() });
+    setEditForm({ 
+        title: card.contactName, 
+        value: card.value.toString(),
+        description: '' // Assuming description might be loaded or added here
+    });
   };
 
   const saveCardChanges = () => {
@@ -255,7 +257,7 @@ const Kanban: React.FC = () => {
                         className={`card-draggable bg-white p-3 rounded-lg shadow-sm border border-gray-200 cursor-grab hover:shadow-md transition-all group hover:border-purple-200 ${draggedCard?.cardId === card.id ? 'opacity-50 border-purple-400' : ''}`}
                         draggable
                         onDragStart={(e) => handleDragStart(e, card.id, column.id)}
-                        onDoubleClick={() => handleCardDoubleClick(card)}
+                        onDoubleClick={(e) => handleCardDoubleClick(card, e)}
                       >
                         <div className="flex justify-between items-start mb-2">
                            <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs">
@@ -268,10 +270,9 @@ const Kanban: React.FC = () => {
                         </div>
                         
                         <h4 className="font-semibold text-gray-800 text-sm mb-0.5">{card.contactName}</h4>
-                        <p className="text-xs text-gray-500 mb-2 truncate">{card.contactName}</p> {/* Usually phone number here */}
+                        <p className="text-xs text-gray-500 mb-2 truncate">{card.contactName}</p>
                         
                         <div className="flex justify-between items-center pt-2 border-t border-gray-50">
-                           {/* Prominent Value Display */}
                            <div className="flex items-center text-green-700 font-extrabold text-sm">
                              {card.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                            </div>
@@ -320,6 +321,7 @@ const Kanban: React.FC = () => {
                className="w-full border border-gray-300 rounded-md p-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
              />
            </div>
+           
            <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Valor do Negócio (R$)</label>
              <div className="relative">
@@ -334,6 +336,20 @@ const Kanban: React.FC = () => {
                 />
              </div>
            </div>
+
+           <div>
+             <label className="block text-sm font-medium text-gray-700 mb-1">Descrição / Notas</label>
+             <div className="relative">
+                <textarea 
+                  className="w-full border border-gray-300 rounded-md p-2 h-24 resize-none focus:ring-purple-500 focus:border-purple-500 bg-white text-sm"
+                  placeholder="Adicione detalhes sobre esta negociação..."
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                />
+                <AlignLeft size={16} className="absolute right-3 bottom-3 text-gray-400" />
+             </div>
+           </div>
+
            <p className="text-xs text-gray-500 bg-blue-50 p-2 rounded border border-blue-100">
              Dica: Você pode arrastar este card para outras colunas para mudar o status da negociação.
            </p>
