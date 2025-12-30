@@ -82,6 +82,14 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     }
   }, [currentUser]);
 
+  // Load saved AI settings
+  useEffect(() => {
+    const savedAI = localStorage.getItem('app_ai_settings');
+    if (savedAI) {
+        setAiSettings(JSON.parse(savedAI));
+    }
+  }, []);
+
   // --- Handlers ---
 
   const handleGenerateQR = () => {
@@ -308,6 +316,91 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                 <Building size={48} className="mx-auto text-gray-300 mb-3" />
                 <h3 className="text-lg font-medium text-gray-900">Configurações da Empresa</h3>
                 <p className="text-sm">Em breve você poderá editar dados fiscais e horários de atendimento aqui.</p>
+             </div>
+          );
+
+      case 'ai':
+          return (
+             <div className="space-y-6 animate-fadeIn">
+                <div className="border-b border-gray-100 pb-4">
+                   <h2 className="text-xl font-semibold text-gray-800">Agentes IA & Automação</h2>
+                   <p className="text-sm text-gray-500">Configure o cérebro da sua operação. Defina chaves de API e modelos.</p>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                   <div className="flex items-center mb-6">
+                      <div className="p-3 bg-purple-100 rounded-lg text-purple-600 mr-4">
+                         <BrainCircuit size={24} />
+                      </div>
+                      <div>
+                         <h3 className="text-lg font-bold text-gray-900">Motor de Inteligência (LLM)</h3>
+                         <p className="text-sm text-gray-500">O sistema utiliza Google Gemini para processar conversas.</p>
+                      </div>
+                   </div>
+
+                   <div className="space-y-5 max-w-2xl">
+                      <div>
+                         <label className="block text-sm font-medium text-gray-700 mb-2">Modelo Padrão</label>
+                         <select 
+                            className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                            value={aiSettings.model}
+                            onChange={(e) => setAiSettings({...aiSettings, model: e.target.value})}
+                         >
+                            <option value="gemini-3-pro-preview">Gemini 1.5 Pro (Raciocínio Complexo)</option>
+                            <option value="gemini-3-flash-preview">Gemini 1.5 Flash (Alta Velocidade)</option>
+                         </select>
+                         <p className="text-xs text-gray-500 mt-1">O modelo Pro é recomendado para atendimento complexo. O Flash é melhor para triagem rápida.</p>
+                      </div>
+
+                      <div className="pt-4 border-t border-gray-100">
+                         <div className="flex items-center justify-between mb-4">
+                            <div>
+                               <label className="text-sm font-medium text-gray-900">Chave de API Personalizada</label>
+                               <p className="text-xs text-gray-500">Use sua própria chave para evitar limites de taxa do plano gratuito.</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                               <input 
+                                 type="checkbox" 
+                                 className="sr-only peer" 
+                                 checked={aiSettings.useOwnKey}
+                                 onChange={(e) => setAiSettings({...aiSettings, useOwnKey: e.target.checked})}
+                               />
+                               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                            </label>
+                         </div>
+
+                         {aiSettings.useOwnKey && (
+                            <div className="animate-fadeIn">
+                               <div className="relative">
+                                  <input 
+                                    type="password" 
+                                    className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                                    placeholder="Cole sua chave API aqui (AIzaSy...)"
+                                    value={aiSettings.apiKey}
+                                    onChange={(e) => setAiSettings({...aiSettings, apiKey: e.target.value})}
+                                  />
+                                  <Key size={16} className="absolute left-3 top-3 text-gray-400" />
+                               </div>
+                               <p className="text-xs text-gray-500 mt-1 flex items-center">
+                                  <CheckCircle size={12} className="mr-1 text-green-500" /> Chave armazenada localmente e criptografada.
+                               </p>
+                            </div>
+                         )}
+                      </div>
+
+                      <div className="pt-4 flex justify-end">
+                         <button 
+                           onClick={() => {
+                              localStorage.setItem('app_ai_settings', JSON.stringify(aiSettings));
+                              addToast('Configurações de IA salvas com sucesso!', 'success');
+                           }}
+                           className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 font-medium shadow-sm flex items-center transition-colors"
+                         >
+                            <Save size={18} className="mr-2" /> Salvar Alterações
+                         </button>
+                      </div>
+                   </div>
+                </div>
              </div>
           );
 

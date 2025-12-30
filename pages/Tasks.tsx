@@ -840,7 +840,7 @@ const Tasks: React.FC = () => {
                        />
                        <button type="button" className={`flex items-center px-2 py-1 rounded border text-xs hover:bg-gray-50 bg-white ${quickAddDate ? 'border-purple-200 text-purple-700 bg-purple-50' : 'border-gray-200 text-gray-500'}`}>
                          <Calendar size={12} className="mr-1"/> 
-                         {quickAddDate ? new Date(quickAddDate).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute:'2-digit'}) : 'Data & Hora'}
+                         {quickAddDate ? new Date(quickAddDate).toLocaleString('pt-BR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute:'2-digit'}) : 'Data & Hora'}
                        </button>
                     </div>
 
