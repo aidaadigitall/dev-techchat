@@ -17,7 +17,7 @@ import {
   FileText
 } from 'lucide-react';
 
-export const APP_NAME = "Tech Chat";
+export const APP_NAME = "SaaS CRM";
 
 export const NAVIGATION_ITEMS = [
   // General Tenant Routes

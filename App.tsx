@@ -74,10 +74,16 @@ const App: React.FC = () => {
 
   // --- Auth & Session Management ---
   useEffect(() => {
-    // 1. Check active session (Supabase or Mock)
     const initSession = async () => {
         try {
-            const { data: { session: supabaseSession } } = await supabase.auth.getSession();
+            // Create a timeout promise that rejects after 5 seconds
+            // This prevents the "White Screen of Death" if Supabase hangs
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Session check timeout')), 5000));
+            const sessionPromise = supabase.auth.getSession();
+
+            // Race the session check against the timeout
+            const result: any = await Promise.race([sessionPromise, timeout]);
+            const { data: { session: supabaseSession } } = result;
             
             if (supabaseSession) {
                 setSession(supabaseSession);
@@ -92,7 +98,8 @@ const App: React.FC = () => {
                 }
             }
         } catch (e) {
-            console.error("Auth check error", e);
+            console.warn("Auth check finished with warning (or timeout):", e);
+            // Even if it fails/times out, we stop loading so the user can see the Login screen
         } finally {
             setLoadingSession(false);
         }
@@ -199,7 +206,10 @@ const App: React.FC = () => {
   if (loadingSession) {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+            <div className="flex flex-col items-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mb-4"></div>
+                <p className="text-gray-400 text-sm">Carregando sistema...</p>
+            </div>
         </div>
     );
   }

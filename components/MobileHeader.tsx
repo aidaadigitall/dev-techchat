@@ -8,7 +8,7 @@ interface MobileHeaderProps {
 }
 
 const MobileHeader: React.FC<MobileHeaderProps> = ({ onToggleMenu, branding }) => {
-  const appName = branding?.appName || 'OmniConnect';
+  const appName = branding?.appName || 'CRM';
   const primaryColor = branding?.primaryColor || '#9333ea';
 
   return (
