@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MOCK_CONTACTS, MOCK_USERS, MOCK_PROPOSALS } from '../constants';
 import { api } from '../services/api';
 import { whatsappService } from '../services/whatsapp'; // Import WhatsApp Service
-import { Contact, Message, MessageType, QuickReply, AIInsight, Proposal, Branding } from '../types';
+import { Contact, Message, MessageType, QuickReply, AIInsight, Proposal, Branding, TaskPriority } from '../types';
 import { 
   Search, MoreVertical, Paperclip, Smile, Mic, Send, 
   Check, CheckCheck, Tag, Clock, User, MessageSquare,
@@ -11,7 +11,7 @@ import {
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
   Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
-  ArrowRight, StickyNote, RefreshCw
+  ArrowRight, StickyNote, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
@@ -102,7 +102,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   ]);
 
   // Modals State
-  const [activeModal, setActiveModal] = useState<'transfer' | 'export' | 'schedule' | 'forward' | null>(null);
+  // Expanded types for activeModal to support new features
+  const [activeModal, setActiveModal] = useState<'transfer' | 'export' | 'schedule' | 'forward' | 'resolve' | 'delete' | 'createTask' | 'tags' | null>(null);
   const [transferData, setTransferData] = useState({ userId: '', sector: '' });
   
   // Scheduling State
@@ -113,6 +114,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   ]);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
 
+  // Quick Task State
+  const [newTaskForm, setNewTaskForm] = useState({ title: '', dueDate: '', priority: 'p2' as TaskPriority });
+
+  // Tag Management State
+  const [tagInput, setTagInput] = useState('');
   
   // Forwarding State
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
@@ -290,6 +296,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   };
 
   const handleDeleteMessage = (messageId: string) => {
+    // Replaced window.confirm with Toast or Custom Modal if preferred, for simple actions, toast is often enough or a simple UI toggle
+    // Here we will keep confirm for critical actions but use a Modal for the big ones
     if (confirm('Apagar esta mensagem?')) {
       setMessages(prev => prev.filter(msg => msg.id !== messageId));
     }
@@ -332,7 +340,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
   const handleResolveTicket = () => {
     if (!selectedContact) return;
-    if (confirm("Deseja realmente finalizar este atendimento?")) {
+    setActiveModal('resolve');
+  };
+
+  const confirmResolveTicket = () => {
+       if (!selectedContact) return;
        // Send system message first
        const systemMsg: Message = {
            id: Date.now().toString(),
@@ -346,25 +358,29 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
        
        // Update status
        updateContactStatus(selectedContact.id, 'resolved');
-    }
+       setActiveModal(null);
   };
 
   const handleDeleteChat = async () => {
       if (!selectedContact) return;
-      if (confirm("Tem certeza que deseja excluir esta conversa e todo o histórico?")) {
-          await api.contacts.delete(selectedContact.id);
-          setContacts(prev => prev.filter(c => c.id !== selectedContact.id));
-          setSelectedContact(null);
-          setHeaderMenuOpen(false);
-          addToast("Conversa excluída com sucesso.", "success");
-      }
+      setActiveModal('delete'); // Open new modern modal
+  };
+
+  const confirmDeleteChat = async () => {
+      if (!selectedContact) return;
+      await api.contacts.delete(selectedContact.id);
+      setContacts(prev => prev.filter(c => c.id !== selectedContact.id));
+      setSelectedContact(null);
+      setHeaderMenuOpen(false);
+      setActiveModal(null);
+      addToast("Conversa excluída com sucesso.", "success");
   };
 
   // --- Transfer Logic ---
   const handleTransferTicket = () => {
     if (!selectedContact) return;
     if (!transferData.sector && !transferData.userId) {
-      alert("Selecione um setor ou usuário para transferir.");
+      addToast("Selecione um setor ou usuário para transferir.", "warning");
       return;
     }
 
@@ -372,22 +388,86 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       ? MOCK_USERS.find(u => u.id === transferData.userId)?.name 
       : DEPARTMENTS.find(d => d.id === transferData.sector)?.name;
 
-    if (confirm(`Confirmar transferência para: ${target}?`)) {
-       // Simulate Transfer
-       const systemMsg: Message = {
-           id: Date.now().toString(),
-           content: `Atendimento transferido para ${target}.`,
-           senderId: 'system',
-           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-           type: MessageType.TEXT,
-           status: 'read'
-       };
-       setMessages(prev => [...prev, systemMsg]);
-       alert("Transferência realizada com sucesso!");
-       setActiveModal(null);
-       setTransferData({ userId: '', sector: '' });
-    }
+    // Simulate Transfer
+    const systemMsg: Message = {
+        id: Date.now().toString(),
+        content: `Atendimento transferido para ${target}.`,
+        senderId: 'system',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: MessageType.TEXT,
+        status: 'read'
+    };
+    setMessages(prev => [...prev, systemMsg]);
+    addToast(`Transferência realizada com sucesso para ${target}!`, 'success');
+    setActiveModal(null);
+    setTransferData({ userId: '', sector: '' });
   };
+
+  // --- Task Creation Logic ---
+  const handleCreateTask = () => {
+      if(!selectedContact) return;
+      setNewTaskForm({
+          title: `Retornar contato: ${selectedContact.name}`,
+          dueDate: new Date().toISOString().slice(0, 10),
+          priority: 'p2'
+      });
+      setActiveModal('createTask');
+  }
+
+  const confirmCreateTask = async () => {
+      if(!newTaskForm.title) {
+          addToast('Informe o título da tarefa', 'warning');
+          return;
+      }
+      
+      await api.tasks.create({
+          title: newTaskForm.title,
+          dueDate: newTaskForm.dueDate,
+          priority: newTaskForm.priority,
+          projectId: 'inbox',
+          description: `Tarefa criada a partir do chat com ${selectedContact?.name}`
+      });
+      
+      addToast('Tarefa criada com sucesso!', 'success');
+      setActiveModal(null);
+  };
+
+  // --- Tag Management Logic ---
+  const handleManageTags = () => {
+      if(!selectedContact) return;
+      setActiveModal('tags');
+  }
+
+  const handleAddTag = async () => {
+      if(!selectedContact || !tagInput.trim()) return;
+      const newTag = tagInput.trim();
+      if(selectedContact.tags.includes(newTag)) {
+          setTagInput('');
+          return;
+      }
+      
+      const newTags = [...selectedContact.tags, newTag];
+      
+      // Optimistic update
+      setSelectedContact({...selectedContact, tags: newTags});
+      setContacts(prev => prev.map(c => c.id === selectedContact.id ? {...c, tags: newTags} : c));
+      
+      // API call
+      await api.contacts.update(selectedContact.id, { tags: newTags });
+      setTagInput('');
+  }
+
+  const handleRemoveTag = async (tag: string) => {
+      if(!selectedContact) return;
+      const newTags = selectedContact.tags.filter(t => t !== tag);
+      
+      // Optimistic update
+      setSelectedContact({...selectedContact, tags: newTags});
+      setContacts(prev => prev.map(c => c.id === selectedContact.id ? {...c, tags: newTags} : c));
+      
+      // API call
+      await api.contacts.update(selectedContact.id, { tags: newTags });
+  }
 
   // --- Schedule Logic ---
   const handleScheduleMessage = () => {
@@ -421,7 +501,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
   const confirmSchedule = () => {
     if (!scheduleData.date || !scheduleData.time) {
-      alert("Selecione data e hora.");
+      addToast("Selecione data e hora.", "warning");
       return;
     }
     
@@ -437,7 +517,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
             message: messageInput || m.message,
             recurrence: recurrenceLabel
         } : m));
-        alert("Agendamento atualizado!");
+        addToast("Agendamento atualizado!", "success");
     } else {
         // Add new
         const newScheduled = {
@@ -447,7 +527,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
             recurrence: recurrenceLabel
         };
         setScheduledMessages(prev => [...prev, newScheduled]);
-        alert("Mensagem agendada com sucesso!");
+        addToast("Mensagem agendada com sucesso!", "success");
     }
     
     setActiveModal(null);
@@ -462,7 +542,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     if (!forwardMessage) return;
     const targetContact = contacts.find(c => c.id === targetContactId);
     
-    alert(`Mensagem encaminhada para ${targetContact?.name}`);
+    addToast(`Mensagem encaminhada para ${targetContact?.name}`, "success");
     setActiveModal(null);
     setForwardMessage(null);
   };
@@ -565,7 +645,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         }
       );
     } else {
-      alert("Geolocalização não suportada neste navegador.");
+      addToast("Geolocalização não suportada neste navegador.", "error");
     }
   };
 
@@ -665,7 +745,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
     
     setHeaderMenuOpen(false);
-    alert(isBlocked ? "Contato bloqueado com sucesso." : "Contato desbloqueado.");
+    addToast(isBlocked ? "Contato bloqueado com sucesso." : "Contato desbloqueado.", "info");
   };
 
   const handleOpenExportModal = () => {
@@ -939,7 +1019,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                </div>
                                <div className="overflow-hidden flex-1">
                                   <p className="text-sm font-medium text-gray-800 truncate">{msg.fileName || 'Documento'}</p>
-                                  <p className="text-[10px] text-gray-500 uppercase">DOC • 240 KB</p>
+                                  <p className="text-xs text-gray-500 uppercase">DOC • 240 KB</p>
                                </div>
                                <button className="ml-2 p-1 text-gray-500 hover:text-gray-700 bg-white rounded-full shadow-sm">
                                   <Download size={16} />
@@ -1322,7 +1402,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                     <ArrowRightLeft size={18} className="text-purple-600 mb-1 group-hover:scale-110 transition-transform" />
                                     <span className="text-xs font-medium text-gray-700">Transferir</span>
                                  </button>
-                                 <button onClick={() => alert("Criar Tarefa (Mock)")} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
+                                 <button onClick={handleCreateTask} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
                                     <CheckSquare size={18} className="text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
                                     <span className="text-xs font-medium text-gray-700">Criar Tarefa</span>
                                  </button>
@@ -1330,7 +1410,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                     <Clock size={18} className="text-orange-600 mb-1 group-hover:scale-110 transition-transform" />
                                     <span className="text-xs font-medium text-gray-700">Agendar</span>
                                  </button>
-                                 <button onClick={() => alert("Adicionar Tags (Mock)")} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
+                                 <button onClick={handleManageTags} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors group">
                                     <Tag size={18} className="text-green-600 mb-1 group-hover:scale-110 transition-transform" />
                                     <span className="text-xs font-medium text-gray-700">Etiquetar</span>
                                  </button>
@@ -1830,6 +1910,143 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
             </div>
          </div>
       )}
+
+      {/* Modern Resolve Confirmation Modal */}
+      <Modal isOpen={activeModal === 'resolve'} onClose={() => setActiveModal(null)} title="Finalizar Atendimento" size="sm">
+         <div className="text-center p-2">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+               <Check size={24} className="text-green-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Confirmar encerramento?</h3>
+            <p className="text-sm text-gray-500 mb-6">
+               O atendimento será marcado como resolvido e movido para a aba "Fechados". Uma mensagem de encerramento será enviada.
+            </p>
+            <div className="flex justify-center gap-3">
+               <button 
+                 onClick={() => setActiveModal(null)}
+                 className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+               >
+                  Cancelar
+               </button>
+               <button 
+                 onClick={confirmResolveTicket}
+                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium shadow-sm"
+               >
+                  Sim, finalizar
+               </button>
+            </div>
+         </div>
+      </Modal>
+
+      {/* Modern Delete Conversation Modal */}
+      <Modal isOpen={activeModal === 'delete'} onClose={() => setActiveModal(null)} title="Excluir Conversa" size="sm">
+         <div className="text-center p-2">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+               <AlertTriangle size={24} className="text-red-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Excluir permanentemente?</h3>
+            <p className="text-sm text-gray-500 mb-6">
+               Esta ação removerá todo o histórico de mensagens com <strong>{selectedContact?.name}</strong>. Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex justify-center gap-3">
+               <button 
+                 onClick={() => setActiveModal(null)}
+                 className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+               >
+                  Cancelar
+               </button>
+               <button 
+                 onClick={confirmDeleteChat}
+                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium shadow-sm"
+               >
+                  Excluir Conversa
+               </button>
+            </div>
+         </div>
+      </Modal>
+
+      {/* Create Task Modal */}
+      <Modal isOpen={activeModal === 'createTask'} onClose={() => setActiveModal(null)} title="Criar Tarefa Rápida">
+         <div className="space-y-4">
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Título da Tarefa</label>
+               <input 
+                 type="text" 
+                 className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-purple-500" 
+                 value={newTaskForm.title}
+                 onChange={(e) => setNewTaskForm({...newTaskForm, title: e.target.value})}
+               />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vencimento</label>
+                  <input 
+                    type="date" 
+                    className="w-full border rounded-lg p-2.5 bg-white"
+                    value={newTaskForm.dueDate}
+                    onChange={(e) => setNewTaskForm({...newTaskForm, dueDate: e.target.value})}
+                  />
+               </div>
+               <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Prioridade</label>
+                  <select 
+                    className="w-full border rounded-lg p-2.5 bg-white"
+                    value={newTaskForm.priority}
+                    onChange={(e) => setNewTaskForm({...newTaskForm, priority: e.target.value as any})}
+                  >
+                     <option value="p1">Alta</option>
+                     <option value="p2">Média</option>
+                     <option value="p3">Baixa</option>
+                     <option value="p4">Normal</option>
+                  </select>
+               </div>
+            </div>
+            <div className="flex justify-end pt-4">
+               <button 
+                 onClick={confirmCreateTask}
+                 className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-medium shadow-sm"
+               >
+                  Salvar Tarefa
+               </button>
+            </div>
+         </div>
+      </Modal>
+
+      {/* Manage Tags Modal */}
+      <Modal isOpen={activeModal === 'tags'} onClose={() => setActiveModal(null)} title="Gerenciar Etiquetas">
+         <div className="space-y-4">
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-2">Etiquetas Atuais</label>
+               <div className="flex flex-wrap gap-2 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200 min-h-[50px]">
+                  {selectedContact?.tags.length === 0 && <span className="text-xs text-gray-400 italic">Sem etiquetas</span>}
+                  {selectedContact?.tags.map(tag => (
+                     <span key={tag} className="bg-white border border-gray-300 text-gray-700 px-2 py-1 rounded-full text-xs flex items-center shadow-sm">
+                        <Tag size={10} className="mr-1 text-gray-400" />
+                        {tag}
+                        <button onClick={() => handleRemoveTag(tag)} className="ml-1 text-red-400 hover:text-red-600"><X size={12} /></button>
+                     </span>
+                  ))}
+               </div>
+            </div>
+            
+            <div className="flex gap-2">
+               <input 
+                 type="text" 
+                 className="flex-1 border rounded-lg p-2.5 bg-white text-sm"
+                 placeholder="Nova etiqueta..."
+                 value={tagInput}
+                 onChange={(e) => setTagInput(e.target.value)}
+                 onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+               />
+               <button 
+                 onClick={handleAddTag}
+                 className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-medium"
+               >
+                  <Plus size={18} />
+               </button>
+            </div>
+         </div>
+      </Modal>
 
     </div>
   );
