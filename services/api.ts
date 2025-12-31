@@ -146,7 +146,13 @@ export const api = {
         }
       };
       
-      const { data, error } = await supabase.from('contacts').insert(payload).select().single();
+      // Changed to UPSERT to handle duplicates gracefully during imports
+      const { data, error } = await supabase
+        .from('contacts')
+        .upsert(payload, { onConflict: 'phone' })
+        .select()
+        .single();
+
       if (error) throw error;
       return adaptContact(data);
     },

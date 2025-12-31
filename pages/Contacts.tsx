@@ -333,23 +333,31 @@ const Contacts: React.FC = () => {
             }
         }
 
-        try {
-            // Process creation
-            let successCount = 0;
-            for (const contact of newContacts) {
+        let successCount = 0;
+        let errors = [];
+
+        for (const contact of newContacts) {
+            try {
                 await api.contacts.create(contact);
                 successCount++;
+            } catch (err: any) {
+                console.error("Failed to import contact:", contact.name, err);
+                errors.push(`${contact.name}: ${err.message || 'Erro desconhecido'}`);
             }
-            
-            await loadContacts(); // Refresh list logic
-            addToast(`${successCount} contatos importados com sucesso!`, 'success');
-        } catch (error) {
-            console.error("Import Error:", error);
-            addToast('Erro ao processar importação.', 'error');
-        } finally {
-            setLoading(false);
-            if (importFileRef.current) importFileRef.current.value = '';
         }
+
+        await loadContacts(); // Refresh list logic
+        setLoading(false);
+        
+        if (successCount > 0) {
+            addToast(`${successCount} contatos importados/atualizados!`, 'success');
+        }
+        
+        if (errors.length > 0) {
+            addToast(`Falha ao importar ${errors.length} contatos. Verifique o console.`, 'warning');
+        }
+
+        if (importFileRef.current) importFileRef.current.value = '';
       };
 
       reader.readAsText(file);
