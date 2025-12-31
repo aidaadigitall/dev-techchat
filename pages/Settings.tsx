@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle } from 'lucide-react';
+import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal } from 'lucide-react';
 import { User, Branding, Tag, Sector } from '../types';
 import { MOCK_USERS } from '../constants';
 import { api } from '../services/api';
@@ -49,23 +49,28 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppStatus>('disconnected');
   const [connectionModalOpen, setConnectionModalOpen] = useState(false);
+  const [connectionLogs, setConnectionLogs] = useState<string[]>([]);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   // --- Initial Load & Event Listeners ---
   useEffect(() => {
     // 1. Get initial status
     setWhatsappStatus(whatsappService.getStatus());
     setQrCodeData(whatsappService.getQrCode());
+    setConnectionLogs(whatsappService.getLogs());
 
     // 2. Subscribe to status changes
     const handleStatusChange = (status: WhatsAppStatus) => {
         setWhatsappStatus(status);
         if (status === 'connected') {
-            setConnectionModalOpen(false);
-            addToast('WhatsApp conectado com sucesso!', 'success');
+            setTimeout(() => {
+                setConnectionModalOpen(false);
+                addToast('WhatsApp conectado com sucesso!', 'success');
+            }, 1000);
         }
     };
 
@@ -73,14 +78,27 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
         setQrCodeData(qr);
     };
 
+    const handleLog = (log: string) => {
+        setConnectionLogs(prev => [...prev, log]);
+    };
+
     whatsappService.on('status', handleStatusChange);
     whatsappService.on('qr', handleQrCode);
+    whatsappService.on('log', handleLog);
 
     return () => {
         whatsappService.off('status', handleStatusChange);
         whatsappService.off('qr', handleQrCode);
+        whatsappService.off('log', handleLog);
     };
   }, []);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (logsEndRef.current) {
+        logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [connectionLogs, connectionModalOpen]);
 
   // Update form when currentUser changes
   useEffect(() => {
@@ -104,6 +122,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   // --- Handlers ---
 
   const handleGenerateQR = () => {
+    setConnectionLogs([]); // Clear previous logs
     setConnectionModalOpen(true);
     whatsappService.connect();
   };
@@ -210,7 +229,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                              disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready'}
                              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50"
                            >
-                               <QrCode size={18} className="mr-2" /> {whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' ? 'Aguarde...' : 'Conectar via QR Code'}
+                               <QrCode size={18} className="mr-2" /> {whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' ? 'Retomar Conexão' : 'Conectar via QR Code'}
                            </button>
                        )}
                     </div>
@@ -539,15 +558,25 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
            <div className="flex flex-col items-center justify-center py-6 space-y-6">
                {qrCodeData ? (
                    <>
-                       <div className="p-2 bg-white border-4 border-gray-900 rounded-lg shadow-xl">
-                           <img src={qrCodeData} alt="QR Code" className="w-64 h-64" />
+                       <div className="p-2 bg-white border-4 border-gray-900 rounded-lg shadow-xl relative">
+                           <img 
+                             src={qrCodeData} 
+                             alt="QR Code" 
+                             className="w-64 h-64 object-contain" 
+                             onError={(e) => {
+                                // Fallback if external API fails
+                                e.currentTarget.style.display = 'none';
+                                e.currentTarget.parentElement?.classList.add('flex', 'items-center', 'justify-center', 'bg-gray-100');
+                                e.currentTarget.parentElement!.innerHTML = '<span class="text-xs text-red-500 font-bold p-4 text-center">Erro ao carregar QR.<br/>Verifique sua internet.</span>';
+                             }}
+                           />
+                           <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 bg-white px-2 py-1 rounded-full border shadow-sm">
+                              <RefreshCw size={14} className="text-green-600 animate-spin" />
+                           </div>
                        </div>
                        <div className="text-center">
                            <p className="text-sm font-bold text-gray-800 mb-1">Abra o WhatsApp no seu celular</p>
                            <p className="text-xs text-gray-500">Vá em Menu {'>'} Aparelhos Conectados {'>'} Conectar Aparelho</p>
-                       </div>
-                       <div className="flex items-center text-xs text-purple-600 bg-purple-50 px-3 py-1 rounded-full animate-pulse">
-                           <RefreshCw size={12} className="mr-1 animate-spin" /> Aguardando leitura...
                        </div>
                    </>
                ) : (
@@ -558,6 +587,18 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                        </p>
                    </div>
                )}
+
+               {/* Simulated Terminal Log */}
+               <div className="w-full max-w-sm bg-gray-900 rounded-lg p-3 font-mono text-xs text-green-400 h-32 overflow-y-auto border border-gray-700 shadow-inner">
+                  <div className="flex items-center text-gray-500 mb-2 border-b border-gray-800 pb-1">
+                     <Terminal size={12} className="mr-1" /> Console do Servidor
+                  </div>
+                  {connectionLogs.length === 0 && <span className="opacity-50">Aguardando logs...</span>}
+                  {connectionLogs.map((log, i) => (
+                      <div key={i} className="mb-1">{log}</div>
+                  ))}
+                  <div ref={logsEndRef} />
+               </div>
            </div>
        </Modal>
     </div>

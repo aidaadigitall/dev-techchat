@@ -1,3 +1,4 @@
+
 // services/whatsapp.ts
 
 // Types for WhatsApp Status
@@ -11,6 +12,7 @@ class WhatsAppService {
   private eventListeners: Map<string, EventHandler[]> = new Map();
   private connectionInterval: number | null = null;
   private incomingMessageInterval: number | null = null;
+  private logs: string[] = [];
 
   constructor() {
     // Initialize mocks or listeners
@@ -26,20 +28,28 @@ class WhatsAppService {
     return this.qrCode;
   }
 
+  public getLogs(): string[] {
+    return this.logs;
+  }
+
   public connect(): void {
     if (this.status === 'connected') return;
 
     this.updateStatus('connecting');
+    this.addLog('Iniciando instância do cliente...');
+    this.addLog('Conectando ao servidor socket...');
     
     // Simulate Fetching QR Code from Backend (e.g., Baileys/WPPConnect)
     setTimeout(() => {
-      this.qrCode = 'https://chart.googleapis.com/chart?cht=qr&chl=SimulatedWhatsAppConnection&chs=250x250&chld=L|0';
+      // Usando api.qrserver.com que é confiável e gratuita
+      this.qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=TechChatAuth_${Date.now()}`;
       this.updateStatus('qr_ready');
       this.emit('qr', this.qrCode);
+      this.addLog('QR Code gerado. Aguardando leitura...');
 
-      // Simulate user scanning the code after 5-15 seconds
+      // Simulate user scanning the code after 8 seconds
       this.startConnectionSimulation();
-    }, 1500);
+    }, 2000);
   }
 
   public disconnect(): void {
@@ -47,6 +57,8 @@ class WhatsAppService {
     if (this.incomingMessageInterval) clearInterval(this.incomingMessageInterval);
     this.updateStatus('disconnected');
     this.qrCode = null;
+    this.logs = [];
+    this.addLog('Sessão encerrada.');
   }
 
   // --- Messaging API (Simulated) ---
@@ -61,14 +73,14 @@ class WhatsAppService {
 
   // --- Event Handling ---
 
-  public on(event: 'status' | 'qr' | 'message' | 'typing', handler: EventHandler) {
+  public on(event: 'status' | 'qr' | 'message' | 'typing' | 'log', handler: EventHandler) {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, []);
     }
     this.eventListeners.get(event)?.push(handler);
   }
 
-  public off(event: 'status' | 'qr' | 'message' | 'typing', handler: EventHandler) {
+  public off(event: 'status' | 'qr' | 'message' | 'typing' | 'log', handler: EventHandler) {
     const handlers = this.eventListeners.get(event);
     if (handlers) {
       this.eventListeners.set(event, handlers.filter(h => h !== handler));
@@ -82,6 +94,12 @@ class WhatsAppService {
     this.emit('status', newStatus);
   }
 
+  private addLog(message: string) {
+    const log = `[${new Date().toLocaleTimeString()}] ${message}`;
+    this.logs.push(log);
+    this.emit('log', log);
+  }
+
   private emit(event: string, data: any) {
     const handlers = this.eventListeners.get(event);
     if (handlers) {
@@ -91,16 +109,18 @@ class WhatsAppService {
 
   private startConnectionSimulation() {
     // This simulates the waiting period for the user to scan the QR
-    // In a real app, a WebSocket event would trigger this.
     
     this.connectionInterval = window.setTimeout(() => {
       // Simulate success
       this.qrCode = null;
       this.updateStatus('connected');
+      this.addLog('Autenticado com sucesso!');
+      this.addLog('Sincronizando contatos e chats...');
+      this.addLog('Pronto para uso.');
       
       // Start receiving messages after connection
       this.startIncomingMessageSimulation();
-    }, 5000); // 5 seconds to connect
+    }, 8000); // 8 seconds to connect (simulating scan time)
   }
 
   private startIncomingMessageSimulation() {
