@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { Branding } from '../types';
 import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle } from 'lucide-react';
@@ -26,10 +26,18 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Clear stale sessions on mount
+  useEffect(() => {
+    localStorage.removeItem('mock_session');
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    
+    // Clear any previous mock session to ensure we use the new credentials
+    localStorage.removeItem('mock_session');
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -45,30 +53,36 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     } catch (err: any) {
       console.error("Login Error:", err);
       
-      // FALLBACK DE SEGURANÇA PARA MODO DEMONSTRAÇÃO
-      // Se a API falhar (Failed to fetch) ou não houver credenciais configuradas,
-      // permitimos o login para fins de teste da interface.
+      // FALLBACK DE SEGURANÇA PARA MODO DEMONSTRAÇÃO / ADMIN
+      // Se a API falhar ou credenciais de banco não existirem, permitimos acesso mockado
+      // para que a interface possa ser testada.
       const isNetworkError = err.message === 'Failed to fetch' || err.message?.includes('network');
       const isMockable = email.includes('@') && password.length > 0;
 
       if (isNetworkError || isMockable) {
-         console.log("Ativando modo demonstração devido a erro de conexão ou credencial de teste.");
+         console.log("Ativando modo demonstração/fallback.");
+         
+         // Detect if it's the Admin user trying to login
+         const isAdmin = email === 'admin@techchat.com';
+         
          const mockSession = {
             access_token: 'mock-token',
             user: {
-                id: 'mock-user-id',
+                id: isAdmin ? '1' : 'mock-user-id',
                 email: email,
                 user_metadata: {
-                    full_name: 'Usuário Demo',
-                    company_name: 'Demo Company'
+                    full_name: isAdmin ? 'Admin User' : 'Usuário Demo',
+                    company_name: isAdmin ? 'Tech Chat SaaS' : 'Minha Empresa Demo'
+                },
+                app_metadata: {
+                    role: isAdmin ? 'super_admin' : 'admin'
                 }
             }
          };
          
-         // Persistir sessão mock para não deslogar no refresh
+         // Persistir sessão mock
          localStorage.setItem('mock_session', JSON.stringify(mockSession));
 
-         // Simula delay de rede para UX
          setTimeout(() => {
              onLoginSuccess(mockSession);
          }, 800);
@@ -103,11 +117,11 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       if (data.session) {
         onLoginSuccess(data.session);
       } else {
-        // Fallback demo
+        // Fallback demo register
         const mockSession = {
             access_token: 'mock-token',
             user: {
-                id: 'mock-user-id',
+                id: 'mock-user-id-' + Date.now(),
                 email: regEmail,
                 user_metadata: {
                     full_name: `${firstName} ${lastName}`,
@@ -132,7 +146,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
          const mockSession = {
             access_token: 'mock-token',
             user: {
-                id: 'mock-user-id',
+                id: 'mock-user-id-' + Date.now(),
                 email: regEmail,
                 user_metadata: {
                     full_name: `${firstName} ${lastName}`,
