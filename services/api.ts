@@ -1,7 +1,7 @@
 import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from './supabase';
-import { MOCK_COMPANIES, MOCK_PLANS, MOCK_CONTACTS, MOCK_MESSAGES, MOCK_PROPOSALS } from '../constants';
+import { MOCK_PLANS } from '../constants'; // Keep Plans mock as they are usually static config
 
 // --- Environment Helper ---
 const getEnv = (key: string) => {
@@ -29,25 +29,6 @@ const getAiClient = () => {
   return aiClientInstance;
 };
 
-// --- LocalStorage Helpers for Mock Persistence ---
-const STORAGE_KEYS = {
-    CONTACTS: 'app_mock_contacts'
-};
-
-const getLocalContacts = (): Contact[] => {
-    try {
-        const stored = localStorage.getItem(STORAGE_KEYS.CONTACTS);
-        if (stored) return JSON.parse(stored);
-    } catch (e) { console.error("LS Error", e); }
-    // Initialize with default mocks if empty
-    localStorage.setItem(STORAGE_KEYS.CONTACTS, JSON.stringify(MOCK_CONTACTS));
-    return MOCK_CONTACTS;
-};
-
-const saveLocalContacts = (contacts: Contact[]) => {
-    localStorage.setItem(STORAGE_KEYS.CONTACTS, JSON.stringify(contacts));
-};
-
 // --- Adapters (Convert DB snake_case to Frontend camelCase) ---
 
 const adaptContact = (data: any): Contact => ({
@@ -59,8 +40,8 @@ const adaptContact = (data: any): Contact => ({
   tags: data.tags || [],
   company: data.custom_fields?.company,
   status: data.status || 'open',
-  unreadCount: 0, // Real-time count would be a separate query or counter table
-  lastMessage: '', // Ideally fetched via join
+  unreadCount: 0,
+  lastMessage: '', 
   lastMessageTime: data.last_message_at ? new Date(data.last_message_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '',
   pipelineValue: 0,
   cpfCnpj: data.custom_fields?.cpfCnpj,
@@ -82,7 +63,7 @@ const adaptMessage = (data: any): Message => ({
   status: data.status || 'sent',
   channel: 'whatsapp',
   mediaUrl: data.media_url,
-  starred: false // Could be added to DB
+  starred: false
 });
 
 const adaptTask = (data: any): Task => ({
@@ -95,13 +76,13 @@ const adaptTask = (data: any): Task => ({
   completed: data.status === 'completed',
   assigneeId: data.assignee_id,
   tags: data.tags || [],
-  subtasks: [] // Fetched separately or via recursive query
+  subtasks: [] 
 });
 
 const adaptProposal = (data: any): Proposal => ({
   id: data.id,
   clientId: data.contact_id,
-  clientName: data.contacts?.name || 'Cliente', // Requires join
+  clientName: data.contacts?.name || 'Cliente', 
   title: data.title,
   value: data.value,
   status: data.status,
@@ -110,148 +91,91 @@ const adaptProposal = (data: any): Proposal => ({
   pdfUrl: data.pdf_url
 });
 
-// Helper: Get Current User Company (for RLS inserts if not handled by Trigger/Default)
+// Helper: Get Current User Company ID
 const getCompanyId = async () => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
-  const { data } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
-  return data?.company_id;
+  
+  // Try to fetch from profile
+  const { data, error } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
+  
+  // If no profile (race condition on signup), user might not see data yet.
+  if (error || !data) {
+      console.warn("User has no profile linked. RLS might block access.");
+      return null;
+  }
+  return data.company_id;
 };
 
-// --- Mock Data Generators ---
-const generateMockPipeline = (): Pipeline[] => {
-    return [{
-        id: '1', 
-        name: 'Vendas Padrão',
-        columns: [
-            { 
-                id: 'c1', 
-                title: 'Novo Lead', 
-                color: 'border-blue-500', 
-                cards: [
-                    { id: 'card1', title: 'Consultoria TI', value: 5000, contactId: 'c1', contactName: 'Elisa Maria', priority: 'high', tags: ['Quente'] },
-                    { id: 'card2', title: 'Licença Software', value: 1200, contactId: 'c2', contactName: 'Tech Corp', priority: 'medium', tags: [] }
-                ] 
-            },
-            { 
-                id: 'c2', 
-                title: 'Negociação', 
-                color: 'border-yellow-500', 
-                cards: [
-                    { id: 'card3', title: 'Contrato Anual', value: 15000, contactId: 'c3', contactName: 'Roberto Carlos', priority: 'high', tags: ['VIP'] }
-                ] 
-            },
-            { 
-                id: 'c3', 
-                title: 'Fechado', 
-                color: 'border-green-500', 
-                cards: [] 
-            }
-        ]
-    }];
-};
-
-// --- API Service ---
+// --- API Service (PRODUCTION MODE - NO MOCKS) ---
 
 export const api = {
   contacts: {
     list: async (): Promise<Contact[]> => {
-      try {
-        const { data, error } = await supabase
-          .from('contacts')
-          .select('*')
-          .order('last_message_at', { ascending: false });
-        
-        if (error) throw error;
-        return data.map(adaptContact);
-      } catch (e) {
-        // Fallback: Read from LocalStorage to ensure persistence in demo mode
-        return getLocalContacts();
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .order('last_message_at', { ascending: false });
+      
+      if (error) {
+          console.error("Supabase Error (Contacts):", error);
+          throw error;
       }
+      return data.map(adaptContact);
     },
     getById: async (id: string): Promise<Contact | undefined> => {
-      try {
-          const { data } = await supabase.from('contacts').select('*').eq('id', id).single();
-          if (data) return adaptContact(data);
-          throw new Error("Not found");
-      } catch (e) {
-          const locals = getLocalContacts();
-          return locals.find(c => c.id === id);
-      }
+      const { data, error } = await supabase.from('contacts').select('*').eq('id', id).single();
+      if (error) throw error;
+      return adaptContact(data);
     },
     create: async (contact: Partial<Contact>): Promise<Contact> => {
-      try {
-          const company_id = await getCompanyId();
-          const payload = {
-            company_id,
-            name: contact.name,
-            phone: contact.phone,
-            email: contact.email,
-            tags: contact.tags,
-            source: contact.source,
-            status: contact.status || 'open',
-            custom_fields: {
-              company: contact.company,
-              cpfCnpj: contact.cpfCnpj,
-              role: contact.role,
-              city: contact.city,
-              state: contact.state
-            }
-          };
-          
-          const { data, error } = await supabase.from('contacts').insert(payload).select().single();
-          if (error) throw error;
-          return adaptContact(data);
-      } catch (e: any) {
-          // Mock Persistence
-          const newContact = { 
-              ...contact, 
-              id: `mock_${Date.now()}`,
-              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name || 'User')}&background=random`
-          } as Contact;
-          
-          const locals = getLocalContacts();
-          saveLocalContacts([newContact, ...locals]);
-          return newContact;
-      }
+      const company_id = await getCompanyId();
+      if (!company_id) throw new Error("Empresa não identificada. Faça login novamente.");
+
+      const payload = {
+        company_id,
+        name: contact.name,
+        phone: contact.phone,
+        email: contact.email,
+        tags: contact.tags,
+        source: contact.source,
+        status: contact.status || 'open',
+        custom_fields: {
+          company: contact.company,
+          cpfCnpj: contact.cpfCnpj,
+          role: contact.role,
+          city: contact.city,
+          state: contact.state
+        }
+      };
+      
+      const { data, error } = await supabase.from('contacts').insert(payload).select().single();
+      if (error) throw error;
+      return adaptContact(data);
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
-      try {
-          const payload: any = {};
-          if (updates.name) payload.name = updates.name;
-          if (updates.phone) payload.phone = updates.phone;
-          if (updates.email) payload.email = updates.email;
-          if (updates.status) payload.status = updates.status;
-          if (updates.tags) payload.tags = updates.tags;
-          
-          if (updates.company || updates.cpfCnpj) {
-             payload.custom_fields = {
-                company: updates.company,
-                cpfCnpj: updates.cpfCnpj,
-                role: updates.role
-             };
-          }
-
-          const { data, error } = await supabase.from('contacts').update(payload).eq('id', id).select().single();
-          if (error) throw error;
-          return adaptContact(data);
-      } catch (e) {
-          // Mock Persistence
-          const locals = getLocalContacts();
-          const updatedLocals = locals.map(c => c.id === id ? { ...c, ...updates } : c);
-          saveLocalContacts(updatedLocals);
-          return { ...updates, id } as Contact;
+      const payload: any = {};
+      if (updates.name) payload.name = updates.name;
+      if (updates.phone) payload.phone = updates.phone;
+      if (updates.email) payload.email = updates.email;
+      if (updates.status) payload.status = updates.status;
+      if (updates.tags) payload.tags = updates.tags;
+      
+      if (updates.company || updates.cpfCnpj) {
+          payload.custom_fields = {
+            company: updates.company,
+            cpfCnpj: updates.cpfCnpj,
+            role: updates.role
+          };
       }
+
+      const { data, error } = await supabase.from('contacts').update(payload).eq('id', id).select().single();
+      if (error) throw error;
+      return adaptContact(data);
     },
     delete: async (id: string): Promise<void> => {
-      try {
-          await supabase.from('contacts').delete().eq('id', id);
-      } catch (e) {
-          // Mock Persistence
-          const locals = getLocalContacts();
-          const filtered = locals.filter(c => c.id !== id);
-          saveLocalContacts(filtered);
-      }
+      const { error } = await supabase.from('contacts').delete().eq('id', id);
+      if (error) throw error;
     }
   },
 
@@ -263,87 +187,68 @@ export const api = {
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true });
       
-      if (error || !data) return MOCK_MESSAGES; // Fallback
+      if (error) throw error;
       return data.map(adaptMessage);
     },
     sendMessage: async (contactId: string, content: string, type: MessageType = MessageType.TEXT): Promise<Message> => {
-      try {
-          const company_id = await getCompanyId();
-          const payload = {
-            company_id,
-            contact_id: contactId,
-            content,
-            type,
-            sender_id: 'me',
-            status: 'sent'
-          };
-          const { data, error } = await supabase.from('messages').insert(payload).select().single();
-          if (error) throw error;
-          
-          await supabase.from('contacts').update({ last_message_at: new Date() }).eq('id', contactId);
-          
-          return adaptMessage(data);
-      } catch (e) {
-          return {
-              id: Date.now().toString(),
-              content,
-              senderId: 'me',
-              timestamp: new Date().toISOString(),
-              type,
-              status: 'sent'
-          };
-      }
+      const company_id = await getCompanyId();
+      const payload = {
+        company_id,
+        contact_id: contactId,
+        content,
+        type,
+        sender_id: 'me',
+        status: 'sent'
+      };
+      
+      const { data, error } = await supabase.from('messages').insert(payload).select().single();
+      if (error) throw error;
+      
+      // Update last message timestamp on contact
+      await supabase.from('contacts').update({ last_message_at: new Date() }).eq('id', contactId);
+      
+      return adaptMessage(data);
     },
     getQuickReplies: async (): Promise<QuickReply[]> => {
-        return [
-            { id: '1', shortcut: '/oi', content: 'Olá! Tudo bem? Como posso ajudar você hoje?' },
-            { id: '2', shortcut: '/pix', content: 'Nossa chave PIX é o CNPJ: 12.345.678/0001-90.' }
-        ];
+        const { data } = await supabase.from('quick_replies').select('*');
+        return (data || []).map((q: any) => ({ id: q.id, shortcut: q.shortcut, content: q.content }));
     }
   },
 
   tasks: {
     list: async (): Promise<Task[]> => {
       const { data, error } = await supabase.from('tasks').select('*').order('due_date', { ascending: true });
-      if (error) return [];
-      
-      const tasks = data.map(adaptTask);
-      const rootTasks = tasks.filter(t => !data.find((d:any) => d.id === t.id)?.parent_id);
-      return rootTasks;
+      if (error) {
+          console.error("Supabase Error (Tasks):", error);
+          return []; // Fail gracefully for lists
+      }
+      return data.map(adaptTask);
     },
     create: async (task: Partial<Task>): Promise<Task> => {
-      try {
-          const company_id = await getCompanyId();
-          const payload = {
-            company_id,
-            title: task.title,
-            description: task.description,
-            due_date: task.dueDate,
-            priority: task.priority,
-            project_id: task.projectId,
-            assignee_id: task.assigneeId,
-            status: 'pending'
-          };
-          const { data, error } = await supabase.from('tasks').insert(payload).select().single();
-          if (error) throw error;
-          return adaptTask(data);
-      } catch (e) {
-          return { ...task, id: Date.now().toString() } as Task;
-      }
+      const company_id = await getCompanyId();
+      const payload = {
+        company_id,
+        title: task.title,
+        description: task.description,
+        due_date: task.dueDate,
+        priority: task.priority,
+        project_id: task.projectId,
+        assignee_id: task.assigneeId,
+        status: 'pending'
+      };
+      const { data, error } = await supabase.from('tasks').insert(payload).select().single();
+      if (error) throw error;
+      return adaptTask(data);
     },
     update: async (id: string, updates: Partial<Task>): Promise<Task> => {
-      try {
-          const payload: any = {};
-          if (updates.title) payload.title = updates.title;
-          if (updates.completed !== undefined) payload.status = updates.completed ? 'completed' : 'pending';
-          if (updates.priority) payload.priority = updates.priority;
-          
-          const { data, error } = await supabase.from('tasks').update(payload).eq('id', id).select().single();
-          if (error) throw error;
-          return adaptTask(data);
-      } catch (e) {
-          return { ...updates, id } as Task;
-      }
+      const payload: any = {};
+      if (updates.title) payload.title = updates.title;
+      if (updates.completed !== undefined) payload.status = updates.completed ? 'completed' : 'pending';
+      if (updates.priority) payload.priority = updates.priority;
+      
+      const { data, error } = await supabase.from('tasks').update(payload).eq('id', id).select().single();
+      if (error) throw error;
+      return adaptTask(data);
     },
     delete: async (id: string): Promise<void> => {
       await supabase.from('tasks').delete().eq('id', id);
@@ -352,33 +257,62 @@ export const api = {
 
   crm: {
     getPipelines: async (): Promise<Pipeline[]> => {
-      try {
-          // 1. Attempt to Get Pipelines from DB
-          const { data: pipelinesData, error } = await supabase.from('pipelines').select('*');
-          
-          // If connection error or no data, throw to trigger fallback
-          if (error || !pipelinesData || pipelinesData.length === 0) {
-              // If we are connected but empty DB, better show mock than blank screen for user satisfaction
-              return generateMockPipeline();
-          }
+      // Fetch Pipelines
+      const { data: pipelines, error: pipeError } = await supabase
+        .from('pipelines')
+        .select('*')
+        .order('created_at');
 
-          // If we have pipelines but no columns logic implemented in frontend-backend mapping yet,
-          // returning [] causes blank screen. 
-          // We will fallback to mock data if the fetched data seems incomplete to avoid broken UI.
-          if (pipelinesData.length > 0) {
-             // In a real app we would fetch columns here. 
-             // Since we lack that code block, return Mock to keep UI working.
-             return generateMockPipeline(); 
-          }
+      if (pipeError) throw pipeError;
+      if (!pipelines || pipelines.length === 0) return [];
 
-          return []; 
-      } catch (e) {
-          // FALLBACK: Return Mock Pipeline Structure so Kanban is never empty
-          return generateMockPipeline();
-      }
+      // For the first pipeline, fetch columns and cards (Basic Implementation)
+      // In a real app, you might want to load this lazily or with a more complex join
+      const pipeline = pipelines[0];
+      
+      const { data: columns, error: colError } = await supabase
+        .from('kanban_columns')
+        .select('*')
+        .eq('pipeline_id', pipeline.id)
+        .order('order');
+
+      if (colError) throw colError;
+
+      // Fetch Cards for these columns
+      const { data: cards, error: cardError } = await supabase
+        .from('kanban_cards')
+        .select('*, contacts(name)') // Join with contacts to get name
+        .in('column_id', columns.map((c:any) => c.id));
+
+      if (cardError) throw cardError;
+
+      // Assemble structure
+      const assembledColumns: KanbanColumn[] = columns.map((col: any) => ({
+        id: col.id,
+        title: col.title,
+        color: col.color || 'border-gray-200',
+        cards: cards
+          .filter((card: any) => card.column_id === col.id)
+          .map((card: any) => ({
+             id: card.id,
+             title: card.title || 'Sem título',
+             value: card.value || 0,
+             contactId: card.contact_id,
+             contactName: card.contacts?.name || 'Desconhecido',
+             priority: card.priority || 'medium',
+             tags: card.tags || []
+          }))
+      }));
+
+      return [{
+        id: pipeline.id,
+        name: pipeline.name,
+        columns: assembledColumns
+      }];
     },
     moveCard: async (cardId: string, sourceColId: string, destColId: string) => {
-        await supabase.from('kanban_cards').update({ column_id: destColId }).eq('id', cardId);
+        const { error } = await supabase.from('kanban_cards').update({ column_id: destColId }).eq('id', cardId);
+        if (error) throw error;
         return true;
     }
   },
@@ -389,73 +323,59 @@ export const api = {
             .from('proposals')
             .select('*, contacts(name)');
         
-        if (error) return MOCK_PROPOSALS;
+        if (error) return [];
         return data.map(adaptProposal);
     },
     create: async (data: Partial<Proposal>): Promise<Proposal> => {
-        try {
-            const company_id = await getCompanyId();
-            const payload = {
-                company_id,
-                contact_id: data.clientId,
-                title: data.title,
-                value: data.value,
-                status: 'pending'
-            };
-            const { data: res, error } = await supabase.from('proposals').insert(payload).select().single();
-            if (error) throw error;
-            return adaptProposal(res);
-        } catch (e) {
-            return { ...data, id: Date.now().toString(), status: 'pending' } as Proposal;
-        }
+        const company_id = await getCompanyId();
+        const payload = {
+            company_id,
+            contact_id: data.clientId,
+            title: data.title,
+            value: data.value,
+            status: 'pending'
+        };
+        const { data: res, error } = await supabase.from('proposals').insert(payload).select().single();
+        if (error) throw error;
+        return adaptProposal(res);
     },
     update: async (id: string, updates: Partial<Proposal>): Promise<Proposal> => {
-        try {
-            const { data, error } = await supabase.from('proposals').update(updates).eq('id', id).select().single();
-            if (error) throw error;
-            return adaptProposal(data);
-        } catch (e) {
-            return { ...updates, id } as Proposal;
-        }
+        const { data, error } = await supabase.from('proposals').update(updates).eq('id', id).select().single();
+        if (error) throw error;
+        return adaptProposal(data);
     }
   },
 
   companies: {
     list: async (): Promise<Company[]> => { 
-        try {
-            const { data } = await supabase.from('companies').select('*');
-            if (!data) throw new Error("No data");
-            return data.map((c:any) => ({
-                ...c, 
-                ownerName: 'Admin',
-                planId: c.plan_id,
-                aiLimit: c.ai_limit,
-                aiUsage: c.ai_usage,
-                userCount: 1 
-            }));
-        } catch (e) {
-            return MOCK_COMPANIES;
-        }
+        const { data, error } = await supabase.from('companies').select('*');
+        if (error) throw error;
+        return data.map((c:any) => ({
+            ...c, 
+            ownerName: c.owner_name || 'Admin',
+            planId: c.plan_id,
+            aiLimit: c.ai_limit,
+            aiUsage: c.ai_usage,
+            userCount: 1 
+        }));
     },
     create: async (company: Partial<Company>): Promise<Company> => {
-        try {
-            const { data, error } = await supabase.from('companies').insert({
-                name: company.name,
-                plan_id: company.planId
-            }).select().single();
-            if(error) throw error;
-            return data as any;
-        } catch (e) {
-            return { ...company, id: `mock_${Date.now()}` } as Company;
-        }
+        const { data, error } = await supabase.from('companies').insert({
+            name: company.name,
+            plan_id: company.planId,
+            status: company.status
+        }).select().single();
+        if(error) throw error;
+        return data as any;
     },
     update: async (id: string, updates: Partial<Company>): Promise<Company> => {
         const payload:any = {};
         if(updates.aiLimit) payload.ai_limit = updates.aiLimit;
         if(updates.aiUsage !== undefined) payload.ai_usage = updates.aiUsage;
         
-        await supabase.from('companies').update(payload).eq('id', id);
-        return { ...updates, id } as any;
+        const { data, error } = await supabase.from('companies').update(payload).eq('id', id).select().single();
+        if(error) throw error;
+        return data as any;
     },
     delete: async (id: string): Promise<void> => {
         await supabase.from('companies').delete().eq('id', id);
@@ -463,7 +383,7 @@ export const api = {
   },
 
   plans: {
-    list: async (): Promise<Plan[]> => { return MOCK_PLANS; }, // Usually static or from DB
+    list: async (): Promise<Plan[]> => { return MOCK_PLANS; },
     save: async (plan: Plan): Promise<Plan> => { return plan; }
   },
 
@@ -483,8 +403,6 @@ export const api = {
   
   ai: {
     generateInsight: async (context: 'chat' | 'kanban', data: any): Promise<AIInsight[]> => {
-      // Here we would ideally call a Supabase Edge Function to keep API Key secure
-      // For now, we simulate the structure
       return [{ type: 'suggestion', content: 'Cliente com alto potencial de compra baseada no histórico.', confidence: 0.9 }];
     },
     analyzeConversation: async (messages: Message[]): Promise<string> => {

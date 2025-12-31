@@ -10,6 +10,7 @@ class WhatsAppService {
   private qrCode: string | null = null;
   private eventListeners: Map<string, EventHandler[]> = new Map();
   private connectionInterval: number | null = null;
+  private incomingMessageInterval: number | null = null;
 
   constructor() {
     // Initialize mocks or listeners
@@ -43,20 +44,31 @@ class WhatsAppService {
 
   public disconnect(): void {
     if (this.connectionInterval) clearInterval(this.connectionInterval);
+    if (this.incomingMessageInterval) clearInterval(this.incomingMessageInterval);
     this.updateStatus('disconnected');
     this.qrCode = null;
   }
 
+  // --- Messaging API (Simulated) ---
+
+  public sendMessage(to: string, content: string): void {
+      // In a real app, this would make an API call to the backend
+      console.log(`[WhatsApp Service] Sending message to ${to}: ${content}`);
+      
+      // Simulate "Server Ack" or "Sent" status back to UI via event if needed
+      // But usually the UI updates optimistically
+  }
+
   // --- Event Handling ---
 
-  public on(event: 'status' | 'qr' | 'message', handler: EventHandler) {
+  public on(event: 'status' | 'qr' | 'message' | 'typing', handler: EventHandler) {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, []);
     }
     this.eventListeners.get(event)?.push(handler);
   }
 
-  public off(event: 'status' | 'qr' | 'message', handler: EventHandler) {
+  public off(event: 'status' | 'qr' | 'message' | 'typing', handler: EventHandler) {
     const handlers = this.eventListeners.get(event);
     if (handlers) {
       this.eventListeners.set(event, handlers.filter(h => h !== handler));
@@ -80,13 +92,46 @@ class WhatsAppService {
   private startConnectionSimulation() {
     // This simulates the waiting period for the user to scan the QR
     // In a real app, a WebSocket event would trigger this.
-    const waitTime = Math.random() * 5000 + 3000; // 3-8 seconds
     
     this.connectionInterval = window.setTimeout(() => {
       // Simulate success
       this.qrCode = null;
       this.updateStatus('connected');
-    }, 8000); 
+      
+      // Start receiving messages after connection
+      this.startIncomingMessageSimulation();
+    }, 5000); // 5 seconds to connect
+  }
+
+  private startIncomingMessageSimulation() {
+      // Simulate receiving a message every 30-60 seconds from a random contact
+      // This mimics real-time socket events
+      this.incomingMessageInterval = window.setInterval(() => {
+          if (Math.random() > 0.7) { // 30% chance to receive
+              // Simulate typing first
+              const senderId = Math.random() > 0.5 ? 'c1' : 'c2'; // Elisa or Roberto
+              
+              this.emit('typing', { senderId });
+
+              setTimeout(() => {
+                  const possibleMessages = [
+                      "Ok, combinado.",
+                      "Vou verificar e te aviso.",
+                      "Pode me enviar o PDF?",
+                      "Obrigado pelo atendimento!",
+                      "Qual o prazo de entrega?",
+                      "Estou aguardando a proposta."
+                  ];
+                  const randomMsg = possibleMessages[Math.floor(Math.random() * possibleMessages.length)];
+                  
+                  this.emit('message', {
+                      senderId: senderId,
+                      content: randomMsg,
+                      timestamp: new Date().toISOString()
+                  });
+              }, 3000); // Typing for 3 seconds
+          }
+      }, 15000); // Check loop every 15s
   }
 }
 

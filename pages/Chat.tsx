@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MOCK_CONTACTS, MOCK_USERS, MOCK_PROPOSALS } from '../constants';
 import { api } from '../services/api';
+import { whatsappService } from '../services/whatsapp'; // Import WhatsApp Service
 import { Contact, Message, MessageType, QuickReply, AIInsight, Proposal, Branding } from '../types';
 import { 
   Search, MoreVertical, Paperclip, Smile, Mic, Send, 
@@ -10,7 +11,7 @@ import {
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
   Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
-  ArrowRight, StickyNote
+  ArrowRight, StickyNote, RefreshCw
 } from 'lucide-react';
 import Modal from '../components/Modal';
 
@@ -28,7 +29,7 @@ const DEPARTMENTS = [
 ];
 
 const RECURRENCE_LABELS: Record<string, string> = {
-  none: 'Não',
+  none: 'Não repetir',
   daily: 'Diariamente',
   weekly: 'Semanalmente',
   biweekly: 'Quinzenalmente',
@@ -143,6 +144,47 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     };
     loadInit();
   }, [activeTab]);
+
+  // --- Real-time WhatsApp Listener ---
+  useEffect(() => {
+    const handleIncomingMessage = (data: any) => {
+        // If the incoming message belongs to the currently selected contact
+        if (selectedContact && data.senderId === selectedContact.id) {
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                content: data.content,
+                senderId: data.senderId,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                type: MessageType.TEXT,
+                status: 'read'
+            }]);
+            
+            // Clear typing indicator
+            setIsContactTyping(false);
+        } else {
+            // Logic to increment unread counter on contact list would go here
+            setContacts(prev => prev.map(c => 
+                c.id === data.senderId ? { ...c, unreadCount: (c.unreadCount || 0) + 1, lastMessage: data.content, lastMessageTime: 'Agora' } : c
+            ));
+        }
+    };
+
+    const handleTyping = (data: any) => {
+        if (selectedContact && data.senderId === selectedContact.id) {
+            setIsContactTyping(true);
+            setTimeout(() => setIsContactTyping(false), 3000);
+        }
+    };
+
+    whatsappService.on('message', handleIncomingMessage);
+    // Simulating a 'typing' event listener if the service supported it
+    // whatsappService.on('typing', handleTyping);
+
+    return () => {
+        whatsappService.off('message', handleIncomingMessage);
+        // whatsappService.off('typing', handleTyping);
+    };
+  }, [selectedContact]);
 
   useEffect(() => {
     if (selectedContact) {
@@ -453,7 +495,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         mediaUrl: 'audio-mock-url.mp3'
       };
       setMessages(prev => [...prev, newMessage]);
-      simulateReply();
+      whatsappService.sendMessage(selectedContact?.phone || '', 'Audio message sent');
       
     } else {
       // Start
@@ -569,44 +611,18 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     setReplyingTo(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
 
+    // 1. Send via DB API (Persistence)
     await api.chat.sendMessage(selectedContact.id, contentToSend, newMessage.type);
     
+    // 2. Send via WhatsApp Service (Real-time / Simulation)
+    whatsappService.sendMessage(selectedContact.phone, contentToSend);
+
     setIsSending(false);
-    simulateReply();
-  };
-
-  const simulateReply = () => {
-    // 1. Sent -> Delivered
-    setTimeout(() => {
-       setMessages(prev => prev.map(m => m.status === 'sent' ? { ...m, status: 'delivered' } : m));
-    }, 1500);
-
-    // 2. Delivered -> Read & Typing Indicator
-    setTimeout(() => {
-       setMessages(prev => prev.map(m => m.status === 'delivered' ? { ...m, status: 'read' } : m));
-       
-       // Dynamic typing effect
-       const typingDuration = Math.random() * 2000 + 1500; // 1.5s to 3.5s
-       setIsContactTyping(true);
-       
-       setTimeout(() => {
-          setIsContactTyping(false);
-          const replyMessage: Message = {
-            id: Date.now().toString(),
-            content: "Recebido! Obrigado.",
-            senderId: selectedContact!.id,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: MessageType.TEXT,
-            status: 'read'
-          };
-          setMessages(prev => [...prev, replyMessage]);
-
-          if (selectedContact?.status === 'resolved') {
-              updateContactStatus(selectedContact.id, 'pending');
-          }
-
-       }, typingDuration); 
-    }, 3000);
+    
+    // Mock simulation handled by whatsappService events now, but keep fallback for resolved status update if needed
+    if (selectedContact.status === 'resolved') {
+        setTimeout(() => updateContactStatus(selectedContact.id, 'pending'), 2000);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -1611,11 +1627,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                 <div className="mb-3">
                    <label className="block text-xs font-medium text-gray-500 mb-1">Mensagem</label>
                    <textarea 
-                     className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white resize-none h-24"
+                     className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white resize-none h-24 focus:ring-2 focus:ring-purple-500 outline-none"
                      rows={3}
                      value={messageInput}
                      onChange={(e) => setMessageInput(e.target.value)}
-                     placeholder="Digite a mensagem..."
+                     placeholder="Digite a mensagem a ser agendada..."
                    />
                 </div>
 
@@ -1630,8 +1646,9 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                    )}
                    <button 
                      onClick={confirmSchedule}
-                     className="bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-purple-700 shadow-sm transition-colors"
+                     className="bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-purple-700 shadow-sm transition-colors flex items-center"
                    >
+                      <Save size={14} className="mr-1.5" />
                       {editingScheduleId ? 'Atualizar Agendamento' : 'Agendar Envio'}
                    </button>
                 </div>
@@ -1649,19 +1666,19 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                        ) : (
                            scheduledMessages.filter(m => new Date(m.date) > new Date()).map(item => (
                                <div key={item.id} className="p-2 border border-gray-200 rounded-lg bg-white flex justify-between items-start group hover:shadow-sm transition-shadow">
-                                   <div>
-                                       <div className="flex items-center gap-2 mb-1">
-                                           <span className="text-xs font-bold text-purple-700 bg-purple-50 px-1.5 rounded flex items-center">
+                                   <div className="flex-1 mr-2">
+                                       <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                           <span className="text-xs font-bold text-purple-700 bg-purple-50 px-1.5 rounded flex items-center whitespace-nowrap">
                                                <Calendar size={10} className="mr-1"/>
                                                {new Date(item.date).toLocaleDateString()} às {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                            </span>
                                            {item.recurrence !== 'none' && (
-                                               <span className="text-[10px] text-gray-500 flex items-center bg-gray-100 px-1 rounded border border-gray-200">
-                                                   <Repeat size={10} className="mr-1"/> {item.recurrence}
+                                               <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 rounded border border-blue-100 flex items-center">
+                                                   <Repeat size={10} className="mr-1"/> {RECURRENCE_LABELS[item.recurrence]}
                                                </span>
                                            )}
                                        </div>
-                                       <p className="text-xs text-gray-600 line-clamp-1">{item.message}</p>
+                                       <p className="text-xs text-gray-600 line-clamp-2">{item.message}</p>
                                    </div>
                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                        <button onClick={() => handleEditSchedule(item)} className="text-gray-400 hover:text-purple-600 p-1 rounded hover:bg-gray-100"><Edit size={14}/></button>
