@@ -112,6 +112,13 @@ export interface Contact {
   state?: string;
 }
 
+// --- WhatsApp API Config ---
+export interface WhatsAppConfig {
+  apiUrl: string;
+  apiKey: string; // Global API Key for Evolution API
+  instanceName: string;
+}
+
 // --- Kanban / CRM ---
 export interface KanbanCard {
   id: string;

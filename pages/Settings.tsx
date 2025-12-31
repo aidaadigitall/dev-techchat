@@ -1,6 +1,5 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon } from 'lucide-react';
+import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon, Server, Globe } from 'lucide-react';
 import { User, Branding, Tag, Sector } from '../types';
 import { MOCK_USERS } from '../constants';
 import { api } from '../services/api';
@@ -30,12 +29,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   });
   const [profileAvatarPreview, setProfileAvatarPreview] = useState<string>(currentUser?.avatar || '');
   
-  // AI Settings State
-  const [aiSettings, setAiSettings] = useState({ 
-    provider: 'google', 
-    apiKey: '', 
-    useOwnKey: false, 
-    model: 'gemini-3-pro-preview' 
+  // WhatsApp Configuration State
+  const [waConfig, setWaConfig] = useState({
+      apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
+      apiKey: localStorage.getItem('wa_api_key') || '429683C4C977415CAAFCCE10F7D57E11',
+      instanceName: localStorage.getItem('wa_instance_name') || 'TechChat_01'
   });
 
   // WhatsApp Connection State (Managed by Service)
@@ -102,21 +100,25 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
   // --- Handlers ---
 
+  const handleSaveWaConfig = () => {
+      whatsappService.updateConfig(waConfig);
+      addToast('Configurações da Evolution API salvas.', 'success');
+  };
+
   const handleGenerateQR = () => {
+    if(!waConfig.apiUrl) {
+        addToast('Configure a URL da API primeiro.', 'warning');
+        return;
+    }
     setConnectionLogs([]); // Clear previous logs
     setConnectionModalOpen(true);
     whatsappService.connect();
   };
 
-  const handleSimulateScan = () => {
-      whatsappService.simulateScan();
-  };
-
   const handleDisconnect = () => {
-      // Modern Modal replacement for confirm
       if(window.confirm("Deseja realmente desconectar o WhatsApp?")) {
           whatsappService.disconnect();
-          addToast('WhatsApp desconectado.', 'info');
+          addToast('Comando de desconexão enviado.', 'info');
       }
   };
 
@@ -157,14 +159,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
       }
   };
 
-  const getDefaultModel = (provider: string) => {
-      switch(provider) {
-          case 'google': return 'gemini-3-pro-preview';
-          case 'openai': return 'gpt-4o';
-          default: return 'gemini-3-flash-preview';
-      }
-  };
-
   // --- Renderers ---
 
   const renderContent = () => {
@@ -174,10 +168,60 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
            <div className="space-y-6 animate-fadeIn">
               <div className="border-b border-gray-100 pb-4 mb-4">
                 <h2 className="text-xl font-semibold text-gray-800">Conexões & Integrações</h2>
-                <p className="text-sm text-gray-500">Gerencie a conexão com o WhatsApp Web (Multi-device).</p>
+                <p className="text-sm text-gray-500">Gerencie a conexão com o WhatsApp Web (Via Evolution API).</p>
               </div>
               
-              {/* WhatsApp Card */}
+              {/* API Configuration Card */}
+              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm mb-6">
+                 <h3 className="text-md font-bold text-gray-800 mb-4 flex items-center">
+                    <Server size={18} className="mr-2 text-purple-600" /> Configuração do Servidor (Evolution API)
+                 </h3>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">URL da API (Webhook/Gateway)</label>
+                        <div className="relative">
+                            <Globe size={14} className="absolute left-3 top-3 text-gray-400" />
+                            <input 
+                                type="text" 
+                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" 
+                                placeholder="ex: https://api.seudominio.com"
+                                value={waConfig.apiUrl}
+                                onChange={e => setWaConfig({...waConfig, apiUrl: e.target.value})}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Global API Key</label>
+                        <div className="relative">
+                            <Key size={14} className="absolute left-3 top-3 text-gray-400" />
+                            <input 
+                                type="password" 
+                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" 
+                                placeholder="Chave da API Evolution"
+                                value={waConfig.apiKey}
+                                onChange={e => setWaConfig({...waConfig, apiKey: e.target.value})}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Nome da Instância</label>
+                        <input 
+                            type="text" 
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" 
+                            placeholder="TechChat_01"
+                            value={waConfig.instanceName}
+                            onChange={e => setWaConfig({...waConfig, instanceName: e.target.value})}
+                        />
+                    </div>
+                 </div>
+                 <div className="flex justify-end">
+                    <button onClick={handleSaveWaConfig} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black flex items-center">
+                        <Save size={16} className="mr-2" /> Salvar Configuração
+                    </button>
+                 </div>
+              </div>
+
+              {/* WhatsApp Connection Card */}
               <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                  <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                     <div className="flex items-center gap-4">
@@ -185,7 +229,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                           <Smartphone size={32} />
                        </div>
                        <div>
-                          <h3 className="text-lg font-bold text-gray-900">WhatsApp Principal</h3>
+                          <h3 className="text-lg font-bold text-gray-900">Sessão do WhatsApp</h3>
                           {whatsappStatus === 'connected' ? (
                               <p className="text-sm text-green-600 font-medium flex items-center">
                                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Conectado
@@ -200,7 +244,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                                  <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Desconectado
                               </p>
                           )}
-                          <p className="text-xs text-gray-500">Instância: WPP-PRO-01</p>
+                          <p className="text-xs text-gray-500">Instância: {waConfig.instanceName}</p>
                        </div>
                     </div>
                     <div className="flex gap-2">
@@ -221,31 +265,13 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                     </div>
                  </div>
               </div>
-
-              {/* Status Details */}
-              {whatsappStatus === 'connected' && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                      <div className="bg-green-50 p-4 rounded-lg border border-green-100 text-center">
-                          <p className="text-xs text-green-700 font-bold uppercase">Bateria</p>
-                          <p className="text-lg font-bold text-gray-800">89%</p>
-                      </div>
-                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
-                          <p className="text-xs text-blue-700 font-bold uppercase">Versão do WhatsApp</p>
-                          <p className="text-lg font-bold text-gray-800">2.3000.10</p>
-                      </div>
-                      <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 text-center">
-                          <p className="text-xs text-purple-700 font-bold uppercase">Uptime</p>
-                          <p className="text-lg font-bold text-gray-800">02h 15m</p>
-                      </div>
-                  </div>
-              )}
            </div>
         );
 
       case 'profile':
+          // ... (existing profile code) ...
           return (
             <div className="space-y-6 animate-fadeIn">
-               {/* Profile Content (Same as previous) */}
                <div className="border-b border-gray-100 pb-4">
                   <h2 className="text-xl font-semibold text-gray-800">Meu Perfil</h2>
                   <p className="text-sm text-gray-500">Gerencie suas informações pessoais e segurança.</p>
@@ -374,28 +400,13 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                    </div>
                ) : qrCodeData ? (
                    <div className="relative group">
-                       <div 
-                         className="p-3 bg-white border-4 border-gray-900 rounded-xl shadow-xl cursor-pointer hover:shadow-2xl transition-all transform hover:scale-105"
-                         onClick={handleSimulateScan}
-                       >
+                       <div className="p-3 bg-white border-4 border-gray-900 rounded-xl shadow-xl">
                            <img 
-                             src={qrCodeData} 
+                             src={qrCodeData.startsWith('data:image') ? qrCodeData : `data:image/png;base64,${qrCodeData}`}
                              alt="QR Code" 
                              className="w-64 h-64 object-contain"
                            />
-                           
-                           {/* Scan Overlay Hint */}
-                           <div className="absolute inset-0 bg-black/60 rounded-lg flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm">
-                                <PhoneIcon size={32} className="text-white mb-2 animate-bounce" />
-                                <span className="text-white font-bold text-sm bg-white/20 px-3 py-1 rounded">Clique para Escanear</span>
-                           </div>
                        </div>
-                       
-                       {/* Refresh Timer Bar (Visual) */}
-                       <div className="w-full bg-gray-200 h-1.5 mt-4 rounded-full overflow-hidden">
-                           <div className="h-full bg-green-500 animate-[progress_30s_linear_infinite]"></div>
-                       </div>
-                       <style>{`@keyframes progress { from { width: 100%; } to { width: 0%; } }`}</style>
                    </div>
                ) : (
                    <div className="w-64 h-64 flex items-center justify-center">
