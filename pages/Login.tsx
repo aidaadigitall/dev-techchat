@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../services/supabase';
+import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { Branding } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
@@ -25,14 +25,21 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dbConfigured, setDbConfigured] = useState(true);
 
-  // Clear stale sessions on mount
+  // Clear stale sessions on mount and check config
   useEffect(() => {
     localStorage.removeItem('mock_session');
+    setDbConfigured(isSupabaseConfigured());
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!dbConfigured) {
+        setError('O sistema não está conectado ao banco de dados (Variáveis de ambiente ausentes).');
+        return;
+    }
+
     setLoading(true);
     setError(null);
     
@@ -49,13 +56,27 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       }
     } catch (err: any) {
       console.error("Login Error:", err);
-      setError(err.message || 'Erro ao realizar login. Verifique suas credenciais.');
+      
+      // Determine user-friendly error message
+      let msg = err.message;
+      if (err.message === 'Failed to fetch') {
+          msg = 'Falha de conexão com o servidor. Verifique sua internet e a URL do Supabase.';
+      } else if (err.message.includes('Invalid login credentials')) {
+          msg = 'Email ou senha incorretos.';
+      }
+      
+      setError(msg);
       setLoading(false);
     }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!dbConfigured) {
+        setError('Configuração de banco de dados ausente. Não é possível registrar.');
+        return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -77,13 +98,22 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       if (data.session) {
         onLoginSuccess(data.session);
       } else {
-        setError("Verifique seu email para confirmar o cadastro.");
+        // If email confirmation is enabled in Supabase, session might be null
+        if (data.user && !data.session) {
+            setError("Conta criada! Verifique seu email para confirmar o cadastro antes de entrar.");
+        } else {
+            setError("Ocorreu um erro inesperado ao criar a conta.");
+        }
         setLoading(false);
       }
 
     } catch (err: any) {
       console.error("Register Error:", err);
-      setError(err.message || 'Erro ao criar conta. Tente novamente.');
+      let msg = err.message;
+      if (err.message === 'Failed to fetch') {
+          msg = 'Falha de conexão com o servidor. Tente novamente mais tarde.';
+      }
+      setError(msg);
       setLoading(false);
     }
   };
@@ -147,6 +177,17 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
               </p>
            </div>
 
+           {/* Environment Warning */}
+           {!dbConfigured && (
+             <div className="mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800 flex items-start animate-fadeIn">
+                <Database size={18} className="mr-2 flex-shrink-0 mt-0.5 text-yellow-600" />
+                <span>
+                   <strong>Configuração Necessária:</strong> As variáveis de ambiente do Supabase não foram detectadas. 
+                   Configure <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_ANON_KEY</code> no seu arquivo <code>.env</code> para conectar ao banco de dados.
+                </span>
+             </div>
+           )}
+
            {error && (
              <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-100 text-sm text-red-600 flex items-start animate-fadeIn">
                 <AlertCircle size={18} className="mr-2 flex-shrink-0 mt-0.5" />
@@ -196,7 +237,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                 <button 
                   type="submit" 
                   disabled={loading}
-                  className="w-full bg-[#09090b] hover:bg-black text-white font-bold py-2.5 rounded-lg transition-all transform active:scale-[0.98] flex items-center justify-center shadow-lg hover:shadow-xl"
+                  className="w-full bg-[#09090b] hover:bg-black text-white font-bold py-2.5 rounded-lg transition-all transform active:scale-[0.98] flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                    {loading ? (
                      <Loader2 size={20} className="animate-spin" />
@@ -289,7 +330,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                 <button 
                   type="submit" 
                   disabled={loading}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-lg mt-2"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-lg mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                    {loading ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Criar Conta Grátis'}
                 </button>

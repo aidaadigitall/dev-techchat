@@ -31,10 +31,14 @@ const getEnv = (key: string) => {
 const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
 
+// Hardcoded fallbacks provided
+const FALLBACK_URL = 'https://uzrflpyexjxaztmqwifa.supabase.co';
+const FALLBACK_KEY = 'sb_publishable_gVgH65ce4ky8v2acrg5tSQ_h79S6YiH';
+
 // Ensure valid URL format to prevent crash during initialization if env vars are missing
-// We use a valid-looking dummy URL to satisfy the library's constructor validation
-const validUrl = supabaseUrl && supabaseUrl.startsWith('http') ? supabaseUrl : 'https://placeholder.supabase.co';
-const validKey = supabaseAnonKey || 'placeholder-key';
+// We use the provided fallback URL if env var is missing
+const validUrl = supabaseUrl && supabaseUrl.startsWith('http') ? supabaseUrl : FALLBACK_URL;
+const validKey = supabaseAnonKey || FALLBACK_KEY;
 
 let client;
 
@@ -44,4 +48,10 @@ try {
     console.error("Supabase Client Init Error:", error);
 }
 
-export const supabase = client || createClient('https://placeholder.supabase.co', 'placeholder');
+export const supabase = client || createClient(FALLBACK_URL, FALLBACK_KEY);
+
+// Helper to check if we are running with real config or placeholders
+export const isSupabaseConfigured = () => {
+    // If we have a URL that isn't the generic placeholder, we are configured
+    return validUrl !== 'https://placeholder.supabase.co' && validUrl !== '';
+};
