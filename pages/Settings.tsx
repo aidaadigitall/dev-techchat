@@ -33,7 +33,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const [waConfig, setWaConfig] = useState({
       apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
       apiKey: localStorage.getItem('wa_api_key') || '429683C4C977415CAAFCCE10F7D57E11',
-      instanceName: localStorage.getItem('wa_instance_name') || 'TechChat_01'
+      instanceName: localStorage.getItem('wa_instance_name') || 'Whats-1248'
   });
 
   // WhatsApp Connection State (Managed by Service)
@@ -58,7 +58,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
         setWhatsappStatus(status);
         if (status === 'connected') {
             setTimeout(() => {
-                setConnectionModalOpen(false);
+                // Keep modal open briefly to show success
                 addToast('WhatsApp conectado com sucesso!', 'success');
             }, 1500);
         }
