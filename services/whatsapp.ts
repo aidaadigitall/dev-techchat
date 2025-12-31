@@ -47,7 +47,7 @@ class WhatsAppService {
         this.status = 'disconnected'; // Force status reset
         this.qrCode = null;
         this.emit('qr', null);
-        await this.connect();
+        // Do not auto connect here, wait for manual trigger to avoid loops
     }
   }
 
@@ -74,6 +74,7 @@ class WhatsAppService {
     this.updateStatus('connecting');
     this.logs = []; // Clear logs on new connection attempt
     this.addLog(`Iniciando conexão com instância: ${this.config.instanceName}`);
+    this.addLog(`API URL: ${this.config.apiUrl}`);
     
     try {
       // 1. Check if instance exists and is connected
@@ -90,13 +91,20 @@ class WhatsAppService {
       }
 
       // If not connected, try to connect/create
+      this.addLog(`Estado atual: ${state || 'Desconhecido'}. Tentando criar/conectar...`);
       await this.createInstance();
       await this.fetchQrCode();
 
     } catch (error: any) {
       this.addLog(`Erro ao conectar: ${error.message}`);
-      // Fallback: assume disconnected but let user retry
-      this.updateStatus('disconnected');
+      
+      // If instance not found, force create
+      if (error.message.includes('not found') || error.message.includes('404')) {
+          await this.createInstance();
+          await this.fetchQrCode();
+      } else {
+          this.updateStatus('disconnected');
+      }
     }
   }
 
@@ -225,8 +233,14 @@ class WhatsAppService {
             qrcode: true,
             integration: "WHATSAPP-BAILEYS"
         });
-    } catch (e) {
+        this.addLog('Instância criada com sucesso.');
+    } catch (e: any) {
         // Safe to ignore if instance exists
+        if(e.message.includes('already exists')) {
+            this.addLog('Instância já existe na API.');
+        } else {
+            this.addLog(`Aviso ao criar instância: ${e.message}`);
+        }
     }
   }
 
@@ -246,14 +260,14 @@ class WhatsAppService {
             this.addLog('Conectado automaticamente.');
             this.syncHistory();
             this.startMessagePolling();
+        } else if (response?.qrcode?.base64) {
+             // Fallback for nested object response
+             this.qrCode = response.qrcode.base64;
+             this.updateStatus('qr_ready');
+             this.emit('qr', this.qrCode);
+             this.startStatusPolling();
         } else {
-             // Fallback for older versions
-             if (response?.base64 || response?.qrcode?.base64) {
-                 this.qrCode = response.base64 || response.qrcode.base64;
-                 this.updateStatus('qr_ready');
-                 this.emit('qr', this.qrCode);
-                 this.startStatusPolling();
-             }
+             this.addLog('Resposta da API sem QR Code: ' + JSON.stringify(response));
         }
     } catch (error: any) {
         this.addLog(`Erro ao buscar QR: ${error.message}`);
@@ -326,10 +340,17 @@ class WhatsAppService {
 
       if (!res.ok) {
           const text = await res.text();
+          
+          if (res.status === 401 || res.status === 403) {
+              throw new Error("Erro de Autenticação (401/403). Verifique a Global API Key.");
+          }
+
           try {
               const json = JSON.parse(text);
               throw new Error(json.message || json.error || res.statusText);
-          } catch(e) {
+          } catch(e: any) {
+              // If already wrapped error, rethrow, else throw text
+              if(e.message && e.message !== 'Unexpected token') throw e;
               throw new Error(text || res.statusText);
           }
       }

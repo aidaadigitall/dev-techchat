@@ -33,7 +33,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const [waConfig, setWaConfig] = useState({
       apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
       apiKey: localStorage.getItem('wa_api_key') || '429683C4C977415CAAFCCE10F7D57E11',
-      instanceName: localStorage.getItem('wa_instance_name') || 'Whats-1248'
+      instanceName: localStorage.getItem('wa_instance_name') || 'Whats-6010'
   });
 
   // WhatsApp Connection State (Managed by Service)
@@ -106,11 +106,15 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
       addToast('Configurações salvas. Se o nome mudou, a conexão será reiniciada.', 'success');
   };
 
-  const handleGenerateQR = () => {
+  const handleGenerateQR = async () => {
     if(!waConfig.apiUrl) {
         addToast('Configure a URL da API primeiro.', 'warning');
         return;
     }
+    
+    // IMPORTANT: Ensure the service uses the latest values from the inputs
+    await whatsappService.updateConfig(waConfig);
+
     setConnectionLogs([]); // Clear previous logs
     setConnectionModalOpen(true);
     whatsappService.connect();
@@ -213,7 +217,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                     <input 
                         type="text" 
                         className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm font-medium text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                        placeholder="Ex: Whats-Comercial"
+                        placeholder="Ex: Whats-6010"
                         value={waConfig.instanceName}
                         onChange={e => setWaConfig({...waConfig, instanceName: e.target.value})}
                     />
