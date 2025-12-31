@@ -438,9 +438,42 @@ export const api = {
   },
 
   users: {
-    updateProfile: async (data: { name?: string }) => { 
-        if (isMockSession()) return {};
-        await supabase.auth.updateUser({ data: { full_name: data.name }});
+    updateProfile: async (data: { name?: string, avatar?: string }) => { 
+        if (isMockSession()) {
+            // CRITICAL: Persist changes to localStorage so they survive page reload in Mock/Demo mode
+            const stored = localStorage.getItem('mock_session');
+            if (stored) {
+                const session = JSON.parse(stored);
+                let updated = false;
+                
+                if (data.name) {
+                    // Update in multiple places where auth might look
+                    if (session.user?.user_metadata) {
+                        session.user.user_metadata.full_name = data.name;
+                        updated = true;
+                    }
+                }
+                
+                if (data.avatar) {
+                    if (session.user?.user_metadata) {
+                        session.user.user_metadata.avatar_url = data.avatar;
+                        updated = true;
+                    }
+                }
+
+                if (updated) {
+                    localStorage.setItem('mock_session', JSON.stringify(session));
+                }
+            }
+            return {};
+        }
+        
+        // Real Supabase Update
+        const payload: any = {};
+        if (data.name) payload.full_name = data.name;
+        if (data.avatar) payload.avatar_url = data.avatar;
+        
+        await supabase.auth.updateUser({ data: payload });
         return {}; 
     }
   },

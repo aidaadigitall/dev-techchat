@@ -123,7 +123,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
       setLoading(true);
       try {
-          await api.users.updateProfile({ name: profileForm.name }); 
+          // Pass both name and avatar to API for persistence
+          await api.users.updateProfile({ 
+              name: profileForm.name,
+              avatar: profileAvatarPreview 
+          }); 
           
           if (onUpdateUser && currentUser) {
               onUpdateUser({ ...currentUser, name: profileForm.name, email: profileForm.email, avatar: profileAvatarPreview });
