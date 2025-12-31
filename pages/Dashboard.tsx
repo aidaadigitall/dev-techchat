@@ -134,14 +134,14 @@ const Dashboard: React.FC = () => {
   }, [flowRange]);
 
   return (
-    <div className="p-6 overflow-y-auto h-full bg-gray-50">
+    <div className="p-4 md:p-6 overflow-y-auto h-full bg-gray-50">
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
         <p className="text-gray-500">Visão geral da sua operação hoje (Conectado ao Supabase).</p>
       </header>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
         {stats.map((stat, index) => (
           <div key={index} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-start justify-between hover:shadow-md transition-shadow relative overflow-hidden">
             {loadingStats && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10"><div className="w-4 h-4 border-2 border-purple-600 rounded-full animate-spin border-t-transparent"></div></div>}
@@ -162,7 +162,7 @@ const Dashboard: React.FC = () => {
       {/* Charts Row 1: Fluxo & Vendas */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* CHART 1: FLUXO DE ATENDIMENTOS */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0">
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0 overflow-hidden">
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
             <h3 className="text-lg font-semibold text-gray-800">Fluxo de Atendimentos</h3>
             <select 
@@ -176,7 +176,7 @@ const Dashboard: React.FC = () => {
             </select>
           </div>
           
-          <div className="h-72 w-full">
+          <div className="h-72 w-full min-w-[300px] overflow-x-auto">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={flowData}>
                 <defs>
@@ -196,11 +196,11 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* CHART 2: VENDAS */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0 overflow-hidden">
            <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-gray-800">Vendas vs Metas</h3>
           </div>
-          <div className="h-72 w-full">
+          <div className="h-72 w-full min-w-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={flowData.slice(0, 7)}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -215,12 +215,12 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* SECTION 2: TOTAL DE ATENDIMENTO POR USUÁRIO */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 min-w-0">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 min-w-0 overflow-hidden">
          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-100 pb-4">
             <h3 className="text-lg font-semibold text-gray-800">Total de Atendimento por Usuário</h3>
          </div>
 
-         <div className="h-64 w-full">
+         <div className="h-64 w-full min-w-[300px] overflow-x-auto">
             <ResponsiveContainer width="100%" height="100%">
                <BarChart data={userData} barSize={40}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />

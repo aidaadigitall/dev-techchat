@@ -646,8 +646,8 @@ const Tasks: React.FC = () => {
 
   return (
     <div className="flex h-full bg-white overflow-hidden">
-      {/* 1. Sidebar (Task Navigation) */}
-      <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col pt-6 print:hidden">
+      {/* 1. Sidebar (Task Navigation) - Desktop Hidden on Mobile */}
+      <aside className="w-64 bg-gray-50 border-r border-gray-200 flex-col pt-6 print:hidden hidden md:flex">
         <div className="px-4 mb-6">
           <button 
             onClick={() => setShowQuickAdd(true)}
@@ -706,9 +706,31 @@ const Tasks: React.FC = () => {
 
       {/* 2. Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Mobile Navigation Dropdown */}
+        <div className="md:hidden px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+           <select 
+             className="flex-1 bg-white border border-gray-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+             value={activeFilter}
+             onChange={(e) => setActiveFilter(e.target.value)}
+           >
+              <option value="inbox">📥 Entrada</option>
+              <option value="today">📅 Hoje</option>
+              <option value="upcoming">🗓️ Próximos</option>
+              {MOCK_PROJECTS.map(p => (
+                 <option key={p.id} value={p.id}># {p.name}</option>
+              ))}
+           </select>
+           <button 
+             onClick={() => setShowQuickAdd(true)}
+             className="bg-purple-600 text-white p-2 rounded-lg"
+           >
+             <Plus size={20} />
+           </button>
+        </div>
+
         {/* Header */}
-        <header className="px-8 py-5 border-b border-gray-100 bg-white z-10 print:hidden flex flex-col gap-4">
-          <div className="flex justify-between items-center">
+        <header className="px-4 md:px-8 py-5 border-b border-gray-100 bg-white z-10 print:hidden flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-bold text-gray-800 capitalize flex items-center">
                 {customDateFilter ? `Tarefas de ${new Date(customDateFilter + 'T12:00:00').toLocaleDateString('pt-BR')}` :
@@ -729,26 +751,26 @@ const Tasks: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
               <button 
                 onClick={() => setImportModalOpen(true)}
-                className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors flex-shrink-0"
                 title="Importar CSV"
               >
                 <Upload size={18} />
               </button>
-              <button onClick={() => handleExport()} className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg" title="Exportar CSV">
+              <button onClick={() => handleExport()} className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg flex-shrink-0" title="Exportar CSV">
                 <FileText size={18} />
               </button>
-              <button onClick={handleRefresh} className={`p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg ${loading ? 'animate-spin' : ''}`} title="Atualizar">
+              <button onClick={handleRefresh} className={`p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg flex-shrink-0 ${loading ? 'animate-spin' : ''}`} title="Atualizar">
                 <RefreshCw size={18} />
               </button>
               
-              <div className="h-6 w-px bg-gray-200 mx-1"></div>
+              <div className="h-6 w-px bg-gray-200 mx-1 flex-shrink-0"></div>
               
               <button 
                 onClick={() => setShowFilters(!showFilters)}
-                className={`p-2 rounded-lg transition-colors ${showFilters ? 'bg-purple-100 text-purple-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                className={`p-2 rounded-lg transition-colors flex-shrink-0 ${showFilters ? 'bg-purple-100 text-purple-600' : 'text-gray-500 hover:bg-gray-100'}`}
               >
                 <Filter size={18} />
               </button>
@@ -757,11 +779,11 @@ const Tasks: React.FC = () => {
 
           {/* Advanced Filters Bar */}
           {showFilters && (
-            <div className="flex flex-wrap gap-3 p-3 bg-gray-50 rounded-lg animate-fadeIn border border-gray-200">
-               <div className="flex items-center">
+            <div className="flex flex-col md:flex-row flex-wrap gap-3 p-3 bg-gray-50 rounded-lg animate-fadeIn border border-gray-200">
+               <div className="flex items-center justify-between md:justify-start">
                   <span className="text-xs font-bold text-gray-500 mr-2 uppercase">Status:</span>
                   <select 
-                    className="text-xs border-gray-300 rounded p-1 bg-white focus:ring-purple-500"
+                    className="text-xs border-gray-300 rounded p-1 bg-white focus:ring-purple-500 w-32 md:w-auto"
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value as any)}
                   >
@@ -770,10 +792,10 @@ const Tasks: React.FC = () => {
                     <option value="all">Todas</option>
                   </select>
                </div>
-               <div className="flex items-center">
+               <div className="flex items-center justify-between md:justify-start">
                   <span className="text-xs font-bold text-gray-500 mr-2 uppercase">Prioridade:</span>
                   <select 
-                    className="text-xs border-gray-300 rounded p-1 bg-white focus:ring-purple-500"
+                    className="text-xs border-gray-300 rounded p-1 bg-white focus:ring-purple-500 w-32 md:w-auto"
                     value={filterPriority}
                     onChange={(e) => setFilterPriority(e.target.value as any)}
                   >
@@ -784,10 +806,10 @@ const Tasks: React.FC = () => {
                     <option value="p4">P4 (Sem)</option>
                   </select>
                </div>
-               <div className="flex items-center">
+               <div className="flex items-center justify-between md:justify-start">
                   <span className="text-xs font-bold text-gray-500 mr-2 uppercase">Vencimento:</span>
                   <select 
-                    className="text-xs border-gray-300 rounded p-1 bg-white focus:ring-purple-500"
+                    className="text-xs border-gray-300 rounded p-1 bg-white focus:ring-purple-500 w-32 md:w-auto"
                     value={filterDateRange}
                     onChange={(e) => setFilterDateRange(e.target.value as any)}
                   >
@@ -797,7 +819,7 @@ const Tasks: React.FC = () => {
                     <option value="overdue">Atrasadas</option>
                   </select>
                </div>
-               <div className="flex items-center ml-auto">
+               <div className="flex items-center ml-auto w-full md:w-auto justify-end">
                   <span className="text-xs font-bold text-gray-500 mr-2 uppercase">Data Esp.:</span>
                   <input 
                     type="date" 
@@ -814,7 +836,7 @@ const Tasks: React.FC = () => {
         </header>
 
         {/* Task List Container */}
-        <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 custom-scrollbar">
           <div className="max-w-4xl mx-auto">
             {/* Quick Add Inline (Top) */}
             {showQuickAdd && (
@@ -827,8 +849,8 @@ const Tasks: React.FC = () => {
                   value={quickAddValue}
                   onChange={e => setQuickAddValue(e.target.value)}
                 />
-                <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                  <div className="flex gap-2 items-center">
+                <div className="flex justify-between items-center pt-2 border-t border-gray-100 flex-wrap gap-2">
+                  <div className="flex gap-2 items-center flex-wrap">
                     <div className="relative">
                        {/* Ensure input covers the button and is clickable with cursor pointer */}
                        <input 
@@ -861,7 +883,7 @@ const Tasks: React.FC = () => {
                        </div>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 w-full md:w-auto justify-end">
                     <button type="button" onClick={() => setShowQuickAdd(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded">Cancelar</button>
                     <button type="submit" disabled={!quickAddValue.trim()} className="px-3 py-1.5 text-xs font-bold bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50">Adicionar Tarefa</button>
                   </div>

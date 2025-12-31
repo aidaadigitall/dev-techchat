@@ -160,8 +160,8 @@ const Kanban: React.FC = () => {
   return (
     <div className="h-full flex flex-col bg-gray-50 overflow-hidden" onClick={() => setShowFilterMenu(false)}>
       {/* Header & Filters */}
-      <div className="px-6 py-4 border-b border-gray-200 bg-white flex flex-wrap gap-4 justify-between items-center shadow-sm z-10">
-        <div className="flex items-center gap-4">
+      <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-white flex flex-col md:flex-row gap-4 justify-between items-start md:items-center shadow-sm z-10">
+        <div className="flex items-center gap-4 w-full md:w-auto justify-between">
           <div className="flex items-center gap-2">
              <h1 className="text-xl font-bold text-gray-800">Kanban</h1>
           </div>
@@ -177,19 +177,19 @@ const Kanban: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-           <div className="relative">
+        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+           <div className="relative flex-1 md:flex-none min-w-[150px]">
              <input 
                type="text" 
-               placeholder="Buscar contato ou valor..." 
-               className="border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm w-48 focus:outline-none focus:border-purple-500 bg-white" 
+               placeholder="Buscar..." 
+               className="border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm w-full focus:outline-none focus:border-purple-500 bg-white" 
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
              />
              <Search size={14} className="absolute right-2.5 top-2.5 text-gray-400" />
            </div>
            
-           <div className="relative">
+           <div className="relative flex-shrink-0">
              <button 
                className={`p-2 rounded-lg border border-gray-300 bg-white ${activeFilter !== 'all' ? 'text-purple-600 border-purple-200 bg-purple-50' : 'text-gray-600 hover:bg-gray-100'}`}
                onClick={(e) => { e.stopPropagation(); setShowFilterMenu(!showFilterMenu); }}
@@ -207,9 +207,9 @@ const Kanban: React.FC = () => {
              )}
            </div>
 
-           <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-300 bg-white" onClick={loadPipelines}><RotateCw size={18} /></button>
-           <button className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm">
-             <Plus size={18} className="mr-2" /> Novo Negócio
+           <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-300 bg-white flex-shrink-0" onClick={loadPipelines}><RotateCw size={18} /></button>
+           <button className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm whitespace-nowrap flex-shrink-0">
+             <Plus size={18} className="mr-2" /> Novo
            </button>
         </div>
       </div>
@@ -217,7 +217,7 @@ const Kanban: React.FC = () => {
       {/* Board */}
       <div 
         ref={scrollContainerRef}
-        className={`flex-1 overflow-x-auto overflow-y-hidden p-6 bg-gray-50/50 ${isDraggingBoard ? 'cursor-grabbing' : 'cursor-grab'}`}
+        className={`flex-1 overflow-x-auto overflow-y-hidden p-4 md:p-6 bg-gray-50/50 ${isDraggingBoard ? 'cursor-grabbing' : 'cursor-grab'}`}
         onMouseDown={handleMouseDown}
         onMouseLeave={handleMouseLeave}
         onMouseUp={handleMouseUp}
@@ -232,7 +232,7 @@ const Kanban: React.FC = () => {
               return (
                 <div 
                   key={column.id} 
-                  className="w-80 flex flex-col flex-shrink-0 bg-gray-100/50 rounded-xl max-h-full border border-gray-200 transition-colors pointer-events-auto"
+                  className="w-72 md:w-80 flex flex-col flex-shrink-0 bg-gray-100/50 rounded-xl max-h-full border border-gray-200 transition-colors pointer-events-auto"
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, column.id)}
                 >

@@ -196,7 +196,7 @@ const App: React.FC = () => {
 
   return (
     <ToastProvider>
-      <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
+      <div className="flex h-screen w-full bg-gray-50 overflow-hidden font-sans fixed inset-0">
         {/* Dynamic Styles for White Label */}
         <style>{`
           :root {
@@ -214,6 +214,7 @@ const App: React.FC = () => {
           .focus\\:border-purple-500:focus { border-color: var(--primary-color) !important; }
         `}</style>
 
+        {/* Desktop Sidebar */}
         <Sidebar 
           activeRoute={activeRoute} 
           onNavigate={setActiveRoute} 
@@ -226,9 +227,9 @@ const App: React.FC = () => {
         
         {/* Mobile Sidebar Overlay */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 z-40 md:hidden">
-            <div className="absolute inset-0 bg-gray-600 bg-opacity-75" onClick={() => setMobileMenuOpen(false)}></div>
-            <div className="absolute left-0 top-0 h-full bg-white z-50">
+          <div className="fixed inset-0 z-50 md:hidden">
+            <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)}></div>
+            <div className="absolute left-0 top-0 h-full bg-white z-50 w-72 shadow-xl animate-slideInLeft">
               <Sidebar 
                 activeRoute={activeRoute} 
                 onNavigate={(route) => {
@@ -245,9 +246,9 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <div className="flex-1 flex flex-col h-full w-full relative">
+        <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
           <MobileHeader onToggleMenu={() => setMobileMenuOpen(true)} branding={branding} />
-          <main className="flex-1 overflow-hidden relative">
+          <main className="flex-1 overflow-hidden relative w-full h-full">
             {renderContent()}
           </main>
         </div>

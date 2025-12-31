@@ -33,7 +33,15 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     return saved ? JSON.parse(saved) : { name: 'Esc Solutions', hoursStart: '08:00', hoursEnd: '18:00', greeting: 'Olá! Bem-vindo.' };
   });
   const [brandingForm, setBrandingForm] = useState<Branding>({ appName: branding?.appName || 'OmniConnect', primaryColor: branding?.primaryColor || '#9333ea', logoUrl: branding?.logoUrl || '' });
-  const [aiSettings, setAiSettings] = useState({ apiKey: '', useOwnKey: false, model: 'gemini-3-pro-preview' });
+  
+  // AI Settings State
+  const [aiSettings, setAiSettings] = useState({ 
+    provider: 'google', 
+    apiKey: '', 
+    useOwnKey: false, 
+    model: 'gemini-3-pro-preview' 
+  });
+
   const [tags, setTags] = useState<Tag[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   
@@ -86,7 +94,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   useEffect(() => {
     const savedAI = localStorage.getItem('app_ai_settings');
     if (savedAI) {
-        setAiSettings(JSON.parse(savedAI));
+        const parsed = JSON.parse(savedAI);
+        // Ensure provider defaults to google if missing from old save
+        if (!parsed.provider) parsed.provider = 'google';
+        setAiSettings(parsed);
     }
   }, []);
 
@@ -135,6 +146,17 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
               setProfileAvatarPreview(reader.result as string);
           };
           reader.readAsDataURL(file);
+      }
+  };
+
+  const getDefaultModel = (provider: string) => {
+      switch(provider) {
+          case 'google': return 'gemini-3-pro-preview';
+          case 'openai': return 'gpt-4o';
+          case 'azure': return 'azure-gpt-4o';
+          case 'anthropic': return 'claude-3-sonnet-20240229';
+          case 'groq': return 'llama3-70b-8192';
+          default: return '';
       }
   };
 
@@ -324,7 +346,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
              <div className="space-y-6 animate-fadeIn">
                 <div className="border-b border-gray-100 pb-4">
                    <h2 className="text-xl font-semibold text-gray-800">Agentes IA & Automação</h2>
-                   <p className="text-sm text-gray-500">Configure o cérebro da sua operação. Defina chaves de API e modelos.</p>
+                   <p className="text-sm text-gray-500">Configure o cérebro da sua operação. Escolha entre múltiplos provedores de LLM.</p>
                 </div>
 
                 <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
@@ -334,11 +356,38 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                       </div>
                       <div>
                          <h3 className="text-lg font-bold text-gray-900">Motor de Inteligência (LLM)</h3>
-                         <p className="text-sm text-gray-500">O sistema utiliza Google Gemini para processar conversas.</p>
+                         <p className="text-sm text-gray-500">O sistema utiliza modelos de linguagem para processar conversas.</p>
                       </div>
                    </div>
 
                    <div className="space-y-5 max-w-2xl">
+                      {/* Provider Selection */}
+                      <div>
+                         <label className="block text-sm font-medium text-gray-700 mb-2">Provedor de IA</label>
+                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                            {[
+                                { id: 'google', label: 'Google Gemini' },
+                                { id: 'openai', label: 'OpenAI (GPT)' },
+                                { id: 'azure', label: 'Microsoft Copilot' },
+                                { id: 'anthropic', label: 'Anthropic (Claude)' },
+                                { id: 'groq', label: 'Groq (Llama)' }
+                            ].map(p => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => setAiSettings({...aiSettings, provider: p.id, model: getDefaultModel(p.id)})}
+                                    className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
+                                        aiSettings.provider === p.id 
+                                        ? 'border-purple-600 bg-purple-50 text-purple-700' 
+                                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
+                         </div>
+                      </div>
+
+                      {/* Model Selection */}
                       <div>
                          <label className="block text-sm font-medium text-gray-700 mb-2">Modelo Padrão</label>
                          <select 
@@ -346,10 +395,51 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                             value={aiSettings.model}
                             onChange={(e) => setAiSettings({...aiSettings, model: e.target.value})}
                          >
-                            <option value="gemini-3-pro-preview">Gemini 1.5 Pro (Raciocínio Complexo)</option>
-                            <option value="gemini-3-flash-preview">Gemini 1.5 Flash (Alta Velocidade)</option>
+                            {/* Logic to show options based on provider */}
+                            {aiSettings.provider === 'google' && (
+                                <>
+                                    <option value="gemini-3-pro-preview">Gemini 1.5 Pro (Raciocínio Complexo)</option>
+                                    <option value="gemini-3-flash-preview">Gemini 1.5 Flash (Alta Velocidade)</option>
+                                </>
+                            )}
+                            {aiSettings.provider === 'openai' && (
+                                <>
+                                    <option value="gpt-4o">GPT-4o (Omni - Mais Rápido)</option>
+                                    <option value="o1-preview">OpenAI o1-preview (Raciocínio Avançado)</option>
+                                    <option value="o1-mini">OpenAI o1-mini (Raciocínio Rápido)</option>
+                                    <option value="gpt-4-turbo">GPT-4 Turbo (Estável)</option>
+                                    <option value="gpt-4">GPT-4 (Clássico)</option>
+                                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Legado/Econômico)</option>
+                                </>
+                            )}
+                            {aiSettings.provider === 'azure' && (
+                                <>
+                                    <option value="azure-gpt-4o">GPT-4o (Azure AI)</option>
+                                    <option value="azure-gpt-4-turbo">GPT-4 Turbo (Azure AI)</option>
+                                </>
+                            )}
+                            {aiSettings.provider === 'anthropic' && (
+                                <>
+                                    <option value="claude-3-opus-20240229">Claude 3 Opus (Mais Inteligente)</option>
+                                    <option value="claude-3-sonnet-20240229">Claude 3 Sonnet (Equilibrado)</option>
+                                    <option value="claude-3-haiku-20240307">Claude 3 Haiku (Mais Rápido)</option>
+                                </>
+                            )}
+                            {aiSettings.provider === 'groq' && (
+                                <>
+                                    <option value="llama3-70b-8192">Llama 3 70B (Meta)</option>
+                                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                                    <option value="gemma-7b-it">Gemma 7B</option>
+                                </>
+                            )}
                          </select>
-                         <p className="text-xs text-gray-500 mt-1">O modelo Pro é recomendado para atendimento complexo. O Flash é melhor para triagem rápida.</p>
+                         <p className="text-xs text-gray-500 mt-1">
+                            {aiSettings.provider === 'google' && "O modelo Pro é recomendado para atendimento complexo. O Flash é melhor para triagem rápida."}
+                            {aiSettings.provider === 'openai' && "GPT-4o e o1-preview oferecem o estado da arte em inteligência."}
+                            {aiSettings.provider === 'azure' && "Infraestrutura enterprise da Microsoft para rodar modelos GPT."}
+                            {aiSettings.provider === 'anthropic' && "Claude tem janela de contexto maior e texto mais natural."}
+                            {aiSettings.provider === 'groq' && "Groq oferece inferência extremamente rápida para modelos open source."}
+                         </p>
                       </div>
 
                       <div className="pt-4 border-t border-gray-100">
@@ -375,15 +465,15 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                                   <input 
                                     type="password" 
                                     className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                                    placeholder="Cole sua chave API aqui (AIzaSy...)"
+                                    placeholder={`Cole sua chave API do ${aiSettings.provider === 'google' ? 'AI Studio' : aiSettings.provider === 'openai' ? 'OpenAI' : aiSettings.provider === 'azure' ? 'Azure OpenAI' : aiSettings.provider === 'anthropic' ? 'Anthropic' : 'Groq'} aqui...`}
                                     value={aiSettings.apiKey}
                                     onChange={(e) => setAiSettings({...aiSettings, apiKey: e.target.value})}
                                   />
                                   <Key size={16} className="absolute left-3 top-3 text-gray-400" />
-                               </div>
-                               <p className="text-xs text-gray-500 mt-1 flex items-center">
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1 flex items-center">
                                   <CheckCircle size={12} className="mr-1 text-green-500" /> Chave armazenada localmente e criptografada.
-                               </p>
+                                </p>
                             </div>
                          )}
                       </div>

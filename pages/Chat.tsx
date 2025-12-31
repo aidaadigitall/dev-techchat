@@ -715,6 +715,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   return (
     <div className="flex h-full bg-white overflow-hidden relative">
       {/* 1. Sidebar - Contact List */}
+      {/* Logic: On Mobile, if selectedContact is null, show this. On Desktop always show. */}
       <div className={`w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50 h-full absolute md:relative z-20 md:z-auto transition-transform duration-300 ${selectedContact ? '-translate-x-full md:translate-x-0' : 'translate-x-0'}`}>
          <div className="p-4 bg-white border-b border-gray-100">
            <div className="relative mb-3">
@@ -782,6 +783,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       </div>
 
       {/* 2. Chat Area */}
+      {/* Logic: On Mobile, if selectedContact is true, show this full width. On Desktop always show. */}
       <div className={`flex-1 flex flex-col relative bg-[#efeae2] h-full w-full absolute md:relative transition-transform duration-300 ${selectedContact ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
          {selectedContact ? (
            <>
@@ -1155,7 +1157,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
              </div>
            </>
          ) : (
-           <div className="flex-1 flex flex-col items-center justify-center bg-[#f0f2f5] border-l border-gray-200">
+           <div className="flex-1 flex flex-col items-center justify-center bg-[#f0f2f5] border-l border-gray-200 h-full">
               <div className="mb-6 relative group">
                  <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-sm overflow-hidden border-4 border-gray-100">
                     {branding?.logoUrl ? (
@@ -1172,7 +1174,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
               <h2 className="text-2xl font-medium text-gray-700 mb-3 tracking-tight">
                  {branding?.appName || 'OmniConnect Web'}
               </h2>
-              <p className="text-gray-500 text-sm max-w-md text-center leading-relaxed">
+              <p className="text-gray-500 text-sm max-w-md text-center leading-relaxed px-4">
                  Selecione um contato para iniciar o atendimento. <br/>
                  Use o menu lateral para filtrar entre abertos, pendentes e resolvidos.
               </p>
@@ -1182,7 +1184,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
       {/* 3. Right Panel - Details & CRM & Starred */}
       {rightPanelOpen && selectedContact && (
-         <div className="absolute right-0 top-0 bottom-0 w-80 bg-white border-l border-gray-200 z-30 shadow-2xl overflow-y-auto animate-slideInRight flex flex-col">
+         <div className="absolute right-0 top-0 bottom-0 w-full md:w-80 bg-white border-l border-gray-200 z-30 shadow-2xl overflow-y-auto animate-slideInRight flex flex-col">
             <div className="p-4 border-b border-gray-100 flex items-center bg-gray-50 flex-shrink-0">
                <button onClick={() => {
                   if (rightPanelView === 'starred') setRightPanelView('info');
