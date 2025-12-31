@@ -45,11 +45,28 @@ class WhatsAppService {
       this.qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=TechChatAuth_${Date.now()}`;
       this.updateStatus('qr_ready');
       this.emit('qr', this.qrCode);
-      this.addLog('QR Code gerado. Aguardando leitura...');
+      this.addLog('QR Code gerado. Aguardando leitura (Clique no QR para simular)...');
+      
+      // Removed automatic connection timeout. 
+      // Now relies on simulateScan() called by UI interaction.
+    }, 1500);
+  }
 
-      // Simulate user scanning the code after 8 seconds
-      this.startConnectionSimulation();
-    }, 2000);
+  // Called by the UI when user clicks the QR Code (Simulation only)
+  public simulateScan(): void {
+      if (this.status !== 'qr_ready') return;
+      
+      this.addLog('Lendo QR Code...');
+      
+      setTimeout(() => {
+          this.qrCode = null;
+          this.updateStatus('connected');
+          this.addLog('Autenticado com sucesso!');
+          this.addLog('Sincronizando contatos e chats...');
+          this.addLog('Pronto para uso.');
+          
+          this.startIncomingMessageSimulation();
+      }, 1500);
   }
 
   public disconnect(): void {
@@ -107,27 +124,11 @@ class WhatsAppService {
     }
   }
 
-  private startConnectionSimulation() {
-    // This simulates the waiting period for the user to scan the QR
-    
-    this.connectionInterval = window.setTimeout(() => {
-      // Simulate success
-      this.qrCode = null;
-      this.updateStatus('connected');
-      this.addLog('Autenticado com sucesso!');
-      this.addLog('Sincronizando contatos e chats...');
-      this.addLog('Pronto para uso.');
-      
-      // Start receiving messages after connection
-      this.startIncomingMessageSimulation();
-    }, 8000); // 8 seconds to connect (simulating scan time)
-  }
-
   private startIncomingMessageSimulation() {
       // Simulate receiving a message every 30-60 seconds from a random contact
       // This mimics real-time socket events
       this.incomingMessageInterval = window.setInterval(() => {
-          if (Math.random() > 0.7) { // 30% chance to receive
+          if (Math.random() > 0.8) { // 20% chance to receive
               // Simulate typing first
               const senderId = Math.random() > 0.5 ? 'c1' : 'c2'; // Elisa or Roberto
               

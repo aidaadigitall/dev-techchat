@@ -446,19 +446,18 @@ export const api = {
                 const session = JSON.parse(stored);
                 let updated = false;
                 
+                // Ensure structure exists
+                if (!session.user) session.user = {};
+                if (!session.user.user_metadata) session.user.user_metadata = {};
+
                 if (data.name) {
-                    // Update in multiple places where auth might look
-                    if (session.user?.user_metadata) {
-                        session.user.user_metadata.full_name = data.name;
-                        updated = true;
-                    }
+                    session.user.user_metadata.full_name = data.name;
+                    updated = true;
                 }
                 
                 if (data.avatar) {
-                    if (session.user?.user_metadata) {
-                        session.user.user_metadata.avatar_url = data.avatar;
-                        updated = true;
-                    }
+                    session.user.user_metadata.avatar_url = data.avatar;
+                    updated = true;
                 }
 
                 if (updated) {

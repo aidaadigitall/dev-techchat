@@ -14,6 +14,7 @@ import {
   ArrowRight, StickyNote, RefreshCw
 } from 'lucide-react';
 import Modal from '../components/Modal';
+import { useToast } from '../components/ToastContext';
 
 // Expanded Emoji List
 const COMMON_EMOJIS = [
@@ -42,6 +43,7 @@ interface ChatProps {
 }
 
 const Chat: React.FC<ChatProps> = ({ branding }) => {
+  const { addToast } = useToast();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [messageInput, setMessageInput] = useState('');
@@ -310,22 +312,28 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
   // --- Workflow Actions (Status) ---
 
-  const updateContactStatus = (contactId: string, newStatus: Contact['status']) => {
+  const updateContactStatus = async (contactId: string, newStatus: Contact['status']) => {
+    // 1. Update API
+    await api.contacts.update(contactId, { status: newStatus });
+
+    // 2. Update Local State immediately
     setContacts(prev => prev.map(c => c.id === contactId ? { ...c, status: newStatus } : c));
+    
     if (selectedContact && selectedContact.id === contactId) {
-       setSelectedContact({ ...selectedContact, status: newStatus });
+        if (newStatus === 'resolved') {
+            // Close chat if resolved
+            setSelectedContact(null);
+            addToast('Conversa finalizada e movida para resolvidos.', 'success');
+        } else {
+            setSelectedContact({ ...selectedContact, status: newStatus });
+        }
     }
-    // Switch tab if needed or keep user flow smooth
-    if (newStatus === 'open') setActiveTab('open');
-    if (newStatus === 'resolved') setActiveTab('resolved');
   };
 
   const handleResolveTicket = () => {
     if (!selectedContact) return;
     if (confirm("Deseja realmente finalizar este atendimento?")) {
-       updateContactStatus(selectedContact.id, 'resolved');
-       
-       // Add system message
+       // Send system message first
        const systemMsg: Message = {
            id: Date.now().toString(),
            content: 'Atendimento finalizado pelo agente.',
@@ -335,7 +343,21 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
            status: 'read'
        };
        setMessages(prev => [...prev, systemMsg]);
+       
+       // Update status
+       updateContactStatus(selectedContact.id, 'resolved');
     }
+  };
+
+  const handleDeleteChat = async () => {
+      if (!selectedContact) return;
+      if (confirm("Tem certeza que deseja excluir esta conversa e todo o histórico?")) {
+          await api.contacts.delete(selectedContact.id);
+          setContacts(prev => prev.filter(c => c.id !== selectedContact.id));
+          setSelectedContact(null);
+          setHeaderMenuOpen(false);
+          addToast("Conversa excluída com sucesso.", "success");
+      }
   };
 
   // --- Transfer Logic ---
@@ -826,12 +848,14 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                 </div>
                 
                 <div className="flex items-center space-x-2">
-                   <button 
-                      onClick={handleResolveTicket} 
-                      className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg hover:bg-green-100 hover:text-green-700 transition-colors flex items-center border border-gray-200 hidden sm:flex"
-                   >
-                      <CheckSquare size={14} className="mr-1" /> Resolver
-                   </button>
+                   {activeTab !== 'resolved' && (
+                        <button 
+                            onClick={handleResolveTicket} 
+                            className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg hover:bg-green-100 hover:text-green-700 transition-colors flex items-center border border-gray-200 hidden sm:flex"
+                        >
+                            <CheckSquare size={14} className="mr-1" /> Resolver
+                        </button>
+                   )}
                    
                    <button 
                      onClick={handleAnalyzeChat}
@@ -858,8 +882,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                <Download size={16} className="mr-2 text-gray-400" /> Exportar Histórico
                             </button>
                             <div className="h-px bg-gray-100 my-1"></div>
-                            <button onClick={handleBlockContact} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center font-medium">
+                            <button onClick={handleBlockContact} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
                                <Ban size={16} className="mr-2" /> {selectedContact.blocked ? 'Desbloquear' : 'Bloquear'}
+                            </button>
+                            <button onClick={handleDeleteChat} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center font-medium">
+                               <Trash2 size={16} className="mr-2" /> Excluir Conversa
                             </button>
                          </div>
                       )}

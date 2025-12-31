@@ -33,7 +33,17 @@ const App: React.FC = () => {
   
   // State for Current User (Profile Management)
   const [currentUser, setCurrentUser] = useState<User>(() => {
-    // Fallback default user for UI rendering if auth data is minimal
+    // 1. Try to load from local storage to persist changes across reloads
+    try {
+      const savedUser = localStorage.getItem('app_current_user');
+      if (savedUser) {
+        return JSON.parse(savedUser);
+      }
+    } catch (e) {
+      console.error("Failed to load saved user", e);
+    }
+
+    // 2. Fallback default user for UI rendering if auth data is minimal
     return MOCK_USERS[0] || {
       id: 'default_admin',
       name: 'Admin User',
@@ -110,18 +120,31 @@ const App: React.FC = () => {
       setActiveRoute(AppRoute.ADMIN_DASHBOARD);
     }
 
-    setCurrentUser(prev => ({
-        ...prev,
-        id: authUser.id,
-        email: authUser.email || prev.email,
-        name: authUser.user_metadata?.full_name || prev.name || 'Usuário',
-        role: isSuperAdminEmail ? 'super_admin' : (authUser.app_metadata?.role || 'admin') 
-    }));
+    setCurrentUser(prev => {
+        // Prefer auth metadata if available, otherwise keep existing custom name
+        const newName = authUser.user_metadata?.full_name || prev.name || 'Usuário';
+        const newAvatar = authUser.user_metadata?.avatar_url || prev.avatar || '';
+
+        const updatedUser = {
+            ...prev,
+            id: authUser.id,
+            email: authUser.email || prev.email,
+            name: newName,
+            avatar: newAvatar,
+            role: isSuperAdminEmail ? 'super_admin' : (authUser.app_metadata?.role || 'admin')
+        };
+        
+        // Save to local storage immediately to keep sync
+        localStorage.setItem('app_current_user', JSON.stringify(updatedUser));
+        
+        return updatedUser;
+    });
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem('mock_session'); // Clear mock session
+    localStorage.removeItem('app_current_user'); // Clear cached user
     setSession(null);
     setIsAdminMode(false); // Reset admin mode on logout
   };
@@ -131,11 +154,6 @@ const App: React.FC = () => {
     document.title = branding.appName;
     localStorage.setItem('app_branding', JSON.stringify(branding));
   }, [branding]);
-
-  // Save user to localStorage (optional caching)
-  useEffect(() => {
-    localStorage.setItem('app_current_user', JSON.stringify(currentUser));
-  }, [currentUser]);
 
   // Router Logic
   const renderContent = () => {

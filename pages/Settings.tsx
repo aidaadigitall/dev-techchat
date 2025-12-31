@@ -127,6 +127,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     whatsappService.connect();
   };
 
+  const handleSimulateScan = () => {
+      whatsappService.simulateScan();
+  };
+
   const handleDisconnect = () => {
       if(confirm("Deseja realmente desconectar o WhatsApp?")) {
           whatsappService.disconnect();
@@ -558,7 +562,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
            <div className="flex flex-col items-center justify-center py-6 space-y-6">
                {qrCodeData ? (
                    <>
-                       <div className="p-2 bg-white border-4 border-gray-900 rounded-lg shadow-xl relative">
+                       <div className="p-2 bg-white border-4 border-gray-900 rounded-lg shadow-xl relative cursor-pointer hover:opacity-90 transition-opacity group" onClick={handleSimulateScan}>
                            <img 
                              src={qrCodeData} 
                              alt="QR Code" 
@@ -570,6 +574,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                                 e.currentTarget.parentElement!.innerHTML = '<span class="text-xs text-red-500 font-bold p-4 text-center">Erro ao carregar QR.<br/>Verifique sua internet.</span>';
                              }}
                            />
+                           {/* Scan Hint Overlay */}
+                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span className="text-white font-bold text-sm bg-black/60 px-3 py-1 rounded">Clique para Simular Leitura</span>
+                           </div>
+
                            <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 bg-white px-2 py-1 rounded-full border shadow-sm">
                               <RefreshCw size={14} className="text-green-600 animate-spin" />
                            </div>
