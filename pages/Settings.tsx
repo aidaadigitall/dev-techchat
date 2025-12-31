@@ -58,7 +58,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
         setWhatsappStatus(status);
         if (status === 'connected') {
             setTimeout(() => {
-                // Keep modal open briefly to show success
+                setConnectionModalOpen(false);
                 addToast('WhatsApp conectado com sucesso!', 'success');
             }, 1500);
         }
@@ -100,9 +100,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
   // --- Handlers ---
 
-  const handleSaveWaConfig = () => {
-      whatsappService.updateConfig(waConfig);
-      addToast('Configurações da Evolution API salvas.', 'success');
+  const handleSaveWaConfig = async () => {
+      // Force update logic (will disconnect old instance if name changed)
+      await whatsappService.updateConfig(waConfig);
+      addToast('Configurações salvas. Se o nome mudou, a conexão será reiniciada.', 'success');
   };
 
   const handleGenerateQR = () => {
@@ -184,7 +185,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                             <input 
                                 type="text" 
                                 className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" 
-                                placeholder="ex: https://api.seudominio.com"
+                                placeholder="ex: http://localhost:8083"
                                 value={waConfig.apiUrl}
                                 onChange={e => setWaConfig({...waConfig, apiUrl: e.target.value})}
                             />
@@ -203,20 +204,24 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                             />
                         </div>
                     </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Nome da Instância</label>
-                        <input 
-                            type="text" 
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" 
-                            placeholder="TechChat_01"
-                            value={waConfig.instanceName}
-                            onChange={e => setWaConfig({...waConfig, instanceName: e.target.value})}
-                        />
-                    </div>
                  </div>
+                 
+                 {/* Instance Name Field Highlighted */}
+                 <div className="mb-4 bg-purple-50 p-4 rounded-lg border border-purple-100">
+                    <label className="block text-xs font-bold text-purple-800 mb-1">Nome da Instância (Conexão)</label>
+                    <p className="text-[10px] text-purple-600 mb-2">Este é o nome usado para identificar este telefone na Evolution API.</p>
+                    <input 
+                        type="text" 
+                        className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm font-medium text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
+                        placeholder="Ex: Whats-Comercial"
+                        value={waConfig.instanceName}
+                        onChange={e => setWaConfig({...waConfig, instanceName: e.target.value})}
+                    />
+                 </div>
+
                  <div className="flex justify-end">
-                    <button onClick={handleSaveWaConfig} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black flex items-center">
-                        <Save size={16} className="mr-2" /> Salvar Configuração
+                    <button onClick={handleSaveWaConfig} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black flex items-center shadow-md">
+                        <Save size={16} className="mr-2" /> Salvar & Aplicar
                     </button>
                  </div>
               </div>
@@ -244,7 +249,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                                  <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Desconectado
                               </p>
                           )}
-                          <p className="text-xs text-gray-500">Instância: {waConfig.instanceName}</p>
+                          <p className="text-xs text-gray-500 mt-1">Conectado como: <strong>{waConfig.instanceName}</strong></p>
                        </div>
                     </div>
                     <div className="flex gap-2">
