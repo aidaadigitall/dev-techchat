@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MOCK_CONTACTS, MOCK_USERS, MOCK_PROPOSALS } from '../constants';
-import { api } from '../services/api';
-import { whatsappService } from '../services/whatsapp'; // Import WhatsApp Service
+import { api, adaptMessage } from '../services/api';
+import { supabase } from '../services/supabase'; // Import supabase for realtime
+import { whatsappService } from '../services/whatsapp'; 
 import { Contact, Message, MessageType, QuickReply, AIInsight, Proposal, Branding, TaskPriority } from '../types';
 import { 
   Search, MoreVertical, Paperclip, Smile, Mic, Send, 
@@ -19,7 +19,7 @@ import { useToast } from '../components/ToastContext';
 // Expanded Emoji List
 const COMMON_EMOJIS = [
   "😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞", "👀", "🚀", "✨", "💯",
-  "😊", "🥺", "😭", "😤", "😴", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
+  "😊", "🥺", "😭", "😤", "😴", "🤒", "🤒", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
 ];
 
 const DEPARTMENTS = [
@@ -51,8 +51,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [activeTab, setActiveTab] = useState<'open' | 'pending' | 'resolved'>('open');
   
   // Right Panel States
-  const [rightPanelOpen, setRightPanelOpen] = useState(false); // Contact Details
-  const [rightPanelView, setRightPanelView] = useState<'info' | 'starred'>('info'); // View Mode
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelView, setRightPanelView] = useState<'info' | 'starred'>('info'); 
   const [infoTab, setInfoTab] = useState<'crm' | 'media'>('crm');
   const [mediaFilter, setMediaFilter] = useState<'images' | 'videos' | 'docs'>('images');
 
@@ -68,6 +68,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [messageMenuOpenId, setMessageMenuOpenId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   
+  // Search Messages State
+  const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
+
   // Call State
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'connected'>('idle');
   const [callType, setCallType] = useState<'audio' | 'video'>('audio');
@@ -75,7 +79,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // Advanced Features States
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [signatureEnabled, setSignatureEnabled] = useState(true); // Agent Signature
+  const [signatureEnabled, setSignatureEnabled] = useState(true); 
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [isCreatingQuickReply, setIsCreatingQuickReply] = useState(false);
@@ -86,9 +90,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   
   // Right Panel Notes
   const [newNote, setNewNote] = useState('');
-  const [internalNotes, setInternalNotes] = useState<{id: string, text: string, date: string}[]>([
-      { id: 'n1', text: 'Cliente prefere contato pela manhã.', date: '20/12/2024' }
-  ]);
+  const [internalNotes, setInternalNotes] = useState<{id: string, text: string, date: string}[]>([]);
   
   // Proposals for this contact
   const [contactProposals, setContactProposals] = useState<Proposal[]>([]);
@@ -96,23 +98,19 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // AI State
   const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiMessage, setAiMessage] = useState(''); // Chat with AI
+  const [aiMessage, setAiMessage] = useState(''); 
   const [aiChatHistory, setAiChatHistory] = useState<{role: 'user' | 'ai', content: string}[]>([
     { role: 'ai', content: 'Olá! Sou seu CEO Virtual. Analisei essa conversa e vejo uma oportunidade de upsell. Quer que eu escreva uma abordagem?' }
   ]);
 
   // Modals State
-  // Expanded types for activeModal to support new features
   const [activeModal, setActiveModal] = useState<'transfer' | 'export' | 'schedule' | 'forward' | 'resolve' | 'delete' | 'block' | 'createTask' | 'tags' | 'deleteMessage' | null>(null);
-  const [modalData, setModalData] = useState<any>(null); // To store data for the active modal
+  const [modalData, setModalData] = useState<any>(null); 
   const [transferData, setTransferData] = useState({ userId: '', sector: '' });
   
   // Scheduling State
   const [scheduleData, setScheduleData] = useState({ date: '', time: '', recurrence: 'none' });
-  const [scheduledMessages, setScheduledMessages] = useState<{id: string, date: string, message: string, recurrence: string}[]>([
-      { id: '1', date: '2025-02-15 09:00', message: 'Olá, gostaria de saber se você teve tempo de analisar a proposta.', recurrence: 'none' },
-      { id: '2', date: '2023-12-01 10:00', message: 'Bom dia! Segue o orçamento.', recurrence: 'none' } // Historic example
-  ]);
+  const [scheduledMessages, setScheduledMessages] = useState<{id: string, date: string, message: string, recurrence: string}[]>([]);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
 
   // Quick Task State
@@ -130,21 +128,20 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingIntervalRef = useRef<number | null>(null);
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Ref for typing debounce
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); 
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   
-  // Refs for Date/Time inputs to trigger picker programmatically
+  // Refs for Date/Time inputs
   const dateInputRef = useRef<HTMLInputElement>(null);
   const timeInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize selected contact if provided in props or default
+  // --- Real-time Data Loading ---
   useEffect(() => {
     const loadInit = async () => {
         const fetchedContacts = await api.contacts.list();
         setContacts(fetchedContacts);
         
         if (!selectedContact && fetchedContacts.length > 0) {
-            // Only set initial contact on desktop, on mobile keep null to show list
             if (window.innerWidth >= 768) {
                const initial = fetchedContacts.find(c => c.status === activeTab) || fetchedContacts[0];
                if (initial && initial.status === activeTab) setSelectedContact(initial);
@@ -152,75 +149,74 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         }
     };
     loadInit();
-  }, [activeTab]);
 
-  // --- Real-time WhatsApp Listener ---
-  useEffect(() => {
-    const handleIncomingMessage = (data: any) => {
-        // If the incoming message belongs to the currently selected contact
-        if (selectedContact && data.senderId === selectedContact.id) {
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
-                content: data.content,
-                senderId: data.senderId,
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                type: MessageType.TEXT,
-                status: 'read'
-            }]);
-            
-            // Clear typing indicator
-            setIsContactTyping(false);
-        } else {
-            // Logic to increment unread counter on contact list would go here
-            setContacts(prev => prev.map(c => 
-                c.id === data.senderId ? { ...c, unreadCount: (c.unreadCount || 0) + 1, lastMessage: data.content, lastMessageTime: 'Agora' } : c
-            ));
-        }
-    };
-
-    const handleTyping = (data: any) => {
-        if (selectedContact && data.senderId === selectedContact.id) {
-            setIsContactTyping(true);
-            setTimeout(() => setIsContactTyping(false), 3000);
-        }
-    };
-
-    whatsappService.on('message', handleIncomingMessage);
-    // Simulating a 'typing' event listener if the service supported it
-    // whatsappService.on('typing', handleTyping);
+    // Subscribe to CONTACTS changes
+    const contactsChannel = supabase.channel('contacts-list')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, (payload) => {
+            // Refresh list on any change
+            loadInit(); 
+        })
+        .subscribe();
 
     return () => {
-        whatsappService.off('message', handleIncomingMessage);
-        // whatsappService.off('typing', handleTyping);
+        supabase.removeChannel(contactsChannel);
     };
-  }, [selectedContact]);
+  }, [activeTab]);
 
+  // --- Real-time Chat Listener (Supabase) ---
   useEffect(() => {
-    if (selectedContact) {
-      loadMessages(selectedContact.id);
-      loadQuickReplies();
-      setAttachment(null);
-      setMessageInput('');
-      setReplyingTo(null);
-      setIsTyping(false);
-      setIsContactTyping(false);
-      setHeaderMenuOpen(false);
-      setAttachmentMenuOpen(false);
-      setShowEmojiPicker(false);
-      setEditContactForm(selectedContact);
-      setAiInsights([]); // Reset AI
-      setAiChatHistory([{ role: 'ai', content: 'Olá! Sou seu CEO Virtual. Analisei essa conversa e vejo uma oportunidade de upsell. Quer que eu escreva uma abordagem?' }]);
-      setRightPanelView('info'); // Reset right panel
-      
-      // Load proposals for this contact (Mock logic)
-      const props = MOCK_PROPOSALS.filter(p => p.clientId === selectedContact.id);
-      setContactProposals(props);
-    }
+    if (!selectedContact) return;
+
+    // Load initial history
+    loadMessages(selectedContact.id);
+    loadQuickReplies();
+    
+    // Subscribe to MESSAGES for this contact
+    const chatChannel = supabase.channel(`chat-${selectedContact.id}`)
+        .on(
+            'postgres_changes', 
+            { event: 'INSERT', schema: 'public', table: 'messages', filter: `contact_id=eq.${selectedContact.id}` }, 
+            (payload) => {
+                const newMsg = adaptMessage(payload.new);
+                setMessages(prev => {
+                    if (prev.find(m => m.id === newMsg.id)) return prev; // Dedupe
+                    return [...prev, newMsg];
+                });
+                
+                // If message is from contact, simulate typing stop
+                if (newMsg.senderId !== 'me') {
+                    setIsContactTyping(false);
+                }
+            }
+        )
+        .subscribe();
+
+    setAttachment(null);
+    setMessageInput('');
+    setReplyingTo(null);
+    setIsTyping(false);
+    setIsContactTyping(false);
+    setHeaderMenuOpen(false);
+    setAttachmentMenuOpen(false);
+    setShowEmojiPicker(false);
+    setEditContactForm(selectedContact);
+    setAiInsights([]); 
+    setAiChatHistory([{ role: 'ai', content: 'Olá! Sou seu CEO Virtual. Analisei essa conversa e vejo uma oportunidade de upsell. Quer que eu escreva uma abordagem?' }]);
+    setRightPanelView('info');
+    setIsMessageSearchOpen(false);
+    setMessageSearchQuery('');
+
+    // Load proposals
+    // setContactProposals(...) - would fetch from API if not mock
+
+    return () => {
+        supabase.removeChannel(chatChannel);
+    };
   }, [selectedContact]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping, attachment, isContactTyping, replyingTo]);
+  }, [messages, isTyping, attachment, isContactTyping, replyingTo, messageSearchQuery]);
 
   // Handle outside click for emoji picker
   useEffect(() => {
@@ -278,7 +274,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const handleStartCall = (type: 'audio' | 'video') => {
     setCallType(type);
     setCallStatus('calling');
-    // Simulate call connection
     setTimeout(() => {
         setCallStatus('connected');
     }, 2000);
@@ -297,7 +292,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   };
 
   const handleDeleteMessage = (messageId: string) => {
-    // Open Modal
     setModalData({ messageId });
     setActiveModal('deleteMessage');
     setMessageMenuOpenId(null);
@@ -315,7 +309,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const handleReplyMessage = (message: Message) => {
     setReplyingTo(message);
     setMessageMenuOpenId(null);
-    // Focus input
     const input = document.querySelector('input[type="text"]') as HTMLInputElement;
     if (input) input.focus();
   };
@@ -329,15 +322,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // --- Workflow Actions (Status) ---
 
   const updateContactStatus = async (contactId: string, newStatus: Contact['status']) => {
-    // 1. Update API
     await api.contacts.update(contactId, { status: newStatus });
-
-    // 2. Update Local State immediately
-    setContacts(prev => prev.map(c => c.id === contactId ? { ...c, status: newStatus } : c));
+    // Local update handled by subscription
     
     if (selectedContact && selectedContact.id === contactId) {
         if (newStatus === 'resolved') {
-            // Close chat if resolved
             setSelectedContact(null);
             addToast('Conversa finalizada e movida para resolvidos.', 'success');
         } else {
@@ -364,7 +353,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
        };
        setMessages(prev => [...prev, systemMsg]);
        
-       // Update status
        updateContactStatus(selectedContact.id, 'resolved');
        setActiveModal(null);
   };
@@ -379,8 +367,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       if (!selectedContact) return;
       await api.contacts.delete(selectedContact.id);
       
-      // Update local state IMMEDIATELY
-      setContacts(prev => prev.filter(c => c.id !== selectedContact.id));
       setSelectedContact(null);
       setHeaderMenuOpen(false);
       setActiveModal(null);
@@ -399,8 +385,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     const isBlocked = !selectedContact.blocked;
     
     const updatedContact = { ...selectedContact, blocked: isBlocked };
+    // Optimistic update
     setSelectedContact(updatedContact);
-    setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
     
     setActiveModal(null);
     addToast(isBlocked ? "Contato bloqueado com sucesso." : "Contato desbloqueado.", "info");
@@ -414,21 +400,16 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       return;
     }
 
-    const target = transferData.userId 
-      ? MOCK_USERS.find(u => u.id === transferData.userId)?.name 
-      : DEPARTMENTS.find(d => d.id === transferData.sector)?.name;
-
-    // Simulate Transfer
     const systemMsg: Message = {
         id: Date.now().toString(),
-        content: `Atendimento transferido para ${target}.`,
+        content: `Atendimento transferido.`,
         senderId: 'system',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         type: MessageType.TEXT,
         status: 'read'
     };
     setMessages(prev => [...prev, systemMsg]);
-    addToast(`Transferência realizada com sucesso para ${target}!`, 'success');
+    addToast(`Transferência realizada com sucesso!`, 'success');
     setActiveModal(null);
     setTransferData({ userId: '', sector: '' });
   };
@@ -480,7 +461,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       
       // Optimistic update
       setSelectedContact({...selectedContact, tags: newTags});
-      setContacts(prev => prev.map(c => c.id === selectedContact.id ? {...c, tags: newTags} : c));
       
       // API call
       await api.contacts.update(selectedContact.id, { tags: newTags });
@@ -493,7 +473,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       
       // Optimistic update
       setSelectedContact({...selectedContact, tags: newTags});
-      setContacts(prev => prev.map(c => c.id === selectedContact.id ? {...c, tags: newTags} : c));
       
       // API call
       await api.contacts.update(selectedContact.id, { tags: newTags });
@@ -501,10 +480,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
   // --- Schedule Logic ---
   const handleScheduleMessage = () => {
-    // Open modal even if empty input (for "Agendar Contato" functionality)
     setEditingScheduleId(null);
     setScheduleData({ date: '', time: '', recurrence: 'none' });
-    // If there is text in input, pre-fill it for scheduling but don't clear it yet
     setActiveModal('schedule');
   };
 
@@ -519,14 +496,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         time: timeStr,
         recurrence: Object.keys(RECURRENCE_LABELS).find(key => RECURRENCE_LABELS[key] === scheduleItem.recurrence) || 'none'
     });
-    // Temporarily set message input to edit content
     setMessageInput(scheduleItem.message);
   };
 
   const handleDeleteSchedule = (id: string) => {
-    // This is a small enough action to use confirm or just remove, but let's stick to the rule "Remove all confirmation boxes"
-    // Since this is inside a modal already, we can just remove it instantly or use a mini-confirmation state. 
-    // For smoothness, let's remove instantly with undo toast or just remove.
     setScheduledMessages(prev => prev.filter(m => m.id !== id));
     addToast('Agendamento removido.', 'info');
   };
@@ -537,12 +510,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       return;
     }
     
-    // Simulate scheduling
     const recurrenceLabel = RECURRENCE_LABELS[scheduleData.recurrence] || scheduleData.recurrence;
     const dateStr = `${scheduleData.date} ${scheduleData.time}`;
     
     if (editingScheduleId) {
-        // Update existing
         setScheduledMessages(prev => prev.map(m => m.id === editingScheduleId ? {
             ...m,
             date: dateStr,
@@ -551,7 +522,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         } : m));
         addToast("Agendamento atualizado!", "success");
     } else {
-        // Add new
         const newScheduled = {
             id: Date.now().toString(),
             date: dateStr,
@@ -584,7 +554,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
      if (!selectedContact) return;
      setAiLoading(true);
      setAiPanelOpen(true);
-     // Simulate loading delay for better UX
      const insights = await api.ai.generateInsight('chat', { messages });
      setAiInsights(insights);
      setAiLoading(false);
@@ -593,12 +562,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const handleSendAiPrompt = () => {
     if (!aiMessage.trim()) return;
 
-    // Add user message
     const userMsg = aiMessage;
     setAiChatHistory(prev => [...prev, { role: 'user', content: userMsg }]);
     setAiMessage('');
 
-    // Simulate AI response
     setTimeout(() => {
       setAiChatHistory(prev => [...prev, { 
         role: 'ai', 
@@ -610,14 +577,12 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // --- Audio Recording Logic (Simulation) ---
   const toggleRecording = () => {
     if (isRecording) {
-      // Stop & Send
       if (recordingIntervalRef.current) {
         window.clearInterval(recordingIntervalRef.current);
       }
       setIsRecording(false);
       setRecordingTime(0);
       
-      // Simulate sending audio
       const newMessage: Message = {
         id: Date.now().toString(),
         content: '',
@@ -628,11 +593,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         channel: 'whatsapp',
         mediaUrl: 'audio-mock-url.mp3'
       };
+      // Optimistic
       setMessages(prev => [...prev, newMessage]);
-      whatsappService.sendMessage(selectedContact?.phone || '', 'Audio message sent');
       
     } else {
-      // Start
       setIsRecording(true);
       setRecordingTime(0);
       recordingIntervalRef.current = window.setInterval(() => {
@@ -664,7 +628,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
         }, 
         (error) => {
           console.error("Geolocation error:", error);
-          // Fallback simulation for demo purposes if permission denied or insecure context
           setAttachment({
             type: MessageType.LOCATION,
             text: 'Localização Atual (Simulada)',
@@ -682,6 +645,13 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   };
 
   // --- Attachment Handlers ---
+  const triggerFileSelect = (acceptType: string) => {
+    if (fileInputRef.current) {
+        fileInputRef.current.accept = acceptType;
+        fileInputRef.current.click();
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -721,42 +691,19 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
     let contentToSend = messageInput;
     
-    // Append Signature
     if (signatureEnabled && !attachment) {
       contentToSend += `\n\n~ Admin User`;
     }
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content: contentToSend,
-      senderId: 'me',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      type: attachment ? attachment.type : MessageType.TEXT,
-      status: 'sent',
-      channel: 'whatsapp',
-      mediaUrl: attachment?.preview,
-      fileName: attachment?.file?.name,
-      location: attachment?.location
-    };
+    // Call API (will trigger subscription update)
+    await api.chat.sendMessage(selectedContact.id, contentToSend, attachment ? attachment.type : MessageType.TEXT);
 
-    setMessages(prev => [...prev, newMessage]);
     setMessageInput('');
     setAttachment(null); 
     setReplyingTo(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
 
-    // 1. Send via DB API (Persistence)
-    await api.chat.sendMessage(selectedContact.id, contentToSend, newMessage.type);
-    
-    // 2. Send via WhatsApp Service (Real-time / Simulation)
-    whatsappService.sendMessage(selectedContact.phone, contentToSend);
-
     setIsSending(false);
-    
-    // Mock simulation handled by whatsappService events now, but keep fallback for resolved status update if needed
-    if (selectedContact.status === 'resolved') {
-        setTimeout(() => updateContactStatus(selectedContact.id, 'pending'), 2000);
-    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -846,13 +793,16 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     });
   };
 
-  // Helper for Message Status Icon
   const StatusIcon = ({ status }: { status: string }) => {
     if (status === 'sent') return <Check size={14} className="text-gray-400" />;
     if (status === 'delivered') return <CheckCheck size={14} className="text-gray-400" />;
     if (status === 'read') return <CheckCheck size={14} className="text-blue-500" />;
-    return <Clock size={14} className="text-gray-300" />; // Fallback/Pending
+    return <Clock size={14} className="text-gray-300" />; 
   };
+
+  const filteredMessages = messages.filter(m => 
+    m.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
+  );
 
   return (
     <div className="flex h-full bg-white overflow-hidden relative">
@@ -886,7 +836,11 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
          </div>
 
          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {contacts.filter(c => c.status === activeTab).map(contact => (
+            {contacts.length === 0 ? (
+                <div className="p-4 text-center text-gray-400 text-sm">
+                    Nenhuma conversa encontrada.
+                </div>
+            ) : contacts.filter(c => c.status === activeTab).map(contact => (
                <div 
                  key={contact.id}
                  onClick={() => setSelectedContact(contact)}
@@ -929,7 +883,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
            <>
              {/* Chat Header */}
              <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-10 shadow-sm">
-                <div className="flex items-center">
+                <div className="flex items-center flex-1">
                    {/* Mobile Back Button */}
                    <button 
                        onClick={() => setSelectedContact(null)} 
@@ -938,67 +892,104 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                        <ChevronLeft size={24} />
                    </button>
 
-                   <div className="flex items-center cursor-pointer" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
-                      <img src={selectedContact.avatar} alt="Profile" className="w-9 h-9 rounded-full object-cover" />
-                      <div className="ml-3">
-                         <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
-                         <p className="text-xs text-gray-500 flex items-center">
-                            {selectedContact.company || 'Pessoa Física'} • <span className="text-green-600 ml-1">Online</span>
-                         </p>
+                   {isMessageSearchOpen ? (
+                      <div className="flex items-center w-full max-w-lg bg-gray-100 rounded-lg px-3 py-1.5 animate-fadeIn">
+                         <input 
+                           type="text"
+                           autoFocus
+                           className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-gray-800"
+                           placeholder="Pesquisar na conversa..."
+                           value={messageSearchQuery}
+                           onChange={(e) => setMessageSearchQuery(e.target.value)}
+                         />
+                         <button 
+                           onClick={() => { setIsMessageSearchOpen(false); setMessageSearchQuery(''); }}
+                           className="ml-2 text-gray-500 hover:text-gray-700"
+                         >
+                            <X size={18} />
+                         </button>
                       </div>
-                   </div>
+                   ) : (
+                      <div className="flex items-center cursor-pointer flex-1" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+                          <img src={selectedContact.avatar} alt="Profile" className="w-9 h-9 rounded-full object-cover" />
+                          <div className="ml-3">
+                            <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
+                            <p className="text-xs text-gray-500 flex items-center">
+                                {selectedContact.company || 'Pessoa Física'} • <span className="text-green-600 ml-1">Online</span>
+                            </p>
+                          </div>
+                      </div>
+                   )}
                 </div>
                 
-                <div className="flex items-center space-x-2">
-                   {activeTab !== 'resolved' && (
-                        <button 
-                            onClick={handleResolveTicket} 
-                            className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg hover:bg-green-100 hover:text-green-700 transition-colors flex items-center border border-gray-200 hidden sm:flex"
-                        >
-                            <CheckSquare size={14} className="mr-1" /> Resolver
+                {!isMessageSearchOpen && (
+                  <div className="flex items-center space-x-2">
+                    <button 
+                        onClick={() => setIsMessageSearchOpen(true)} 
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Pesquisar mensagens"
+                    >
+                        <Search size={20} />
+                    </button>
+
+                    {activeTab !== 'resolved' && (
+                          <button 
+                              onClick={handleResolveTicket} 
+                              className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg hover:bg-green-100 hover:text-green-700 transition-colors flex items-center border border-gray-200 hidden sm:flex"
+                          >
+                              <CheckSquare size={14} className="mr-1" /> Resolver
+                          </button>
+                    )}
+                    
+                    <button 
+                      onClick={handleAnalyzeChat}
+                      className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors relative group"
+                      title="AI Copilot"
+                    >
+                      <Sparkles size={18} />
+                    </button>
+                    
+                    <div className="relative">
+                        <button onClick={() => setHeaderMenuOpen(!headerMenuOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+                          <MoreVertical size={20} />
                         </button>
-                   )}
-                   
-                   <button 
-                     onClick={handleAnalyzeChat}
-                     className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors relative group"
-                     title="AI Copilot"
-                   >
-                     <Sparkles size={18} />
-                   </button>
-                   
-                   <div className="relative">
-                      <button onClick={() => setHeaderMenuOpen(!headerMenuOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-                         <MoreVertical size={20} />
-                      </button>
-                      
-                      {headerMenuOpen && (
-                         <div className="absolute right-0 top-12 w-56 bg-white rounded-lg shadow-xl border border-gray-100 z-50 animate-fadeIn overflow-hidden">
-                            <button onClick={() => setRightPanelOpen(!rightPanelOpen)} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
-                               <User size={16} className="mr-2 text-gray-400" /> Dados do Contato
-                            </button>
-                            <button onClick={() => { setActiveModal('transfer'); setHeaderMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
-                               <ArrowRightLeft size={16} className="mr-2 text-gray-400" /> Transferir
-                            </button>
-                            <button onClick={handleOpenExportModal} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
-                               <Download size={16} className="mr-2 text-gray-400" /> Exportar Histórico
-                            </button>
-                            <div className="h-px bg-gray-100 my-1"></div>
-                            <button onClick={handleBlockContactModal} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
-                               <Ban size={16} className="mr-2" /> {selectedContact.blocked ? 'Desbloquear' : 'Bloquear'}
-                            </button>
-                            <button onClick={handleDeleteChat} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center font-medium">
-                               <Trash2 size={16} className="mr-2" /> Excluir Conversa
-                            </button>
-                         </div>
-                      )}
-                   </div>
-                </div>
+                        
+                        {headerMenuOpen && (
+                          <div className="absolute right-0 top-12 w-56 bg-white rounded-lg shadow-xl border border-gray-100 z-50 animate-fadeIn overflow-hidden">
+                              <button onClick={() => setRightPanelOpen(!rightPanelOpen)} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
+                                <User size={16} className="mr-2 text-gray-400" /> Dados do Contato
+                              </button>
+                              <button onClick={() => { setActiveModal('transfer'); setHeaderMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
+                                <ArrowRightLeft size={16} className="mr-2 text-gray-400" /> Transferir
+                              </button>
+                              <button onClick={handleOpenExportModal} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
+                                <Download size={16} className="mr-2 text-gray-400" /> Exportar Histórico
+                              </button>
+                              <div className="h-px bg-gray-100 my-1"></div>
+                              <button onClick={handleBlockContactModal} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
+                                <Ban size={16} className="mr-2" /> {selectedContact.blocked ? 'Desbloquear' : 'Bloquear'}
+                              </button>
+                              <button onClick={handleDeleteChat} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center font-medium">
+                                <Trash2 size={16} className="mr-2" /> Excluir Conversa
+                              </button>
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                )}
              </div>
 
              {/* Messages Area */}
              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
-                {messages.map((msg, idx) => (
+                {isMessageSearchOpen && messageSearchQuery && (
+                   <div className="sticky top-0 z-10 flex justify-center mb-4">
+                      <div className="bg-white/90 backdrop-blur border border-gray-200 px-3 py-1 rounded-full text-xs text-gray-600 shadow-sm">
+                         Filtrando resultados: {filteredMessages.length} mensagens encontradas
+                      </div>
+                   </div>
+                )}
+
+                {filteredMessages.map((msg, idx) => (
                    <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} group mb-2`}>
                       <div className={`max-w-[85%] sm:max-w-[70%] relative shadow-sm rounded-lg px-3 py-2 text-sm ${
                          msg.senderId === 'me' 
@@ -1008,6 +999,35 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                          {/* Content */}
                          {msg.type === MessageType.TEXT && <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
                          {/* ... other types ... */}
+                         {msg.type === MessageType.IMAGE && (
+                            <div className="mb-1">
+                               <img src={msg.mediaUrl || 'https://via.placeholder.com/300'} alt="Media" className="rounded-lg max-w-full h-auto" />
+                               {msg.content && <p className="mt-2">{msg.content}</p>}
+                            </div>
+                         )}
+                         {msg.type === MessageType.LOCATION && (
+                            <div className="bg-gray-100 rounded p-1 mb-1">
+                               <div className="w-full h-32 bg-gray-300 rounded flex items-center justify-center text-gray-500 mb-2 relative overflow-hidden">
+                                  <div className="absolute inset-0 bg-[url('https://maps.googleapis.com/maps/api/staticmap?center=-23.550520,-46.633308&zoom=14&size=400x200&key=YOUR_API_KEY_HERE')] bg-cover bg-center opacity-50"></div>
+                                  <MapPin size={24} className="text-red-600 z-10" />
+                               </div>
+                               <p className="text-xs font-bold text-center text-blue-600">Localização em Tempo Real</p>
+                            </div>
+                         )}
+                         {msg.type === MessageType.DOCUMENT && (
+                            <div className="flex items-center bg-gray-100 p-3 rounded-lg min-w-[200px] sm:min-w-[240px] border border-gray-200 mb-1">
+                               <div className="bg-white p-2 rounded-full mr-3 text-red-500 shadow-sm">
+                                  <FileText size={20} />
+                               </div>
+                               <div className="overflow-hidden flex-1">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{msg.fileName || 'Documento'}</p>
+                                  <p className="text-xs text-gray-500 uppercase">DOC • 240 KB</p>
+                               </div>
+                               <button className="ml-2 p-1 text-gray-500 hover:text-gray-700 bg-white rounded-full shadow-sm">
+                                  <Download size={16} />
+                               </button>
+                            </div>
+                         )}
 
                          {/* Metadata */}
                          <div className="flex items-center justify-end space-x-1 mt-1">
@@ -1061,32 +1081,147 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
              {/* Footer Input Area */}
              <div className="bg-[#f0f2f5] px-4 py-2 border-t border-gray-200" onClick={() => setMessageMenuOpenId(null)}>
-                {/* ... existing input area code ... */}
-                {/* Abbreviated for brevity as logic remains similar but ensures no alerts */}
+                
+                {/* Reply Context Banner */}
+                {replyingTo && (
+                   <div className="mb-2 p-2 bg-white rounded-lg shadow-sm border-l-4 border-purple-500 animate-slideUp flex justify-between items-center">
+                      <div className="flex-1 overflow-hidden">
+                         <p className="text-xs font-bold text-purple-700">{replyingTo.senderId === 'me' ? 'Você' : selectedContact.name}</p>
+                         <p className="text-xs text-gray-500 truncate">{replyingTo.content || '[Mídia]'}</p>
+                      </div>
+                      <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-100 rounded-full">
+                         <X size={16} className="text-gray-500" />
+                      </button>
+                   </div>
+                )}
+
+                {/* Enhanced Attachment Preview Banner */}
+                {attachment && (
+                   <div className="mb-3 p-3 bg-gray-50 rounded-xl shadow-lg border border-gray-200 animate-scaleIn relative group max-w-sm">
+                      <button 
+                        onClick={clearAttachment} 
+                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600 transition-colors z-10"
+                        title="Remover Anexo"
+                      >
+                         <X size={16} />
+                      </button>
+                      
+                      <div className="flex flex-col gap-2">
+                         {/* Media Preview */}
+                         {(attachment.type === MessageType.IMAGE || attachment.type === MessageType.VIDEO) ? (
+                            <div className="w-full h-40 bg-black/5 rounded-lg overflow-hidden flex items-center justify-center relative">
+                               {attachment.type === MessageType.IMAGE ? (
+                                  <img src={attachment.preview} className="w-full h-full object-contain" />
+                               ) : (
+                                  <div className="flex flex-col items-center text-gray-500">
+                                     <PlayCircle size={40} className="mb-2" />
+                                     <span className="text-xs font-medium">Pré-visualização de Vídeo</span>
+                                  </div>
+                               )}
+                            </div>
+                         ) : attachment.type === MessageType.LOCATION ? (
+                            <div className="flex items-center gap-3 p-2">
+                               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-500 shrink-0">
+                                  <MapPin size={24} />
+                               </div>
+                               <div>
+                                  <p className="text-sm font-bold text-gray-800">Localização</p>
+                                  <p className="text-xs text-gray-500">Enviar posição atual</p>
+                               </div>
+                            </div>
+                         ) : (
+                            <div className="flex items-center gap-3 p-2">
+                               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-blue-500 shrink-0">
+                                  <FileText size={24} />
+                               </div>
+                               <div className="overflow-hidden">
+                                  <p className="text-sm font-bold text-gray-800 truncate">{attachment.file?.name}</p>
+                                  <p className="text-xs text-gray-500 uppercase">{attachment.type}</p>
+                               </div>
+                            </div>
+                         )}
+                         
+                         {/* Caption Input */}
+                         {(attachment.type === MessageType.IMAGE || attachment.type === MessageType.VIDEO) && (
+                            <input 
+                              type="text" 
+                              placeholder="Adicionar legenda..." 
+                              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-1 focus:ring-purple-500 outline-none"
+                              value={messageInput}
+                              onChange={(e) => setMessageInput(e.target.value)}
+                            />
+                         )}
+                      </div>
+                   </div>
+                )}
+
+                {/* Signature Preview */}
+                {messageInput.trim() && signatureEnabled && !attachment && (
+                   <div className="absolute bottom-16 right-4 mb-2 bg-[#d9fdd3] p-2 rounded-lg rounded-br-none shadow-md border border-green-100 text-xs text-gray-800 max-w-[200px] animate-fadeIn z-20">
+                      <p className="line-clamp-3">{messageInput}</p>
+                      <div className="flex items-center justify-end mt-1 text-green-700 font-medium">
+                         <span className="text-[10px] mr-1">~ Admin User</span>
+                         <Check size={12} />
+                      </div>
+                   </div>
+                )}
+
                 <div className="flex items-end gap-2 relative">
-                   {/* Attachments Menu */}
+                   {/* Attachments Menu (Refactored to Paperclip) */}
                    <div className="relative">
-                      <button onClick={() => setAttachmentMenuOpen(!attachmentMenuOpen)} className={`p-3 rounded-full transition-colors ${attachmentMenuOpen ? 'bg-gray-200 text-gray-800' : 'text-gray-500 hover:bg-gray-200'}`}><Plus size={24} /></button>
+                      <button 
+                        onClick={() => setAttachmentMenuOpen(!attachmentMenuOpen)}
+                        className={`p-3 rounded-full transition-colors ${attachmentMenuOpen ? 'bg-gray-200 text-gray-800' : 'text-gray-500 hover:bg-gray-200'}`}
+                        title="Anexar"
+                      >
+                         <Paperclip size={24} />
+                      </button>
+                      
                       {attachmentMenuOpen && (
                          <div className="absolute bottom-14 left-0 mb-2 flex flex-col gap-2 animate-scaleIn origin-bottom-left z-20">
                             {[
-                               { icon: <ImageIcon size={20} />, color: 'bg-purple-600', label: 'Fotos', onClick: () => fileInputRef.current?.click() },
-                               { icon: <FileText size={20} />, color: 'bg-blue-600', label: 'Documento', onClick: () => fileInputRef.current?.click() },
-                               { icon: <MapPin size={20} />, color: 'bg-red-500', label: 'Localização', onClick: handleSendLocation },
-                               { icon: <Zap size={20} />, color: 'bg-yellow-500', label: 'Rápida', onClick: () => setShowQuickReplies(true) },
+                               { icon: <ImageIcon size={20} />, color: 'bg-purple-600', label: 'Fotos', accept: 'image/*' },
+                               { icon: <Film size={20} />, color: 'bg-pink-600', label: 'Vídeos', accept: 'video/*' },
+                               { icon: <FileText size={20} />, color: 'bg-blue-600', label: 'Documento', accept: '*/*' },
+                               { icon: <MapPin size={20} />, color: 'bg-red-500', label: 'Localização', action: handleSendLocation },
+                               { icon: <Zap size={20} />, color: 'bg-yellow-500', label: 'Rápida', action: () => setShowQuickReplies(true) },
                             ].map((item, i) => (
-                               <div key={i} className="flex items-center gap-2 group cursor-pointer" onClick={item.onClick}>
-                                  <div className={`w-10 h-10 rounded-full ${item.color} text-white flex items-center justify-center shadow-lg hover:brightness-110 transition-all`}>{item.icon}</div>
-                                  <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">{item.label}</span>
+                               <div 
+                                 key={i} 
+                                 className="flex items-center gap-2 group cursor-pointer" 
+                                 onClick={() => {
+                                    if (item.action) {
+                                        item.action();
+                                    } else if (item.accept) {
+                                        triggerFileSelect(item.accept);
+                                    }
+                                    setAttachmentMenuOpen(false);
+                                 }}
+                               >
+                                  <div className={`w-10 h-10 rounded-full ${item.color} text-white flex items-center justify-center shadow-lg hover:brightness-110 transition-all`}>
+                                     {item.icon}
+                                  </div>
+                                  <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                     {item.label}
+                                  </span>
                                </div>
                             ))}
-                            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} multiple={false} />
+                            {/* Hidden File Input reused dynamically */}
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                className="hidden" 
+                                onChange={handleFileSelect} 
+                                multiple={false} 
+                            />
                          </div>
                       )}
                    </div>
 
                    <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 flex items-center px-2 py-1 relative">
-                      <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="p-2 text-gray-400 hover:text-gray-600"><Smile size={24} /></button>
+                      <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="p-2 text-gray-400 hover:text-gray-600">
+                         <Smile size={24} />
+                      </button>
                       {showEmojiPicker && (
                          <div ref={emojiPickerRef} className="absolute bottom-12 left-0 bg-white border border-gray-200 shadow-xl rounded-lg p-3 grid grid-cols-8 gap-1 z-30 w-80 h-48 overflow-y-auto custom-scrollbar">
                             {COMMON_EMOJIS.map(e => (<button key={e} onClick={() => setMessageInput(prev => prev + e)} className="text-xl hover:bg-gray-100 rounded p-1 flex items-center justify-center h-8 w-8 transition-colors">{e}</button>))}
@@ -1268,7 +1403,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       </Modal>
 
       {/* Transfer Modal, Schedule Modal, Export Modal, Quick Replies Modal etc (Keeping existing logic but ensuring no alerts) */}
-      {/* ... (Previous modal implementations remain mostly the same, ensuring 'alert()' calls are replaced with 'addToast()') ... */}
       
       {/* Example: Transfer Modal using addToast */}
       <Modal isOpen={activeModal === 'transfer'} onClose={() => setActiveModal(null)} title="Transferir Atendimento">
@@ -1286,7 +1420,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                <label className="block text-sm font-medium text-gray-700 mb-1">Usuário / Agente</label>
                <select className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white" value={transferData.userId} onChange={(e) => setTransferData({ ...transferData, userId: e.target.value, sector: '' })}>
                   <option value="">Selecione um usuário...</option>
-                  {MOCK_USERS.map(user => (<option key={user.id} value={user.id}>{user.name} ({user.role})</option>))}
+                  {/* MOCK_USERS is empty now, in a real app this would fetch from API */}
+                  <option value="" disabled>Carregando usuários...</option>
                </select>
             </div>
             <div className="flex justify-end pt-2">

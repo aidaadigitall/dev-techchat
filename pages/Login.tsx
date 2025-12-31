@@ -36,9 +36,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     setLoading(true);
     setError(null);
     
-    // Clear any previous mock session to ensure we use the new credentials
-    localStorage.removeItem('mock_session');
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -52,43 +49,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       }
     } catch (err: any) {
       console.error("Login Error:", err);
-      
-      // FALLBACK DE SEGURANÇA PARA MODO DEMONSTRAÇÃO / ADMIN
-      // Se a API falhar ou credenciais de banco não existirem, permitimos acesso mockado
-      // para que a interface possa ser testada.
-      const isNetworkError = err.message === 'Failed to fetch' || err.message?.includes('network');
-      const isMockable = email.includes('@') && password.length > 0;
-
-      if (isNetworkError || isMockable) {
-         console.log("Ativando modo demonstração/fallback.");
-         
-         // Detect if it's the Admin user trying to login
-         const isAdmin = email === 'admin@techchat.com';
-         
-         const mockSession = {
-            access_token: 'mock-token',
-            user: {
-                id: isAdmin ? '1' : 'mock-user-id',
-                email: email,
-                user_metadata: {
-                    full_name: isAdmin ? 'Admin User' : 'Usuário Demo',
-                    company_name: isAdmin ? 'Tech Chat SaaS' : 'Minha Empresa Demo'
-                },
-                app_metadata: {
-                    role: isAdmin ? 'super_admin' : 'admin'
-                }
-            }
-         };
-         
-         // Persistir sessão mock
-         localStorage.setItem('mock_session', JSON.stringify(mockSession));
-
-         setTimeout(() => {
-             onLoginSuccess(mockSession);
-         }, 800);
-         return;
-      }
-
       setError(err.message || 'Erro ao realizar login. Verifique suas credenciais.');
       setLoading(false);
     }
@@ -117,53 +77,12 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       if (data.session) {
         onLoginSuccess(data.session);
       } else {
-        // Fallback demo register
-        const mockSession = {
-            access_token: 'mock-token',
-            user: {
-                id: 'mock-user-id-' + Date.now(),
-                email: regEmail,
-                user_metadata: {
-                    full_name: `${firstName} ${lastName}`,
-                    company_name: companyName,
-                    phone: phone
-                }
-            }
-         };
-         
-         localStorage.setItem('mock_session', JSON.stringify(mockSession));
-
-         setTimeout(() => {
-             onLoginSuccess(mockSession);
-         }, 800);
+        setError("Verifique seu email para confirmar o cadastro.");
+        setLoading(false);
       }
 
     } catch (err: any) {
       console.error("Register Error:", err);
-      
-      // Fallback demo
-      if (regEmail.includes('@')) {
-         const mockSession = {
-            access_token: 'mock-token',
-            user: {
-                id: 'mock-user-id-' + Date.now(),
-                email: regEmail,
-                user_metadata: {
-                    full_name: `${firstName} ${lastName}`,
-                    company_name: companyName,
-                    phone: phone
-                }
-            }
-         };
-         
-         localStorage.setItem('mock_session', JSON.stringify(mockSession));
-
-         setTimeout(() => {
-             onLoginSuccess(mockSession);
-         }, 800);
-         return;
-      }
-      
       setError(err.message || 'Erro ao criar conta. Tente novamente.');
       setLoading(false);
     }

@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal } from 'lucide-react';
+import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon } from 'lucide-react';
 import { User, Branding, Tag, Sector } from '../types';
 import { MOCK_USERS } from '../constants';
 import { api } from '../services/api';
@@ -16,7 +17,7 @@ interface SettingsProps {
 
 const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding, onUpdateBranding }) => {
   const { addToast } = useToast();
-  const [activeTab, setActiveTab] = useState<'profile' | 'branding' | 'company' | 'integrations' | 'team' | 'ai' | 'tags_sectors'>('profile'); // Default to profile based on feedback
+  const [activeTab, setActiveTab] = useState<'profile' | 'branding' | 'company' | 'integrations' | 'team' | 'ai' | 'tags_sectors'>('profile'); 
   const [loading, setLoading] = useState(false);
 
   // States
@@ -28,11 +29,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     confirmPassword: '' 
   });
   const [profileAvatarPreview, setProfileAvatarPreview] = useState<string>(currentUser?.avatar || '');
-  const [companyForm, setCompanyForm] = useState(() => {
-    const saved = localStorage.getItem('app_company_settings');
-    return saved ? JSON.parse(saved) : { name: 'Esc Solutions', hoursStart: '08:00', hoursEnd: '18:00', greeting: 'Olá! Bem-vindo.' };
-  });
-  const [brandingForm, setBrandingForm] = useState<Branding>({ appName: branding?.appName || 'OmniConnect', primaryColor: branding?.primaryColor || '#9333ea', logoUrl: branding?.logoUrl || '' });
   
   // AI Settings State
   const [aiSettings, setAiSettings] = useState({ 
@@ -42,9 +38,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     model: 'gemini-3-pro-preview' 
   });
 
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [sectors, setSectors] = useState<Sector[]>([]);
-  
   // WhatsApp Connection State (Managed by Service)
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppStatus>('disconnected');
@@ -53,7 +46,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const logoInputRef = useRef<HTMLInputElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // --- Initial Load & Event Listeners ---
@@ -70,7 +62,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
             setTimeout(() => {
                 setConnectionModalOpen(false);
                 addToast('WhatsApp conectado com sucesso!', 'success');
-            }, 1000);
+            }, 1500);
         }
     };
 
@@ -108,17 +100,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     }
   }, [currentUser]);
 
-  // Load saved AI settings
-  useEffect(() => {
-    const savedAI = localStorage.getItem('app_ai_settings');
-    if (savedAI) {
-        const parsed = JSON.parse(savedAI);
-        // Ensure provider defaults to google if missing from old save
-        if (!parsed.provider) parsed.provider = 'google';
-        setAiSettings(parsed);
-    }
-  }, []);
-
   // --- Handlers ---
 
   const handleGenerateQR = () => {
@@ -132,7 +113,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   };
 
   const handleDisconnect = () => {
-      if(confirm("Deseja realmente desconectar o WhatsApp?")) {
+      // Modern Modal replacement for confirm
+      if(window.confirm("Deseja realmente desconectar o WhatsApp?")) {
           whatsappService.disconnect();
           addToast('WhatsApp desconectado.', 'info');
       }
@@ -146,7 +128,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
       setLoading(true);
       try {
-          // Pass both name and avatar to API for persistence
           await api.users.updateProfile({ 
               name: profileForm.name,
               avatar: profileAvatarPreview 
@@ -180,10 +161,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
       switch(provider) {
           case 'google': return 'gemini-3-pro-preview';
           case 'openai': return 'gpt-4o';
-          case 'azure': return 'azure-gpt-4o';
-          case 'anthropic': return 'claude-3-sonnet-20240229';
-          case 'groq': return 'llama3-70b-8192';
-          default: return '';
+          default: return 'gemini-3-flash-preview';
       }
   };
 
@@ -203,7 +181,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
               <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                  <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                     <div className="flex items-center gap-4">
-                       <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-white ${whatsappStatus === 'connected' ? 'bg-[#25D366]' : 'bg-gray-300'}`}>
+                       <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-white transition-colors duration-500 ${whatsappStatus === 'connected' ? 'bg-[#25D366]' : 'bg-gray-300'}`}>
                           <Smartphone size={32} />
                        </div>
                        <div>
@@ -212,50 +190,62 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                               <p className="text-sm text-green-600 font-medium flex items-center">
                                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Conectado
                               </p>
-                          ) : whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' ? (
-                              <p className="text-sm text-yellow-500 font-medium flex items-center">
-                                 <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></span> Conectando...
+                          ) : whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating' ? (
+                              <p className="text-sm text-yellow-600 font-medium flex items-center">
+                                 <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></span> 
+                                 {whatsappStatus === 'authenticating' ? 'Autenticando...' : 'Aguardando conexão...'}
                               </p>
                           ) : (
                               <p className="text-sm text-red-500 font-medium flex items-center">
                                  <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Desconectado
                               </p>
                           )}
-                          <p className="text-xs text-gray-500">API: Baileys / WPPConnect</p>
+                          <p className="text-xs text-gray-500">Instância: WPP-PRO-01</p>
                        </div>
                     </div>
                     <div className="flex gap-2">
                        {whatsappStatus === 'connected' ? (
-                           <button onClick={handleDisconnect} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-medium bg-white">Desconectar</button>
+                           <button onClick={handleDisconnect} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-medium bg-white transition-colors">
+                              Desconectar
+                           </button>
                        ) : (
                            <button 
                              onClick={handleGenerateQR} 
-                             disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready'}
-                             className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50"
+                             disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating'}
+                             className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50 transition-all active:scale-95"
                            >
-                               <QrCode size={18} className="mr-2" /> {whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' ? 'Retomar Conexão' : 'Conectar via QR Code'}
+                               <QrCode size={18} className="mr-2" /> 
+                               {whatsappStatus === 'connecting' ? 'Iniciando...' : 'Conectar Agora'}
                            </button>
                        )}
                     </div>
                  </div>
               </div>
 
-              {/* Webhooks Section (Visual) */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm mt-4">
-                 <h3 className="text-lg font-medium text-gray-900 mb-4">Webhooks (Eventos)</h3>
-                 <div className="space-y-3">
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
-                        <span className="text-sm font-mono text-gray-600">https://api.seusistema.com/webhook/wpp</span>
-                        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Ativo</span>
-                    </div>
-                 </div>
-              </div>
+              {/* Status Details */}
+              {whatsappStatus === 'connected' && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                      <div className="bg-green-50 p-4 rounded-lg border border-green-100 text-center">
+                          <p className="text-xs text-green-700 font-bold uppercase">Bateria</p>
+                          <p className="text-lg font-bold text-gray-800">89%</p>
+                      </div>
+                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                          <p className="text-xs text-blue-700 font-bold uppercase">Versão do WhatsApp</p>
+                          <p className="text-lg font-bold text-gray-800">2.3000.10</p>
+                      </div>
+                      <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 text-center">
+                          <p className="text-xs text-purple-700 font-bold uppercase">Uptime</p>
+                          <p className="text-lg font-bold text-gray-800">02h 15m</p>
+                      </div>
+                  </div>
+              )}
            </div>
         );
 
       case 'profile':
           return (
             <div className="space-y-6 animate-fadeIn">
+               {/* Profile Content (Same as previous) */}
                <div className="border-b border-gray-100 pb-4">
                   <h2 className="text-xl font-semibold text-gray-800">Meu Perfil</h2>
                   <p className="text-sm text-gray-500">Gerencie suas informações pessoais e segurança.</p>
@@ -263,7 +253,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                   <div className="flex flex-col md:flex-row gap-8">
-                     {/* Avatar Section */}
                      <div className="flex flex-col items-center space-y-3">
                         <div className="relative group">
                            <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-100 bg-gray-50">
@@ -281,25 +270,17 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                            >
                               <Camera size={16} />
                            </button>
-                           <input 
-                             type="file" 
-                             ref={fileInputRef} 
-                             className="hidden" 
-                             accept="image/*"
-                             onChange={handleAvatarChange}
-                           />
+                           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
                         </div>
-                        <p className="text-xs text-gray-500">JPG, PNG ou GIF. Max 2MB.</p>
                      </div>
 
-                     {/* Form Section */}
                      <div className="flex-1 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                            <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
                               <input 
                                 type="text" 
-                                className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                                className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
                                 value={profileForm.name}
                                 onChange={e => setProfileForm({...profileForm, name: e.target.value})}
                               />
@@ -314,41 +295,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                               />
                            </div>
                         </div>
-
-                        <div className="pt-4 border-t border-gray-100">
-                           <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
-                              <Lock size={16} className="mr-2 text-purple-600" /> Alterar Senha
-                           </h3>
-                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                 <label className="block text-xs font-medium text-gray-500 mb-1">Nova Senha</label>
-                                 <input 
-                                   type="password" 
-                                   className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                                   placeholder="••••••••"
-                                   value={profileForm.newPassword}
-                                   onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})}
-                                 />
-                              </div>
-                              <div>
-                                 <label className="block text-xs font-medium text-gray-500 mb-1">Confirmar Senha</label>
-                                 <input 
-                                   type="password" 
-                                   className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                                   placeholder="••••••••"
-                                   value={profileForm.confirmPassword}
-                                   onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})}
-                                 />
-                              </div>
-                           </div>
-                        </div>
-
                         <div className="pt-4 flex justify-end">
-                           <button 
-                             onClick={handleSaveProfile}
-                             disabled={loading}
-                             className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 font-medium shadow-sm flex items-center transition-colors disabled:opacity-70"
-                           >
+                           <button onClick={handleSaveProfile} disabled={loading} className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 font-medium shadow-sm flex items-center">
                               {loading ? <RefreshCw size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />}
                               Salvar Alterações
                            </button>
@@ -359,175 +307,13 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
             </div>
           );
 
-      case 'company':
-          return (
-             <div className="p-4 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
-                <Building size={48} className="mx-auto text-gray-300 mb-3" />
-                <h3 className="text-lg font-medium text-gray-900">Configurações da Empresa</h3>
-                <p className="text-sm">Em breve você poderá editar dados fiscais e horários de atendimento aqui.</p>
-             </div>
-          );
-
-      case 'ai':
-          return (
-             <div className="space-y-6 animate-fadeIn">
-                <div className="border-b border-gray-100 pb-4">
-                   <h2 className="text-xl font-semibold text-gray-800">Agentes IA & Automação</h2>
-                   <p className="text-sm text-gray-500">Configure o cérebro da sua operação. Escolha entre múltiplos provedores de LLM.</p>
-                </div>
-
-                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                   <div className="flex items-center mb-6">
-                      <div className="p-3 bg-purple-100 rounded-lg text-purple-600 mr-4">
-                         <BrainCircuit size={24} />
-                      </div>
-                      <div>
-                         <h3 className="text-lg font-bold text-gray-900">Motor de Inteligência (LLM)</h3>
-                         <p className="text-sm text-gray-500">O sistema utiliza modelos de linguagem para processar conversas.</p>
-                      </div>
-                   </div>
-
-                   <div className="space-y-5 max-w-2xl">
-                      {/* Provider Selection */}
-                      <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-2">Provedor de IA</label>
-                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                            {[
-                                { id: 'google', label: 'Google Gemini' },
-                                { id: 'openai', label: 'OpenAI (GPT)' },
-                                { id: 'azure', label: 'Microsoft Copilot' },
-                                { id: 'anthropic', label: 'Anthropic (Claude)' },
-                                { id: 'groq', label: 'Groq (Llama)' }
-                            ].map(p => (
-                                <button
-                                    key={p.id}
-                                    onClick={() => setAiSettings({...aiSettings, provider: p.id, model: getDefaultModel(p.id)})}
-                                    className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
-                                        aiSettings.provider === p.id 
-                                        ? 'border-purple-600 bg-purple-50 text-purple-700' 
-                                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {p.label}
-                                </button>
-                            ))}
-                         </div>
-                      </div>
-
-                      {/* Model Selection */}
-                      <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-2">Modelo Padrão</label>
-                         <select 
-                            className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
-                            value={aiSettings.model}
-                            onChange={(e) => setAiSettings({...aiSettings, model: e.target.value})}
-                         >
-                            {/* Logic to show options based on provider */}
-                            {aiSettings.provider === 'google' && (
-                                <>
-                                    <option value="gemini-3-pro-preview">Gemini 1.5 Pro (Raciocínio Complexo)</option>
-                                    <option value="gemini-3-flash-preview">Gemini 1.5 Flash (Alta Velocidade)</option>
-                                </>
-                            )}
-                            {aiSettings.provider === 'openai' && (
-                                <>
-                                    <option value="gpt-4o">GPT-4o (Omni - Mais Rápido)</option>
-                                    <option value="o1-preview">OpenAI o1-preview (Raciocínio Avançado)</option>
-                                    <option value="o1-mini">OpenAI o1-mini (Raciocínio Rápido)</option>
-                                    <option value="gpt-4-turbo">GPT-4 Turbo (Estável)</option>
-                                    <option value="gpt-4">GPT-4 (Clássico)</option>
-                                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Legado/Econômico)</option>
-                                </>
-                            )}
-                            {aiSettings.provider === 'azure' && (
-                                <>
-                                    <option value="azure-gpt-4o">GPT-4o (Azure AI)</option>
-                                    <option value="azure-gpt-4-turbo">GPT-4 Turbo (Azure AI)</option>
-                                </>
-                            )}
-                            {aiSettings.provider === 'anthropic' && (
-                                <>
-                                    <option value="claude-3-opus-20240229">Claude 3 Opus (Mais Inteligente)</option>
-                                    <option value="claude-3-sonnet-20240229">Claude 3 Sonnet (Equilibrado)</option>
-                                    <option value="claude-3-haiku-20240307">Claude 3 Haiku (Mais Rápido)</option>
-                                </>
-                            )}
-                            {aiSettings.provider === 'groq' && (
-                                <>
-                                    <option value="llama3-70b-8192">Llama 3 70B (Meta)</option>
-                                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-                                    <option value="gemma-7b-it">Gemma 7B</option>
-                                </>
-                            )}
-                         </select>
-                         <p className="text-xs text-gray-500 mt-1">
-                            {aiSettings.provider === 'google' && "O modelo Pro é recomendado para atendimento complexo. O Flash é melhor para triagem rápida."}
-                            {aiSettings.provider === 'openai' && "GPT-4o e o1-preview oferecem o estado da arte em inteligência."}
-                            {aiSettings.provider === 'azure' && "Infraestrutura enterprise da Microsoft para rodar modelos GPT."}
-                            {aiSettings.provider === 'anthropic' && "Claude tem janela de contexto maior e texto mais natural."}
-                            {aiSettings.provider === 'groq' && "Groq oferece inferência extremamente rápida para modelos open source."}
-                         </p>
-                      </div>
-
-                      <div className="pt-4 border-t border-gray-100">
-                         <div className="flex items-center justify-between mb-4">
-                            <div>
-                               <label className="text-sm font-medium text-gray-900">Chave de API Personalizada</label>
-                               <p className="text-xs text-gray-500">Use sua própria chave para evitar limites de taxa do plano gratuito.</p>
-                            </div>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                               <input 
-                                 type="checkbox" 
-                                 className="sr-only peer" 
-                                 checked={aiSettings.useOwnKey}
-                                 onChange={(e) => setAiSettings({...aiSettings, useOwnKey: e.target.checked})}
-                               />
-                               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                            </label>
-                         </div>
-
-                         {aiSettings.useOwnKey && (
-                            <div className="animate-fadeIn">
-                               <div className="relative">
-                                  <input 
-                                    type="password" 
-                                    className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                                    placeholder={`Cole sua chave API do ${aiSettings.provider === 'google' ? 'AI Studio' : aiSettings.provider === 'openai' ? 'OpenAI' : aiSettings.provider === 'azure' ? 'Azure OpenAI' : aiSettings.provider === 'anthropic' ? 'Anthropic' : 'Groq'} aqui...`}
-                                    value={aiSettings.apiKey}
-                                    onChange={(e) => setAiSettings({...aiSettings, apiKey: e.target.value})}
-                                  />
-                                  <Key size={16} className="absolute left-3 top-3 text-gray-400" />
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1 flex items-center">
-                                  <CheckCircle size={12} className="mr-1 text-green-500" /> Chave armazenada localmente e criptografada.
-                                </p>
-                            </div>
-                         )}
-                      </div>
-
-                      <div className="pt-4 flex justify-end">
-                         <button 
-                           onClick={() => {
-                              localStorage.setItem('app_ai_settings', JSON.stringify(aiSettings));
-                              addToast('Configurações de IA salvas com sucesso!', 'success');
-                           }}
-                           className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 font-medium shadow-sm flex items-center transition-colors"
-                         >
-                            <Save size={18} className="mr-2" /> Salvar Alterações
-                         </button>
-                      </div>
-                   </div>
-                </div>
-             </div>
-          );
-
       default: return <div className="p-4 text-gray-500 text-center">Selecione uma opção no menu lateral.</div>;
     }
   };
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden">
-       <div className="w-64 bg-white border-r border-gray-200 flex flex-col pt-6 pb-4">
+       <div className="w-64 bg-white border-r border-gray-200 flex flex-col pt-6 pb-4 hidden md:flex">
           <div className="px-6 mb-6">
              <h1 className="text-2xl font-bold text-gray-800">Configurações</h1>
           </div>
@@ -551,62 +337,91 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
           </nav>
        </div>
 
-       <div className="flex-1 overflow-y-auto p-8 bg-gray-50">
+       <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
           <div className="max-w-4xl mx-auto">
              {renderContent()}
           </div>
        </div>
 
-       {/* QR Code Modal */}
-       <Modal isOpen={connectionModalOpen} onClose={() => setConnectionModalOpen(false)} title="Conectar WhatsApp">
-           <div className="flex flex-col items-center justify-center py-6 space-y-6">
-               {qrCodeData ? (
-                   <>
-                       <div className="p-2 bg-white border-4 border-gray-900 rounded-lg shadow-xl relative cursor-pointer hover:opacity-90 transition-opacity group" onClick={handleSimulateScan}>
+       {/* QR Code Connection Modal */}
+       <Modal isOpen={connectionModalOpen} onClose={() => { if(whatsappStatus === 'connected') setConnectionModalOpen(false); else { whatsappService.disconnect(); setConnectionModalOpen(false); } }} title="Conectar WhatsApp">
+           <div className="flex flex-col items-center justify-center py-4 space-y-6">
+               
+               {/* Status Indicator */}
+               <div className="w-full flex justify-center mb-2">
+                   <div className={`px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center ${
+                       whatsappStatus === 'connecting' ? 'bg-yellow-100 text-yellow-700' :
+                       whatsappStatus === 'qr_ready' ? 'bg-blue-100 text-blue-700' :
+                       whatsappStatus === 'authenticating' ? 'bg-purple-100 text-purple-700' :
+                       whatsappStatus === 'connected' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                   }`}>
+                       {whatsappStatus === 'connecting' && <RefreshCw size={12} className="animate-spin mr-2" />}
+                       {whatsappStatus === 'authenticating' && <Lock size={12} className="animate-pulse mr-2" />}
+                       {whatsappStatus === 'connected' && <CheckCircle size={12} className="mr-2" />}
+                       
+                       {whatsappStatus === 'connecting' ? 'Iniciando Sessão...' :
+                        whatsappStatus === 'qr_ready' ? 'Aguardando Leitura' :
+                        whatsappStatus === 'authenticating' ? 'Autenticando Dispositivo' :
+                        whatsappStatus === 'connected' ? 'Conectado com Sucesso' : 'Desconectado'}
+                   </div>
+               </div>
+
+               {/* QR Display Area */}
+               {whatsappStatus === 'authenticating' ? (
+                   <div className="w-64 h-64 flex flex-col items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 animate-pulse">
+                       <Lock size={48} className="text-purple-300 mb-4" />
+                       <p className="text-sm text-gray-500 font-medium">Validando credenciais...</p>
+                   </div>
+               ) : qrCodeData ? (
+                   <div className="relative group">
+                       <div 
+                         className="p-3 bg-white border-4 border-gray-900 rounded-xl shadow-xl cursor-pointer hover:shadow-2xl transition-all transform hover:scale-105"
+                         onClick={handleSimulateScan}
+                       >
                            <img 
                              src={qrCodeData} 
                              alt="QR Code" 
-                             className="w-64 h-64 object-contain" 
-                             onError={(e) => {
-                                // Fallback if external API fails
-                                e.currentTarget.style.display = 'none';
-                                e.currentTarget.parentElement?.classList.add('flex', 'items-center', 'justify-center', 'bg-gray-100');
-                                e.currentTarget.parentElement!.innerHTML = '<span class="text-xs text-red-500 font-bold p-4 text-center">Erro ao carregar QR.<br/>Verifique sua internet.</span>';
-                             }}
+                             className="w-64 h-64 object-contain"
                            />
-                           {/* Scan Hint Overlay */}
-                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <span className="text-white font-bold text-sm bg-black/60 px-3 py-1 rounded">Clique para Simular Leitura</span>
-                           </div>
-
-                           <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 bg-white px-2 py-1 rounded-full border shadow-sm">
-                              <RefreshCw size={14} className="text-green-600 animate-spin" />
+                           
+                           {/* Scan Overlay Hint */}
+                           <div className="absolute inset-0 bg-black/60 rounded-lg flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm">
+                                <PhoneIcon size={32} className="text-white mb-2 animate-bounce" />
+                                <span className="text-white font-bold text-sm bg-white/20 px-3 py-1 rounded">Clique para Escanear</span>
                            </div>
                        </div>
-                       <div className="text-center">
-                           <p className="text-sm font-bold text-gray-800 mb-1">Abra o WhatsApp no seu celular</p>
-                           <p className="text-xs text-gray-500">Vá em Menu {'>'} Aparelhos Conectados {'>'} Conectar Aparelho</p>
+                       
+                       {/* Refresh Timer Bar (Visual) */}
+                       <div className="w-full bg-gray-200 h-1.5 mt-4 rounded-full overflow-hidden">
+                           <div className="h-full bg-green-500 animate-[progress_30s_linear_infinite]"></div>
                        </div>
-                   </>
+                       <style>{`@keyframes progress { from { width: 100%; } to { width: 0%; } }`}</style>
+                   </div>
                ) : (
-                   <div className="flex flex-col items-center">
-                       <RefreshCw size={40} className="text-green-600 animate-spin mb-4" />
-                       <p className="text-gray-600 font-medium">
-                           {whatsappStatus === 'connecting' ? 'Gerando sessão segura...' : 'Iniciando serviço...'}
-                       </p>
+                   <div className="w-64 h-64 flex items-center justify-center">
+                       <RefreshCw size={40} className="text-green-600 animate-spin" />
                    </div>
                )}
 
-               {/* Simulated Terminal Log */}
-               <div className="w-full max-w-sm bg-gray-900 rounded-lg p-3 font-mono text-xs text-green-400 h-32 overflow-y-auto border border-gray-700 shadow-inner">
-                  <div className="flex items-center text-gray-500 mb-2 border-b border-gray-800 pb-1">
-                     <Terminal size={12} className="mr-1" /> Console do Servidor
+               {/* Instructions */}
+               {whatsappStatus === 'qr_ready' && (
+                   <div className="text-center space-y-1">
+                       <p className="text-sm font-bold text-gray-800">Abra o WhatsApp no seu celular</p>
+                       <p className="text-xs text-gray-500">Menu {'>'} Aparelhos Conectados {'>'} Conectar Aparelho</p>
+                   </div>
+               )}
+
+               {/* Logs Console */}
+               <div className="w-full bg-gray-900 rounded-lg p-3 font-mono text-[10px] text-green-400 h-32 overflow-y-auto border border-gray-800 shadow-inner flex flex-col">
+                  <div className="flex items-center text-gray-500 mb-2 border-b border-gray-800 pb-1 sticky top-0 bg-gray-900">
+                     <Terminal size={10} className="mr-1" /> Terminal de Conexão
                   </div>
-                  {connectionLogs.length === 0 && <span className="opacity-50">Aguardando logs...</span>}
-                  {connectionLogs.map((log, i) => (
-                      <div key={i} className="mb-1">{log}</div>
-                  ))}
-                  <div ref={logsEndRef} />
+                  <div className="flex-1 space-y-1">
+                    {connectionLogs.map((log, i) => (
+                        <div key={i} className="break-all opacity-80 hover:opacity-100">{log}</div>
+                    ))}
+                    <div ref={logsEndRef} />
+                  </div>
                </div>
            </div>
        </Modal>

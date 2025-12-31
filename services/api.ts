@@ -1,7 +1,6 @@
 import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from './supabase';
-import { MOCK_PLANS, MOCK_CONTACTS, MOCK_MESSAGES, MOCK_COMPANIES } from '../constants';
 
 // --- Environment Helper ---
 const getEnv = (key: string) => {
@@ -17,12 +16,6 @@ const getEnv = (key: string) => {
     value = process.env[key] || process.env[`REACT_APP_${key}`] || process.env[`NEXT_PUBLIC_${key}`];
   }
   return value || '';
-};
-
-// --- Helper to check for Mock Mode (Auth Fallback) ---
-const isMockSession = () => {
-    // Check if we are running on a fallback session initiated by Login.tsx
-    return !!localStorage.getItem('mock_session');
 };
 
 // --- AI Client ---
@@ -60,7 +53,7 @@ const adaptContact = (data: any): Contact => ({
   customFields: data.custom_fields
 });
 
-const adaptMessage = (data: any): Message => ({
+export const adaptMessage = (data: any): Message => ({
   id: data.id,
   content: data.content,
   senderId: data.sender_id,
@@ -99,29 +92,24 @@ const adaptProposal = (data: any): Proposal => ({
 
 // Helper: Get Current User Company ID
 const getCompanyId = async () => {
-  if (isMockSession()) return 'mock-company-id';
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   
   // Try to fetch from profile
   const { data, error } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
   
-  // If no profile (race condition on signup), user might not see data yet.
   if (error || !data) {
-      console.warn("User has no profile linked. RLS might block access.");
-      return null;
+      // If table doesn't exist or RLS issue, try to fail gracefully or assume user metadata
+      return user.user_metadata?.company_id || null;
   }
   return data.company_id;
 };
 
-// --- API Service (HYBRID MODE: REAL OR MOCK) ---
+// --- API Service (REAL MODE ONLY) ---
 
 export const api = {
   contacts: {
     list: async (): Promise<Contact[]> => {
-      if (isMockSession()) return MOCK_CONTACTS;
-
       const { data, error } = await supabase
         .from('contacts')
         .select('*')
@@ -129,25 +117,20 @@ export const api = {
       
       if (error) {
           console.error("Supabase Error (Contacts):", error);
-          throw error;
+          return [];
       }
       return data.map(adaptContact);
     },
     getById: async (id: string): Promise<Contact | undefined> => {
-      if (isMockSession()) return MOCK_CONTACTS.find(c => c.id === id);
-
       const { data, error } = await supabase.from('contacts').select('*').eq('id', id).single();
       if (error) throw error;
       return adaptContact(data);
     },
     create: async (contact: Partial<Contact>): Promise<Contact> => {
-      if (isMockSession()) return { ...contact, id: Date.now().toString() } as Contact;
-
       const company_id = await getCompanyId();
-      if (!company_id) throw new Error("Empresa não identificada. Faça login novamente.");
-
+      
       const payload = {
-        company_id,
+        company_id, // can be null, handled by DB triggers usually
         name: contact.name,
         phone: contact.phone,
         email: contact.email,
@@ -168,8 +151,6 @@ export const api = {
       return adaptContact(data);
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
-      if (isMockSession()) return { ...MOCK_CONTACTS[0], ...updates, id } as Contact;
-
       const payload: any = {};
       if (updates.name) payload.name = updates.name;
       if (updates.phone) payload.phone = updates.phone;
@@ -190,7 +171,6 @@ export const api = {
       return adaptContact(data);
     },
     delete: async (id: string): Promise<void> => {
-      if (isMockSession()) return;
       const { error } = await supabase.from('contacts').delete().eq('id', id);
       if (error) throw error;
     }
@@ -198,8 +178,6 @@ export const api = {
 
   chat: {
     getMessages: async (contactId: string): Promise<Message[]> => {
-      if (isMockSession()) return MOCK_MESSAGES;
-
       const { data, error } = await supabase
         .from('messages')
         .select('*')
@@ -210,8 +188,6 @@ export const api = {
       return data.map(adaptMessage);
     },
     sendMessage: async (contactId: string, content: string, type: MessageType = MessageType.TEXT): Promise<Message> => {
-      if (isMockSession()) return { id: Date.now().toString(), content, senderId: 'me', type, timestamp: new Date().toLocaleTimeString(), status: 'sent' };
-
       const company_id = await getCompanyId();
       const payload = {
         company_id,
@@ -231,7 +207,6 @@ export const api = {
       return adaptMessage(data);
     },
     getQuickReplies: async (): Promise<QuickReply[]> => {
-        if (isMockSession()) return [{id:'1', shortcut:'/ola', content:'Olá!'}];
         const { data } = await supabase.from('quick_replies').select('*');
         return (data || []).map((q: any) => ({ id: q.id, shortcut: q.shortcut, content: q.content }));
     }
@@ -239,18 +214,11 @@ export const api = {
 
   tasks: {
     list: async (): Promise<Task[]> => {
-      if (isMockSession()) return [];
-
       const { data, error } = await supabase.from('tasks').select('*').order('due_date', { ascending: true });
-      if (error) {
-          console.error("Supabase Error (Tasks):", error);
-          return []; // Fail gracefully for lists
-      }
+      if (error) return [];
       return data.map(adaptTask);
     },
     create: async (task: Partial<Task>): Promise<Task> => {
-      if (isMockSession()) return { ...task, id: Date.now().toString() } as Task;
-
       const company_id = await getCompanyId();
       const payload = {
         company_id,
@@ -267,8 +235,6 @@ export const api = {
       return adaptTask(data);
     },
     update: async (id: string, updates: Partial<Task>): Promise<Task> => {
-      if (isMockSession()) return { ...updates, id } as Task;
-
       const payload: any = {};
       if (updates.title) payload.title = updates.title;
       if (updates.completed !== undefined) payload.status = updates.completed ? 'completed' : 'pending';
@@ -279,37 +245,21 @@ export const api = {
       return adaptTask(data);
     },
     delete: async (id: string): Promise<void> => {
-      if (isMockSession()) return;
       await supabase.from('tasks').delete().eq('id', id);
     }
   },
 
   crm: {
     getPipelines: async (): Promise<Pipeline[]> => {
-      if (isMockSession()) {
-          // Return valid mock structure
-          return [{
-              id: 'pipe_1',
-              name: 'Funil Padrão',
-              columns: [
-                  { id: 'col_1', title: 'Novo Lead', color: 'border-blue-500', cards: [] },
-                  { id: 'col_2', title: 'Em Negociação', color: 'border-yellow-500', cards: [] },
-                  { id: 'col_3', title: 'Fechado', color: 'border-green-500', cards: [] }
-              ]
-          }];
-      }
-
       // Fetch Pipelines
       const { data: pipelines, error: pipeError } = await supabase
         .from('pipelines')
         .select('*')
         .order('created_at');
 
-      if (pipeError) throw pipeError;
+      if (pipeError) return [];
       if (!pipelines || pipelines.length === 0) return [];
 
-      // For the first pipeline, fetch columns and cards (Basic Implementation)
-      // In a real app, you might want to load this lazily or with a more complex join
       const pipeline = pipelines[0];
       
       const { data: columns, error: colError } = await supabase
@@ -318,7 +268,7 @@ export const api = {
         .eq('pipeline_id', pipeline.id)
         .order('order');
 
-      if (colError) throw colError;
+      if (colError) return [];
 
       // Fetch Cards for these columns
       const { data: cards, error: cardError } = await supabase
@@ -326,7 +276,7 @@ export const api = {
         .select('*, contacts(name)') // Join with contacts to get name
         .in('column_id', columns.map((c:any) => c.id));
 
-      if (cardError) throw cardError;
+      if (cardError) return [];
 
       // Assemble structure
       const assembledColumns: KanbanColumn[] = columns.map((col: any) => ({
@@ -353,7 +303,6 @@ export const api = {
       }];
     },
     moveCard: async (cardId: string, sourceColId: string, destColId: string) => {
-        if (isMockSession()) return true;
         const { error } = await supabase.from('kanban_cards').update({ column_id: destColId }).eq('id', cardId);
         if (error) throw error;
         return true;
@@ -362,7 +311,6 @@ export const api = {
 
   proposals: {
     list: async (): Promise<Proposal[]> => {
-        if (isMockSession()) return [];
         const { data, error } = await supabase
             .from('proposals')
             .select('*, contacts(name)');
@@ -371,7 +319,6 @@ export const api = {
         return data.map(adaptProposal);
     },
     create: async (data: Partial<Proposal>): Promise<Proposal> => {
-        if (isMockSession()) return { ...data, id: Date.now().toString() } as Proposal;
         const company_id = await getCompanyId();
         const payload = {
             company_id,
@@ -385,7 +332,6 @@ export const api = {
         return adaptProposal(res);
     },
     update: async (id: string, updates: Partial<Proposal>): Promise<Proposal> => {
-        if (isMockSession()) return { ...updates, id } as Proposal;
         const { data, error } = await supabase.from('proposals').update(updates).eq('id', id).select().single();
         if (error) throw error;
         return adaptProposal(data);
@@ -394,9 +340,8 @@ export const api = {
 
   companies: {
     list: async (): Promise<Company[]> => { 
-        if (isMockSession()) return MOCK_COMPANIES;
         const { data, error } = await supabase.from('companies').select('*');
-        if (error) throw error;
+        if (error) return [];
         return data.map((c:any) => ({
             ...c, 
             ownerName: c.owner_name || 'Admin',
@@ -407,7 +352,6 @@ export const api = {
         }));
     },
     create: async (company: Partial<Company>): Promise<Company> => {
-        if (isMockSession()) return { ...company, id: 'new' } as Company;
         const { data, error } = await supabase.from('companies').insert({
             name: company.name,
             plan_id: company.planId,
@@ -417,7 +361,6 @@ export const api = {
         return data as any;
     },
     update: async (id: string, updates: Partial<Company>): Promise<Company> => {
-        if (isMockSession()) return { ...MOCK_COMPANIES[0], ...updates } as Company;
         const payload:any = {};
         if(updates.aiLimit) payload.ai_limit = updates.aiLimit;
         if(updates.aiUsage !== undefined) payload.ai_usage = updates.aiUsage;
@@ -427,47 +370,20 @@ export const api = {
         return data as any;
     },
     delete: async (id: string): Promise<void> => {
-        if (isMockSession()) return;
         await supabase.from('companies').delete().eq('id', id);
     }
   },
 
   plans: {
-    list: async (): Promise<Plan[]> => { return MOCK_PLANS; },
+    list: async (): Promise<Plan[]> => { 
+        const { data } = await supabase.from('plans').select('*');
+        return data || [];
+    },
     save: async (plan: Plan): Promise<Plan> => { return plan; }
   },
 
   users: {
     updateProfile: async (data: { name?: string, avatar?: string }) => { 
-        if (isMockSession()) {
-            // CRITICAL: Persist changes to localStorage so they survive page reload in Mock/Demo mode
-            const stored = localStorage.getItem('mock_session');
-            if (stored) {
-                const session = JSON.parse(stored);
-                let updated = false;
-                
-                // Ensure structure exists
-                if (!session.user) session.user = {};
-                if (!session.user.user_metadata) session.user.user_metadata = {};
-
-                if (data.name) {
-                    session.user.user_metadata.full_name = data.name;
-                    updated = true;
-                }
-                
-                if (data.avatar) {
-                    session.user.user_metadata.avatar_url = data.avatar;
-                    updated = true;
-                }
-
-                if (updated) {
-                    localStorage.setItem('mock_session', JSON.stringify(session));
-                }
-            }
-            return {};
-        }
-        
-        // Real Supabase Update
         const payload: any = {};
         if (data.name) payload.full_name = data.name;
         if (data.avatar) payload.avatar_url = data.avatar;

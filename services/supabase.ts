@@ -44,8 +44,4 @@ try {
     console.error("Supabase Client Init Error:", error);
 }
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.info('%c MODO DEMONSTRAÇÃO ', 'background: #9333ea; color: #fff; padding: 2px 5px; border-radius: 3px;', 'Variáveis de ambiente do Supabase não detectadas. O sistema utilizará dados locais (Mocks).');
-}
-
 export const supabase = client || createClient('https://placeholder.supabase.co', 'placeholder');

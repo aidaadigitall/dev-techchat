@@ -1,8 +1,9 @@
 
 // services/whatsapp.ts
+import { MOCK_CONTACTS } from '../constants';
 
 // Types for WhatsApp Status
-export type WhatsAppStatus = 'disconnected' | 'connecting' | 'connected' | 'qr_ready';
+export type WhatsAppStatus = 'disconnected' | 'connecting' | 'qr_ready' | 'authenticating' | 'connected';
 
 type EventHandler = (data: any) => void;
 
@@ -10,12 +11,15 @@ class WhatsAppService {
   private status: WhatsAppStatus = 'disconnected';
   private qrCode: string | null = null;
   private eventListeners: Map<string, EventHandler[]> = new Map();
-  private connectionInterval: number | null = null;
+  
+  // Timers
+  private qrRefreshInterval: number | null = null;
   private incomingMessageInterval: number | null = null;
+  
   private logs: string[] = [];
 
   constructor() {
-    // Initialize mocks or listeners
+    // Initialize
   }
 
   // --- Public API ---
@@ -32,63 +36,141 @@ class WhatsAppService {
     return this.logs;
   }
 
+  // 1. Inicia o processo de conexão
   public connect(): void {
-    if (this.status === 'connected') return;
+    if (this.status === 'connected' || this.status === 'authenticating') return;
 
     this.updateStatus('connecting');
-    this.addLog('Iniciando instância do cliente...');
-    this.addLog('Conectando ao servidor socket...');
+    this.logs = []; // Limpa logs anteriores
+    this.addLog('Inicializando cliente WPPConnect/Baileys...');
+    this.addLog('Estabelecendo conexão segura (WebSocket)...');
     
-    // Simulate Fetching QR Code from Backend (e.g., Baileys/WPPConnect)
+    // Simula tempo de inicialização do backend
     setTimeout(() => {
-      // Usando api.qrserver.com que é confiável e gratuita
-      this.qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=TechChatAuth_${Date.now()}`;
-      this.updateStatus('qr_ready');
-      this.emit('qr', this.qrCode);
-      this.addLog('QR Code gerado. Aguardando leitura (Clique no QR para simular)...');
-      
-      // Removed automatic connection timeout. 
-      // Now relies on simulateScan() called by UI interaction.
+      this.generateQrCode();
+      // Inicia rotação do QR Code a cada 30s (como o real)
+      this.qrRefreshInterval = window.setInterval(() => {
+          if (this.status === 'qr_ready') {
+              this.addLog('QR Code expirado. Gerando novo...');
+              this.generateQrCode();
+          }
+      }, 30000);
     }, 1500);
   }
 
-  // Called by the UI when user clicks the QR Code (Simulation only)
+  // Gera um QR Code novo (simulado via API pública)
+  private generateQrCode() {
+      const sessionToken = `TechChat_${Date.now()}`;
+      // Adicionamos timestamp para forçar atualização da imagem
+      this.qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${sessionToken}&bgcolor=ffffff&color=000000&margin=10`;
+      
+      this.updateStatus('qr_ready');
+      this.emit('qr', this.qrCode);
+      this.addLog('Aguardando leitura do QR Code pelo celular...');
+  }
+
+  // 2. Simula a ação do usuário ler o QR no celular
   public simulateScan(): void {
       if (this.status !== 'qr_ready') return;
       
-      this.addLog('Lendo QR Code...');
+      // Para a rotação do QR
+      if (this.qrRefreshInterval) clearInterval(this.qrRefreshInterval);
       
+      this.updateStatus('authenticating');
+      this.qrCode = null; // Remove QR da tela
+      this.emit('qr', null);
+      
+      this.addLog('QR Code detectado!');
+      this.addLog('Descriptografando chaves de sessão...');
+      
+      // Simula processo de auth e sync
       setTimeout(() => {
-          this.qrCode = null;
+          this.addLog('Autenticado com sucesso.');
+          this.addLog('Sincronizando contatos (124 encontrados)...');
+          this.addLog('Sincronizando chats (50 recentes)...');
+      }, 1000);
+
+      setTimeout(() => {
           this.updateStatus('connected');
-          this.addLog('Autenticado com sucesso!');
-          this.addLog('Sincronizando contatos e chats...');
-          this.addLog('Pronto para uso.');
-          
-          this.startIncomingMessageSimulation();
-      }, 1500);
+          this.addLog('Conexão estabelecida. Serviço pronto.');
+          this.startRealTimeSimulation();
+      }, 3000);
   }
 
+  // 3. Desconecta
   public disconnect(): void {
-    if (this.connectionInterval) clearInterval(this.connectionInterval);
-    if (this.incomingMessageInterval) clearInterval(this.incomingMessageInterval);
+    this.stopAllIntervals();
     this.updateStatus('disconnected');
     this.qrCode = null;
     this.logs = [];
-    this.addLog('Sessão encerrada.');
+    this.addLog('Sessão encerrada pelo usuário.');
+    this.addLog('Socket fechado.');
   }
 
-  // --- Messaging API (Simulated) ---
+  // --- Real-time Simulation ---
+
+  private startRealTimeSimulation() {
+      // Simula recebimento de mensagens a cada X segundos
+      // Intervalo aleatório entre 10s e 25s para parecer natural
+      const randomInterval = () => Math.floor(Math.random() * (25000 - 10000 + 1) + 10000);
+
+      const loop = () => {
+          if (this.status !== 'connected') return;
+
+          // 30% de chance de receber mensagem
+          if (Math.random() > 0.3) { 
+              this.simulateIncomingMessage();
+          }
+          
+          // Reagendar próximo loop
+          this.incomingMessageInterval = window.setTimeout(loop, randomInterval());
+      };
+
+      loop();
+  }
+
+  private simulateIncomingMessage() {
+      // Escolhe um contato aleatório dos mocks
+      const randomContact = MOCK_CONTACTS[Math.floor(Math.random() * MOCK_CONTACTS.length)];
+      
+      // 1. Evento de "Digitando..."
+      this.emit('typing', { senderId: randomContact.id });
+
+      // 2. Envia a mensagem após alguns segundos
+      setTimeout(() => {
+          if (this.status !== 'connected') return;
+
+          const possibleMessages = [
+              "Olá, tudo bem?",
+              "Pode me enviar o orçamento?",
+              "Estou com uma dúvida sobre o contrato.",
+              "Obrigado pelo atendimento!",
+              "Qual o prazo de entrega?",
+              "Gostei da proposta, vamos fechar?",
+              "Aguardo seu retorno.",
+              "👍",
+              "Vocês emitem nota fiscal?"
+          ];
+          const randomMsg = possibleMessages[Math.floor(Math.random() * possibleMessages.length)];
+          
+          const messagePayload = {
+              senderId: randomContact.id,
+              content: randomMsg,
+              timestamp: new Date().toISOString(),
+              contactName: randomContact.name // Útil para notificações
+          };
+
+          this.emit('message', messagePayload);
+          console.log(`[WhatsApp Sim] Msg recebida de ${randomContact.name}: ${randomMsg}`);
+      }, 2500); 
+  }
 
   public sendMessage(to: string, content: string): void {
-      // In a real app, this would make an API call to the backend
-      console.log(`[WhatsApp Service] Sending message to ${to}: ${content}`);
-      
-      // Simulate "Server Ack" or "Sent" status back to UI via event if needed
-      // But usually the UI updates optimistically
+      console.log(`[WhatsApp Sim] Enviando para ${to}: ${content}`);
+      // Em um app real, aqui chamaria a API REST
   }
 
-  // --- Event Handling ---
+  // --- Event Handling System ---
 
   public on(event: 'status' | 'qr' | 'message' | 'typing' | 'log', handler: EventHandler) {
     if (!this.eventListeners.has(event)) {
@@ -104,7 +186,7 @@ class WhatsAppService {
     }
   }
 
-  // --- Private Helpers (Simulating Backend Logic) ---
+  // --- Private Helpers ---
 
   private updateStatus(newStatus: WhatsAppStatus) {
     this.status = newStatus;
@@ -112,7 +194,7 @@ class WhatsAppService {
   }
 
   private addLog(message: string) {
-    const log = `[${new Date().toLocaleTimeString()}] ${message}`;
+    const log = `> ${message}`;
     this.logs.push(log);
     this.emit('log', log);
   }
@@ -124,35 +206,9 @@ class WhatsAppService {
     }
   }
 
-  private startIncomingMessageSimulation() {
-      // Simulate receiving a message every 30-60 seconds from a random contact
-      // This mimics real-time socket events
-      this.incomingMessageInterval = window.setInterval(() => {
-          if (Math.random() > 0.8) { // 20% chance to receive
-              // Simulate typing first
-              const senderId = Math.random() > 0.5 ? 'c1' : 'c2'; // Elisa or Roberto
-              
-              this.emit('typing', { senderId });
-
-              setTimeout(() => {
-                  const possibleMessages = [
-                      "Ok, combinado.",
-                      "Vou verificar e te aviso.",
-                      "Pode me enviar o PDF?",
-                      "Obrigado pelo atendimento!",
-                      "Qual o prazo de entrega?",
-                      "Estou aguardando a proposta."
-                  ];
-                  const randomMsg = possibleMessages[Math.floor(Math.random() * possibleMessages.length)];
-                  
-                  this.emit('message', {
-                      senderId: senderId,
-                      content: randomMsg,
-                      timestamp: new Date().toISOString()
-                  });
-              }, 3000); // Typing for 3 seconds
-          }
-      }, 15000); // Check loop every 15s
+  private stopAllIntervals() {
+      if (this.qrRefreshInterval) clearInterval(this.qrRefreshInterval);
+      if (this.incomingMessageInterval) clearTimeout(this.incomingMessageInterval);
   }
 }
 
