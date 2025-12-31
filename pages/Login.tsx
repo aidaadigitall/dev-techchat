@@ -57,6 +57,43 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     } catch (err: any) {
       console.error("Login Error:", err);
       
+      // --- AUTO-CREATE ADMIN LOGIC ---
+      // If it's the specific admin email and login failed, try to register it on the fly
+      // This is useful for first-time setup on a fresh Supabase instance
+      if (email === 'admin@techchat.com' && (err.message === 'Invalid login credentials' || err.message.includes('Invalid grant'))) {
+          try {
+              console.log("Admin account not found. Attempting to auto-create...");
+              const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                  email,
+                  password,
+                  options: {
+                      data: {
+                          full_name: 'Super Admin',
+                          company_name: 'Tech Chat HQ',
+                          phone: '5511999999999',
+                          role: 'super_admin'
+                      }
+                  }
+              });
+
+              if (signUpError) throw signUpError;
+
+              if (signUpData.session) {
+                  // Registration successful and auto-logged in
+                  onLoginSuccess(signUpData.session);
+                  return;
+              } else if (signUpData.user && !signUpData.session) {
+                  // User created but needs email confirmation
+                  setError("Conta Admin criada! Porém, o Supabase exige confirmação de email. Verifique seu email ou desabilite 'Confirm Email' no painel do Supabase.");
+                  setLoading(false);
+                  return;
+              }
+          } catch (createErr: any) {
+              console.error("Failed to auto-create admin:", createErr);
+              // Fall through to show original error if creation fails
+          }
+      }
+
       // Determine user-friendly error message
       let msg = err.message;
       if (err.message === 'Failed to fetch') {
