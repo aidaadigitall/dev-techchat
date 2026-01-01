@@ -100,12 +100,12 @@ const getCompanyId = async () => {
       const { data, error } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
       
       if (error || !data) {
-          // If table doesn't exist or RLS issue, try to fail gracefully or assume user metadata
+          // Fallback to metadata if exists, otherwise return null (do NOT return invalid UUID string)
           return user.user_metadata?.company_id || null;
       }
       return data.company_id;
   } catch (e) {
-      return 'local-company-id';
+      return null;
   }
 };
 
