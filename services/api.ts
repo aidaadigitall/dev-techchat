@@ -18,6 +18,17 @@ const getEnv = (key: string) => {
   return value || '';
 };
 
+// --- UUID Helper (Essential for PostgreSQL compatibility) ---
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 // --- AI Client ---
 let aiClientInstance: GoogleGenAI | null = null;
 const getAiClient = () => {
@@ -164,8 +175,8 @@ export const api = {
           if (error) throw error;
           return adaptContact(data);
       } catch(e) {
-          // Mock successful creation for UI
-          return { ...contact, id: Date.now().toString() } as Contact;
+          // Mock successful creation for UI with VALID UUID
+          return { ...contact, id: generateUUID() } as Contact;
       }
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
@@ -230,7 +241,7 @@ export const api = {
           
           return adaptMessage(data);
       } catch(e) {
-          return { id: Date.now().toString(), content, type, senderId: 'me', timestamp: new Date().toLocaleTimeString(), status: 'sent' };
+          return { id: generateUUID(), content, type, senderId: 'me', timestamp: new Date().toLocaleTimeString(), status: 'sent' };
       }
     },
     getQuickReplies: async (): Promise<QuickReply[]> => {
@@ -265,7 +276,7 @@ export const api = {
           const { data, error } = await supabase.from('tasks').insert(payload).select().single();
           if (error) throw error;
           return adaptTask(data);
-      } catch (e) { return { ...task, id: Date.now().toString() } as Task; }
+      } catch (e) { return { ...task, id: generateUUID() } as Task; }
     },
     update: async (id: string, updates: Partial<Task>): Promise<Task> => {
       try {
@@ -372,7 +383,7 @@ export const api = {
             const { data: res, error } = await supabase.from('proposals').insert(payload).select().single();
             if (error) throw error;
             return adaptProposal(res);
-        } catch (e) { return { ...data, id: Date.now().toString() } as Proposal; }
+        } catch (e) { return { ...data, id: generateUUID() } as Proposal; }
     },
     update: async (id: string, updates: Partial<Proposal>): Promise<Proposal> => {
         try {
@@ -407,7 +418,7 @@ export const api = {
             }).select().single();
             if(error) throw error;
             return data as any;
-        } catch(e) { return { ...company, id: Date.now().toString() } as Company; }
+        } catch(e) { return { ...company, id: generateUUID() } as Company; }
     },
     update: async (id: string, updates: Partial<Company>): Promise<Company> => {
         try {
@@ -451,7 +462,7 @@ export const api = {
   campaigns: {
     list: async (): Promise<Campaign[]> => { return []; },
     create: async (data: any): Promise<Campaign> => { 
-        return { id: '123', name: data.name, status: 'scheduled', createdAt: new Date().toISOString(), connectionId: '', stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 } }; 
+        return { id: generateUUID(), name: data.name, status: 'scheduled', createdAt: new Date().toISOString(), connectionId: '', stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 } }; 
     }
   },
   
