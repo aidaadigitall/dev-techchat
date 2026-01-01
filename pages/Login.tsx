@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { Branding } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
@@ -25,6 +25,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [dbConfigured, setDbConfigured] = useState(true);
 
   // Clear stale sessions on mount and check config
@@ -32,6 +33,72 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     localStorage.removeItem('mock_session');
     setDbConfigured(isSupabaseConfigured());
   }, []);
+
+  // --- SPECIAL ADMIN HANDLER ---
+  const handleFirstTimeAdmin = async () => {
+    if (!dbConfigured) {
+        setError('Erro: Banco de dados não configurado (.env).');
+        return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+    
+    const adminEmail = 'admin@techchat.com';
+    const adminPass = 'Esc@20200#';
+
+    try {
+      // 1. Tenta logar primeiro (caso a conta já tenha sido criada antes)
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: adminEmail,
+        password: adminPass,
+      });
+
+      if (signInData.session) {
+        onLoginSuccess(signInData.session);
+        return;
+      }
+
+      // 2. Se falhar o login, tenta registrar
+      console.log("Login de admin falhou, tentando criar conta...", signInError?.message);
+      
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: adminEmail,
+        password: adminPass,
+        options: {
+          data: {
+            full_name: 'Super Admin',
+            company_name: 'SaaS HQ',
+            phone: '5511999999999',
+            role: 'super_admin' // Importante para o App.tsx detectar
+          }
+        }
+      });
+
+      if (signUpError) {
+         // Se erro for "User already registered", significa que a senha está errada
+         if (signUpError.message.includes('already registered')) {
+             throw new Error("A conta admin já existe, mas a senha está incorreta. Verifique no Supabase ou use 'Esqueceu a senha'.");
+         }
+         throw signUpError;
+      }
+
+      if (signUpData.session) {
+         // Sucesso total (Login automático pós-registro)
+         onLoginSuccess(signUpData.session);
+      } else if (signUpData.user) {
+         // Usuário criado, mas requer confirmação de email (configuração do Supabase)
+         setSuccessMsg("Conta Admin criada com sucesso! Verifique seu email para confirmar ou desabilite 'Confirm Email' no painel do Supabase > Authentication > Providers > Email.");
+         setLoading(false);
+      }
+
+    } catch (err: any) {
+      console.error("Erro Admin Init:", err);
+      setError(err.message || "Erro ao inicializar admin.");
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +109,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
     setLoading(true);
     setError(null);
+    setSuccessMsg(null);
     
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -55,53 +123,12 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
         onLoginSuccess(data.session);
       }
     } catch (err: any) {
-      console.error("Login Error:", err);
-      
-      // --- AUTO-CREATE ADMIN LOGIC ---
-      // If it's the specific admin email and login failed, try to register it on the fly
-      // This is useful for first-time setup on a fresh Supabase instance
-      if (email === 'admin@techchat.com' && (err.message === 'Invalid login credentials' || err.message.includes('Invalid grant'))) {
-          try {
-              console.log("Admin account not found. Attempting to auto-create...");
-              const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-                  email,
-                  password,
-                  options: {
-                      data: {
-                          full_name: 'Super Admin',
-                          company_name: 'Tech Chat HQ',
-                          phone: '5511999999999',
-                          role: 'super_admin'
-                      }
-                  }
-              });
-
-              if (signUpError) throw signUpError;
-
-              if (signUpData.session) {
-                  // Registration successful and auto-logged in
-                  onLoginSuccess(signUpData.session);
-                  return;
-              } else if (signUpData.user && !signUpData.session) {
-                  // User created but needs email confirmation
-                  setError("Conta Admin criada! Porém, o Supabase exige confirmação de email. Verifique seu email ou desabilite 'Confirm Email' no painel do Supabase.");
-                  setLoading(false);
-                  return;
-              }
-          } catch (createErr: any) {
-              console.error("Failed to auto-create admin:", createErr);
-              // Fall through to show original error if creation fails
-          }
-      }
-
-      // Determine user-friendly error message
       let msg = err.message;
       if (err.message === 'Failed to fetch') {
           msg = 'Falha de conexão com o servidor. Verifique sua internet e a URL do Supabase.';
       } else if (err.message.includes('Invalid login credentials')) {
           msg = 'Email ou senha incorretos.';
       }
-      
       setError(msg);
       setLoading(false);
     }
@@ -125,7 +152,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
           data: {
             full_name: `${firstName} ${lastName}`,
             company_name: companyName,
-            phone: phone
+            phone: phone,
+            role: 'admin' // Default role for new signups
           }
         }
       });
@@ -135,9 +163,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       if (data.session) {
         onLoginSuccess(data.session);
       } else {
-        // If email confirmation is enabled in Supabase, session might be null
         if (data.user && !data.session) {
-            setError("Conta criada! Verifique seu email para confirmar o cadastro antes de entrar.");
+            setSuccessMsg("Conta criada! Verifique seu email para confirmar o cadastro antes de entrar.");
         } else {
             setError("Ocorreu um erro inesperado ao criar a conta.");
         }
@@ -145,7 +172,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       }
 
     } catch (err: any) {
-      console.error("Register Error:", err);
       let msg = err.message;
       if (err.message === 'Failed to fetch') {
           msg = 'Falha de conexão com o servidor. Tente novamente mais tarde.';
@@ -232,6 +258,13 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
              </div>
            )}
 
+           {successMsg && (
+             <div className="mb-6 p-4 rounded-lg bg-green-50 border border-green-100 text-sm text-green-700 flex items-start animate-fadeIn">
+                <CheckCircle2 size={18} className="mr-2 flex-shrink-0 mt-0.5" />
+                <span>{successMsg}</span>
+             </div>
+           )}
+
            {view === 'login' ? (
              <form onSubmit={handleLogin} className="space-y-5">
                 <div>
@@ -266,8 +299,19 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                         onChange={(e) => setPassword(e.target.value)}
                       />
                    </div>
-                   <div className="flex justify-end mt-2">
-                      <a href="#" className="text-xs font-medium text-purple-600 hover:text-purple-800">Esqueceu a senha?</a>
+                   
+                   {/* ACTION BUTTONS ROW */}
+                   <div className="flex justify-between items-center mt-3">
+                      <button 
+                        type="button" 
+                        onClick={handleFirstTimeAdmin}
+                        className="text-xs font-bold text-purple-600 hover:text-purple-800 uppercase tracking-wide flex items-center bg-purple-50 px-2 py-1 rounded hover:bg-purple-100 transition-colors"
+                        title="Cria automaticamente a conta admin@techchat.com se não existir"
+                      >
+                        <ShieldCheck size={12} className="mr-1" /> Primeiro Acesso Admin?
+                      </button>
+                      
+                      <a href="#" className="text-xs font-medium text-gray-500 hover:text-gray-700">Esqueceu a senha?</a>
                    </div>
                 </div>
 
