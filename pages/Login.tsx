@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { Branding } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck, Terminal } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
@@ -25,6 +25,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dbErrorHelp, setDbErrorHelp] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [dbConfigured, setDbConfigured] = useState(true);
 
@@ -43,6 +44,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     
     setLoading(true);
     setError(null);
+    setDbErrorHelp(false);
     setSuccessMsg(null);
     
     const adminEmail = 'admin@techchat.com';
@@ -81,6 +83,11 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
          if (signUpError.message.includes('already registered')) {
              throw new Error("A conta admin já existe, mas a senha está incorreta. Verifique no Supabase ou use 'Esqueceu a senha'.");
          }
+         // DETECT MISSING TABLES ERROR
+         if (signUpError.message.includes('Database error saving new user')) {
+             setDbErrorHelp(true);
+             throw new Error("Erro de Banco de Dados: Tabelas ou Triggers inexistentes.");
+         }
          throw signUpError;
       }
 
@@ -109,6 +116,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
     setLoading(true);
     setError(null);
+    setDbErrorHelp(false);
     setSuccessMsg(null);
     
     try {
@@ -143,6 +151,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
     setLoading(true);
     setError(null);
+    setDbErrorHelp(false);
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -158,7 +167,13 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+          if (error.message.includes('Database error saving new user')) {
+             setDbErrorHelp(true);
+             throw new Error("Erro crítico: Banco de dados incompleto.");
+          }
+          throw error;
+      }
 
       if (data.session) {
         onLoginSuccess(data.session);
@@ -252,9 +267,17 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
            )}
 
            {error && (
-             <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-100 text-sm text-red-600 flex items-start animate-fadeIn">
-                <AlertCircle size={18} className="mr-2 flex-shrink-0 mt-0.5" />
-                <span>{error}</span>
+             <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-100 text-sm text-red-600 flex flex-col items-start animate-fadeIn">
+                <div className="flex items-center mb-1">
+                    <AlertCircle size={18} className="mr-2 flex-shrink-0" />
+                    <strong>{error}</strong>
+                </div>
+                {dbErrorHelp && (
+                    <div className="mt-2 text-xs text-gray-600 bg-white p-2 rounded border border-red-100 w-full">
+                        <p className="mb-1"><strong>Causa Provável:</strong> O banco de dados Supabase está vazio e faltam as tabelas essenciais.</p>
+                        <p className="flex items-center"><Terminal size={12} className="mr-1"/> Solução: Execute o script SQL de criação no painel do Supabase.</p>
+                    </div>
+                )}
              </div>
            )}
 
