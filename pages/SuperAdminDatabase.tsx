@@ -12,15 +12,32 @@ const SuperAdminDatabase: React.FC = () => {
   });
 
   useEffect(() => {
-    // Check if env vars are loaded (checking non-empty string)
-    // Note: In Vite/React apps we can't read the actual value easily for security, 
-    // but we can check the supabase client internals or just assume based on connection success.
-    const urlConfigured = !!(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL);
-    const keyConfigured = !!(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY);
-    
+    // Helper to robustly check env vars across different build tools (Vite, CRA, Next.js)
+    const checkEnvVar = (keySuffix: string) => {
+        let value = '';
+        try {
+            // Check Vite (import.meta.env)
+            // @ts-ignore
+            if (typeof import.meta !== 'undefined' && import.meta.env) {
+                // @ts-ignore
+                value = import.meta.env[`VITE_${keySuffix}`];
+            }
+        } catch (e) {}
+
+        if (!value) {
+            try {
+                // Check Node/Webpack (process.env)
+                if (typeof process !== 'undefined' && process.env) {
+                    value = process.env[`REACT_APP_${keySuffix}`] || process.env[`NEXT_PUBLIC_${keySuffix}`];
+                }
+            } catch (e) {}
+        }
+        return !!value && value !== '';
+    };
+
     setEnvCheck({
-        url: urlConfigured,
-        key: keyConfigured
+        url: checkEnvVar('SUPABASE_URL'),
+        key: checkEnvVar('SUPABASE_ANON_KEY')
     });
     
     handleTestConnection();
@@ -154,9 +171,12 @@ const SuperAdminDatabase: React.FC = () => {
               </div>
 
               <div className="mt-4 p-4 bg-blue-50 text-blue-800 text-xs rounded-lg leading-relaxed">
-                 <strong className="block mb-1">Nota sobre Credenciais:</strong>
-                 O Supabase utiliza autenticação via Token. As variáveis de ambiente são configuradas no momento do build/deploy. 
-                 Se você estiver vendo "Ausente" ou erro de conexão, verifique seu arquivo <code>.env</code>.
+                 <strong className="block mb-1">Como corrigir "Ausente":</strong>
+                 Crie um arquivo chamado <code>.env</code> na raiz do projeto e adicione as chaves abaixo. Reinicie o servidor após salvar.
+                 <div className="mt-2 p-2 bg-gray-900 text-green-400 font-mono rounded overflow-x-auto">
+                    VITE_SUPABASE_URL=sua-url<br/>
+                    VITE_SUPABASE_ANON_KEY=sua-chave
+                 </div>
               </div>
            </div>
         </div>
