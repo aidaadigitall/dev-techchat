@@ -91,20 +91,28 @@ class WhatsAppService {
       }
 
       // If not connected, try to connect/create
-      this.addLog(`Estado atual: ${state || 'Desconhecido'}. Tentando criar/conectar...`);
+      this.addLog(`Estado atual: ${state || 'Inexistente/Desconectado'}. Tentando criar/conectar...`);
       await this.createInstance();
       await this.fetchQrCode();
 
     } catch (error: any) {
-      this.addLog(`Erro ao conectar: ${error.message}`);
+      this.addLog(`Status Check: ${error.message}`);
       
       // Fallback Logic: If API is unreachable (localhost not running) or Not Found
-      if (error.message.includes('Failed to fetch') || error.message.includes('not found') || error.message.includes('404')) {
-          this.addLog('⚠️ API não detectada ou inacessível.');
+      if (error.message.includes('Failed to fetch')) {
+          this.addLog('⚠️ API não detectada ou inacessível (Network Error).');
           this.addLog('🔄 Ativando MODO SIMULAÇÃO para demonstração...');
           this.simulateFlow();
       } else {
-          this.updateStatus('disconnected');
+          // If 404 or other error, try to create anyway
+          this.addLog('Tentando criar instância nova...');
+          try {
+             await this.createInstance();
+             await this.fetchQrCode();
+          } catch (createError: any) {
+             this.addLog(`Erro fatal ao criar: ${createError.message}`);
+             this.updateStatus('disconnected');
+          }
       }
     }
   }
@@ -288,12 +296,21 @@ class WhatsAppService {
 
   private async createInstance() {
     this.addLog('Tentando criar instância...');
-    await this.fetchApi('/instance/create', 'POST', {
-        instanceName: this.config.instanceName,
-        qrcode: true,
-        integration: "WHATSAPP-BAILEYS"
-    });
-    this.addLog('Instância criada com sucesso.');
+    try {
+        await this.fetchApi('/instance/create', 'POST', {
+            instanceName: this.config.instanceName,
+            qrcode: true,
+            integration: "WHATSAPP-BAILEYS"
+        });
+        this.addLog('Instância criada com sucesso.');
+    } catch (e: any) {
+        // Ignore "already exists" error to proceed to connection
+        if (e.message.includes('already exists')) {
+            this.addLog('Instância já existe. Prosseguindo...');
+        } else {
+            throw e;
+        }
+    }
   }
 
   private async fetchQrCode() {
@@ -363,12 +380,14 @@ class WhatsAppService {
     }
 
     try {
-        this.addLog('Desconectando instância...');
-        await this.fetchApi(`/instance/logout/${this.config.instanceName}`, 'DELETE');
+        this.addLog('Removendo instância (Reset Completo)...');
+        // Using DELETE to remove the instance ensures next connect generates a fresh QR code
+        await this.fetchApi(`/instance/delete/${this.config.instanceName}`, 'DELETE');
+        
         this.updateStatus('disconnected');
         this.qrCode = null;
         this.emit('qr', null);
-        this.addLog('Desconectado.');
+        this.addLog('Desconectado. Instância resetada.');
     } catch (e: any) {
         this.addLog(`Erro ao desconectar: ${e.message}`);
         this.updateStatus('disconnected');
@@ -409,6 +428,9 @@ class WhatsAppService {
               throw new Error(text || res.statusText);
           }
       }
+
+      // Handle empty responses (like from DELETE)
+      if (res.status === 204) return {};
 
       return res.json();
   }

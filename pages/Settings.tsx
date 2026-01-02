@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon, Server, Globe } from 'lucide-react';
+import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon, Server, Globe, RotateCcw } from 'lucide-react';
 import { User, Branding, Tag, Sector } from '../types';
 import { MOCK_USERS } from '../constants';
 import { api } from '../services/api';
@@ -121,9 +121,9 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   };
 
   const handleDisconnect = () => {
-      if(window.confirm("Deseja realmente desconectar o WhatsApp?")) {
+      if(window.confirm("Deseja realmente desconectar e remover esta instância? Você precisará escanear o QR Code novamente.")) {
           whatsappService.disconnect();
-          addToast('Comando de desconexão enviado.', 'info');
+          addToast('Desconexão iniciada. Aguarde...', 'info');
       }
   };
 
@@ -262,14 +262,23 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                               Desconectar
                            </button>
                        ) : (
-                           <button 
-                             onClick={handleGenerateQR} 
-                             disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating'}
-                             className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50 transition-all active:scale-95"
-                           >
-                               <QrCode size={18} className="mr-2" /> 
-                               {whatsappStatus === 'connecting' ? 'Iniciando...' : 'Conectar Agora'}
-                           </button>
+                           <div className="flex gap-2">
+                               <button 
+                                 onClick={handleDisconnect} 
+                                 className="px-3 py-2 border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-100 text-sm font-medium bg-white transition-colors"
+                                 title="Forçar reset da instância"
+                               >
+                                  <RotateCcw size={18} />
+                               </button>
+                               <button 
+                                 onClick={handleGenerateQR} 
+                                 disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating'}
+                                 className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50 transition-all active:scale-95"
+                               >
+                                   <QrCode size={18} className="mr-2" /> 
+                                   {whatsappStatus === 'connecting' ? 'Iniciando...' : 'Conectar Agora'}
+                               </button>
+                           </div>
                        )}
                     </div>
                  </div>
@@ -278,7 +287,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
         );
 
       case 'profile':
-          // ... (existing profile code) ...
           return (
             <div className="space-y-6 animate-fadeIn">
                <div className="border-b border-gray-100 pb-4">
