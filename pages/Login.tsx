@@ -47,7 +47,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     setDbErrorHelp(false);
     setSuccessMsg(null);
     
-    const adminEmail = 'admin@techchat.com';
+    // ATUALIZADO: Email solicitado pelo usuário
+    const adminEmail = 'escinformaticago@gmail.com';
     const adminPass = 'Esc@20200#';
 
     try {
@@ -62,7 +63,12 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
         return;
       }
 
-      // 2. Se falhar o login, tenta registrar
+      // Se der erro de email não confirmado no login direto
+      if (signInError && signInError.message.includes('Email not confirmed')) {
+          throw new Error("Email não confirmado. No Supabase, vá em Auth > Providers > Email e desative 'Confirm email'.");
+      }
+
+      // 2. Se falhar o login (usuário não existe), tenta registrar
       console.log("Login de admin falhou, tentando criar conta...", signInError?.message);
       
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
@@ -72,7 +78,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
           data: {
             full_name: 'Super Admin',
             company_name: 'SaaS HQ',
-            phone: '5511999999999',
+            phone: '5562999999999',
             role: 'super_admin' // Importante para o App.tsx detectar
           }
         }
@@ -81,7 +87,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       if (signUpError) {
          // Se erro for "User already registered", significa que a senha está errada
          if (signUpError.message.includes('already registered')) {
-             throw new Error("A conta admin já existe, mas a senha está incorreta. Verifique no Supabase ou use 'Esqueceu a senha'.");
+             throw new Error("A conta admin já existe (verifique se a senha está correta ou se o email está confirmado).");
          }
          // DETECT MISSING TABLES ERROR
          if (signUpError.message.includes('Database error saving new user')) {
@@ -96,7 +102,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
          onLoginSuccess(signUpData.session);
       } else if (signUpData.user) {
          // Usuário criado, mas requer confirmação de email (configuração do Supabase)
-         setSuccessMsg("Conta Admin criada com sucesso! Verifique seu email para confirmar ou desabilite 'Confirm Email' no painel do Supabase > Authentication > Providers > Email.");
+         setError("Conta criada, mas o Supabase exige confirmação de email. Vá no painel do Supabase > Authentication > Providers > Email e desative 'Confirm Email' para logar imediatamente.");
          setLoading(false);
       }
 
@@ -136,6 +142,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
           msg = 'Falha de conexão com o servidor. Verifique sua internet e a URL do Supabase.';
       } else if (err.message.includes('Invalid login credentials')) {
           msg = 'Email ou senha incorretos.';
+      } else if (err.message.includes('Email not confirmed')) {
+          msg = 'Email não confirmado. Desative a opção "Confirm Email" no painel do Supabase (Auth > Providers > Email).';
       }
       setError(msg);
       setLoading(false);
@@ -179,7 +187,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
         onLoginSuccess(data.session);
       } else {
         if (data.user && !data.session) {
-            setSuccessMsg("Conta criada! Verifique seu email para confirmar o cadastro antes de entrar.");
+            setSuccessMsg("Conta criada! Se não conseguir entrar, verifique se a confirmação de email está desativada no Supabase.");
         } else {
             setError("Ocorreu um erro inesperado ao criar a conta.");
         }
@@ -329,7 +337,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                         type="button" 
                         onClick={handleFirstTimeAdmin}
                         className="text-xs font-bold text-purple-600 hover:text-purple-800 uppercase tracking-wide flex items-center bg-purple-50 px-2 py-1 rounded hover:bg-purple-100 transition-colors"
-                        title="Cria automaticamente a conta admin@techchat.com se não existir"
+                        title="Cria automaticamente a conta escinformaticago@gmail.com se não existir"
                       >
                         <ShieldCheck size={12} className="mr-1" /> Primeiro Acesso Admin?
                       </button>
