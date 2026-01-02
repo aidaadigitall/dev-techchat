@@ -51,7 +51,7 @@ const adaptContact = (data: any): Contact => ({
   company: data.custom_fields?.company,
   status: data.status || 'open',
   unreadCount: 0,
-  lastMessage: '', 
+  lastMessage: data.custom_fields?.last_message_preview || '', 
   lastMessageTime: data.last_message_at ? new Date(data.last_message_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '',
   pipelineValue: 0,
   cpfCnpj: data.custom_fields?.cpfCnpj,

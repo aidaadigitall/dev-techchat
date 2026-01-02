@@ -150,16 +150,31 @@ class WhatsAppService {
           const chats = await this.fetchApi(`/chat/findChats/${this.config.instanceName}`);
           
           if (Array.isArray(chats)) {
+              let index = 0;
               for (const chat of chats) {
+                  index++;
+                  // Extract preview logic
+                  let lastContent = '';
+                  // Attempt to find the last message content from the chat object structure (varies by version)
+                  // Structure might have 'messages' array or 'lastMessage' object
+                  const lastMsgObj = chat.lastMessage || (chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null);
+                  
+                  if (lastMsgObj) {
+                      lastContent = lastMsgObj.message?.conversation || 
+                                    lastMsgObj.message?.extendedTextMessage?.text || 
+                                    lastMsgObj.content || 
+                                    (lastMsgObj.message?.imageMessage ? '📷 Imagem' : '');
+                  }
+
                   // Save Contact to Supabase
-                  await this.upsertContact(chat);
+                  await this.upsertContact(chat, lastContent);
                   
-                  // For the active sync loop, we mainly care about updating the contact list
-                  // and maybe the last message. To avoid rate limits, we don't fetch deep history
-                  // for every chat every time, unless it's the initial sync.
+                  // For the active sync loop, we force fetch messages for the TOP 5 chats
+                  // This ensures that active conversations are updated even if 'unreadCount' is 0
+                  // (e.g. if the user read it on mobile or whatsapp web)
+                  const isRecent = index <= 5;
                   
-                  // If unread count > 0, fetch messages
-                  if (chat.unreadCount > 0) {
+                  if (chat.unreadCount > 0 || isRecent) {
                       await this.fetchChatMessages(chat.id);
                   }
               }
@@ -174,8 +189,11 @@ class WhatsAppService {
       if (this.logs.some(l => l.includes('MODO SIMULAÇÃO'))) return;
 
       try {
+          // Fetch limit 10 to keep it light, assuming we poll frequently
           const messages = await this.fetchApi(`/chat/findMessages/${this.config.instanceName}/${chatId}?count=10`);
           if (Array.isArray(messages)) {
+              // Process in reverse order (oldest to newest) if the API returns newest first, 
+              // but upsert handles ID collisions anyway.
               for (const msg of messages) {
                   await this.upsertMessage(chatId, msg);
               }
@@ -189,34 +207,39 @@ class WhatsAppService {
   private startMessagePolling() {
       if (this.pollInterval) clearInterval(this.pollInterval);
       
-      this.addLog('Iniciando verificação automática de novas mensagens (Polling)...');
+      this.addLog('Iniciando verificação automática de novas mensagens (Polling 5s)...');
       
-      // Poll every 10 seconds to check for new messages
+      // Poll every 5 seconds to check for new messages (Improved responsiveness)
       this.pollInterval = setInterval(() => {
           if (this.status === 'connected') {
               this.syncHistory();
           } else {
               clearInterval(this.pollInterval);
           }
-      }, 10000); 
+      }, 5000); 
   }
 
-  private async upsertContact(chatData: any) {
+  private async upsertContact(chatData: any, lastMessagePreview: string = '') {
       // remoteJid is the ID in Evolution
       const contactId = chatData.id; 
       const name = chatData.name || chatData.pushName || chatData.id.split('@')[0];
       const picture = chatData.profilePictureUrl || null;
       
-      // Upsert into Supabase
-      const { error } = await supabase.from('contacts').upsert({
+      const payload: any = {
           phone: contactId.split('@')[0], // Extract number
           name: name,
           avatar_url: picture,
           last_message_at: new Date().toISOString(), // Update recency
-          // Don't overwrite status if it exists, default to open for new
           status: 'open', 
           source: 'WhatsApp Sync'
-      }, { onConflict: 'phone', ignoreDuplicates: false }); // We want to update last_message_at
+      };
+
+      // Try to save last message preview to a custom field or column if schema allows
+      // We'll use 'custom_fields' jsonb to store it to avoid schema errors if column missing
+      payload.custom_fields = { last_message_preview: lastMessagePreview };
+
+      // Upsert into Supabase
+      const { error } = await supabase.from('contacts').upsert(payload, { onConflict: 'phone', ignoreDuplicates: false });
 
       if (error && error.code !== '23505') { 
           console.error('Error syncing contact:', error);
@@ -242,6 +265,7 @@ class WhatsAppService {
       const createdAt = new Date(msgData.messageTimestamp * 1000).toISOString();
 
       // Check if message exists to avoid duplicates
+      // We try to match by content and timestamp roughly, but ideally we should store the external ID
       const { data: existing } = await supabase.from('messages')
         .select('id')
         .eq('contact_id', contact.id)
