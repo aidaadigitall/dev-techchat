@@ -120,7 +120,7 @@ const App: React.FC = () => {
 
   const syncUser = (authUser: any) => {
     // Check if it's the Super Admin Credential
-    const isSuperAdminEmail = authUser.email === 'admin@techchat.com';
+    const isSuperAdminEmail = authUser.email === 'admin@techchat.com' || authUser.email === 'escinformaticago@gmail.com';
     
     if (isSuperAdminEmail) {
       setIsAdminMode(true);
