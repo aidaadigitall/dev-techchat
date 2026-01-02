@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
+import { whatsappService } from '../services/whatsapp'; // Import WhatsApp Service
 import { Contact, Message, MessageType } from '../types';
 import { useToast } from '../components/ToastContext';
 import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle, Clock } from 'lucide-react';
@@ -220,29 +221,37 @@ const Contacts: React.FC = () => {
       setSyncModalOpen(true);
   };
 
-  const performSync = () => {
+  const performSync = async () => {
       setSyncModalOpen(false);
       setLoading(true);
       
-      // Simulate Sync Process
-      setTimeout(() => {
-          // Mock adding new contacts from sync
-          if (syncConfig.syncNewContacts) {
-              const newSyncedContacts: Contact[] = [
-                  { id: `sync_${Date.now()}_1`, name: 'Novo Cliente WhatsApp', phone: '5511988887777', tags: ['Importado'], status: 'open', avatar: '', source: 'WhatsApp Sync' },
-                  { id: `sync_${Date.now()}_2`, name: 'Lead Recente', phone: '5511977776666', tags: [], status: 'pending', avatar: '', source: 'WhatsApp Sync' }
-              ];
-              setContacts(prev => [...newSyncedContacts, ...prev]);
+      try {
+          const status = whatsappService.getStatus();
+          if (status !== 'connected') {
+              throw new Error("WhatsApp não está conectado. Vá em Configurações > Conexões.");
           }
+
+          addToast('Iniciando sincronização com o dispositivo...', 'info');
           
+          // REAL SYNC: Fetch chats from Evolution API via Service
+          await whatsappService.syncHistory();
+          
+          // Reload local list from Supabase
+          await loadContacts();
+          
+          addToast('Sincronização concluída! Contatos e conversas atualizados.', 'success');
+      } catch (error: any) {
+          console.error("Sync Error:", error);
+          addToast(`Erro na sincronização: ${error.message}`, 'error');
+      } finally {
           setLoading(false);
-          addToast(`Sincronização concluída! Histórico de ${new Date(syncConfig.startDate).toLocaleDateString()} a ${new Date(syncConfig.endDate).toLocaleDateString()} atualizado.`, 'success');
-      }, 2000);
+      }
   };
 
   const handleExportContacts = () => {
-      const headers = "Nome,Telefone,Email,Empresa,Tags\n";
-      const rows = contacts.map(c => `${c.name},${c.phone},${c.email || ''},${c.company || ''},"${c.tags.join(',')}"`).join("\n");
+      const headers = "ID,Nome,Telefone,Email,Empresa,Tags\n";
+      // Using generic ID for export, though imports will ignore it or match by phone
+      const rows = contacts.map(c => `${c.id},"${c.name}",${c.phone},${c.email || ''},${c.company || ''},"${c.tags.join(',')}"`).join("\n");
       const csvContent = "data:text/csv;charset=utf-8," + encodeURI(headers + rows);
       const link = document.createElement("a");
       link.setAttribute("href", csvContent);
@@ -292,15 +301,17 @@ const Contacts: React.FC = () => {
         // Identify Headers (flexible matching)
         const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
         
-        const idxName = headers.findIndex(h => h.includes('nome'));
-        const idxPhone = headers.findIndex(h => h.includes('telefone') || h.includes('celular'));
-        const idxEmail = headers.findIndex(h => h.includes('email'));
-        const idxCompany = headers.findIndex(h => h.includes('empresa'));
-        const idxTags = headers.findIndex(h => h.includes('tags'));
+        // Mapping for Requested Format: ID,Nome,Telefone,Email,Empresa,Tags
+        const idxName = headers.findIndex(h => h === 'nome' || h === 'name');
+        const idxPhone = headers.findIndex(h => h === 'telefone' || h === 'phone' || h === 'celular');
+        const idxEmail = headers.findIndex(h => h === 'email' || h === 'e-mail');
+        const idxCompany = headers.findIndex(h => h === 'empresa' || h === 'company');
+        const idxTags = headers.findIndex(h => h === 'tags' || h === 'etiquetas');
+        // ID is usually ignored for creation, but we can verify it exists
+        // const idxId = headers.findIndex(h => h === 'id'); 
 
-        // If vital columns are missing, assume default order based on provided template
-        // Default: ID, Nome, Telefone, Email, Empresa, Tags
-        const useDefaultOrder = idxName === -1 || idxPhone === -1;
+        // Fallback: If headers don't match, assume the fixed user format: ID(0), Nome(1), Telefone(2), Email(3), Empresa(4), Tags(5)
+        const useFixedFormat = idxName === -1 && idxPhone === -1 && lines[0].includes(','); 
 
         const newContacts: Partial<Contact>[] = [];
 
@@ -310,24 +321,30 @@ const Contacts: React.FC = () => {
 
             const data = parseCSVRow(line);
             
-            // Extract Data
-            let name = useDefaultOrder ? data[1] : (idxName > -1 ? data[idxName] : '');
-            let phone = useDefaultOrder ? data[2] : (idxPhone > -1 ? data[idxPhone] : '');
-            let email = useDefaultOrder ? data[3] : (idxEmail > -1 ? data[idxEmail] : '');
-            let company = useDefaultOrder ? data[4] : (idxCompany > -1 ? data[idxCompany] : '');
-            let tagsRaw = useDefaultOrder ? data[5] : (idxTags > -1 ? data[idxTags] : '');
+            // Extract Data based on detection
+            let name = useFixedFormat ? data[1] : (idxName > -1 ? data[idxName] : '');
+            let phone = useFixedFormat ? data[2] : (idxPhone > -1 ? data[idxPhone] : '');
+            let email = useFixedFormat ? data[3] : (idxEmail > -1 ? data[idxEmail] : '');
+            let company = useFixedFormat ? data[4] : (idxCompany > -1 ? data[idxCompany] : '');
+            let tagsRaw = useFixedFormat ? data[5] : (idxTags > -1 ? data[idxTags] : '');
 
-            // Cleanup Phone
+            // Cleanup Phone (Remove non-digits)
             if (phone) phone = phone.replace(/\D/g, ''); 
 
+            // Basic validation
             if (name && phone) {
+                // Ensure DDI (55 for Brazil) if missing and length suggests it (10 or 11 digits)
+                if (phone.length === 10 || phone.length === 11) {
+                    phone = '55' + phone;
+                }
+
                 newContacts.push({
                     name,
                     phone,
                     email,
                     company,
-                    tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim()) : [],
-                    status: 'pending',
+                    tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t !== '') : [],
+                    status: 'open', // Imported contacts start as open
                     source: 'Importação CSV'
                 });
             }
@@ -338,6 +355,7 @@ const Contacts: React.FC = () => {
 
         for (const contact of newContacts) {
             try {
+                // Use API to create (handles upsert by phone internally)
                 await api.contacts.create(contact);
                 successCount++;
             } catch (err: any) {
@@ -350,11 +368,11 @@ const Contacts: React.FC = () => {
         setLoading(false);
         
         if (successCount > 0) {
-            addToast(`${successCount} contatos importados/atualizados!`, 'success');
+            addToast(`${successCount} contatos importados/atualizados com sucesso!`, 'success');
         }
         
         if (errors.length > 0) {
-            addToast(`Falha ao importar ${errors.length} contatos. Verifique o console.`, 'warning');
+            addToast(`Falha ao importar ${errors.length} contatos. Verifique o arquivo.`, 'warning');
         }
 
         if (importFileRef.current) importFileRef.current.value = '';
@@ -716,58 +734,20 @@ const Contacts: React.FC = () => {
               <div className="bg-green-50 p-4 rounded-lg border border-green-100 flex items-start">
                   <RefreshCw className="text-green-600 mt-1 mr-3 flex-shrink-0" size={20} />
                   <p className="text-sm text-green-800">
-                      Esta ação irá buscar mensagens antigas e novos contatos que conversaram com o número conectado.
+                      Esta ação irá buscar contatos e histórico de conversas diretamente do dispositivo WhatsApp conectado.
                   </p>
               </div>
 
               <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Período de Sincronização</label>
-                  <div className="grid grid-cols-2 gap-4">
-                      <div>
-                          <label className="block text-xs text-gray-500 mb-1">De:</label>
-                          <input 
-                              type="date" 
-                              className="w-full border rounded p-2 text-sm bg-white"
-                              value={syncConfig.startDate}
-                              onChange={e => setSyncConfig({...syncConfig, startDate: e.target.value})}
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500 mb-1">Até:</label>
-                          <input 
-                              type="date" 
-                              className="w-full border rounded p-2 text-sm bg-white"
-                              value={syncConfig.endDate}
-                              onChange={e => setSyncConfig({...syncConfig, endDate: e.target.value})}
-                          />
-                      </div>
-                  </div>
-              </div>
-
-              <div className="space-y-2">
-                  <label className="flex items-center space-x-2">
-                      <input 
-                          type="checkbox" 
-                          checked={syncConfig.syncHistory}
-                          onChange={e => setSyncConfig({...syncConfig, syncHistory: e.target.checked})}
-                          className="rounded text-green-600 focus:ring-green-500"
-                      />
-                      <span className="text-sm text-gray-700">Baixar histórico de mensagens</span>
-                  </label>
-                  <label className="flex items-center space-x-2">
-                      <input 
-                          type="checkbox" 
-                          checked={syncConfig.syncNewContacts}
-                          onChange={e => setSyncConfig({...syncConfig, syncNewContacts: e.target.checked})}
-                          className="rounded text-green-600 focus:ring-green-500"
-                      />
-                      <span className="text-sm text-gray-700">Adicionar novos contatos encontrados</span>
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Ação do Servidor</label>
+                  <p className="text-xs text-gray-500 mb-2">
+                      O sistema irá baixar os chats recentes e atualizar a base de contatos automaticamente. Isso pode levar alguns segundos.
+                  </p>
               </div>
 
               <div className="flex justify-end pt-4">
                   <button onClick={performSync} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm font-medium flex items-center">
-                      <RefreshCw size={16} className="mr-2" /> Iniciar Sincronização
+                      <RefreshCw size={16} className="mr-2" /> Iniciar Sincronização Agora
                   </button>
               </div>
           </div>
@@ -782,7 +762,7 @@ const Contacts: React.FC = () => {
               >
                   <Upload size={40} className="mx-auto text-gray-400 mb-3" />
                   <p className="text-sm font-medium text-gray-900">Clique para selecionar o arquivo CSV</p>
-                  <p className="text-xs text-gray-500 mt-1">Formato: Nome, Telefone, Email, Empresa, Tags</p>
+                  <p className="text-xs text-gray-500 mt-1">Formato: ID, Nome, Telefone, Email, Empresa, Tags</p>
                   <input 
                       type="file" 
                       className="hidden" 
@@ -794,9 +774,11 @@ const Contacts: React.FC = () => {
               
               <div className="bg-blue-50 p-3 rounded text-left border border-blue-100">
                   <p className="text-xs text-blue-800 font-bold mb-1 flex items-center"><FileSpreadsheet size={14} className="mr-1"/> Dica:</p>
-                  <p className="text-xs text-blue-700">
-                      Certifique-se de que os números de telefone incluam o código do país (ex: 5511999999999) para integração correta com o WhatsApp.
-                  </p>
+                  <ul className="text-xs text-blue-700 list-disc pl-4 space-y-1">
+                      <li>Use o cabeçalho: <code>ID,Nome,Telefone,Email,Empresa,Tags</code></li>
+                      <li>A coluna <strong>ID</strong> será ignorada (o sistema gera automaticamente).</li>
+                      <li>Separe múltiplas <strong>Tags</strong> por vírgula dentro da mesma célula (ex: "Cliente,VIP").</li>
+                  </ul>
               </div>
           </div>
       </Modal>
