@@ -32,7 +32,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   // WhatsApp Configuration State
   const [waConfig, setWaConfig] = useState({
       apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
-      apiKey: localStorage.getItem('wa_api_key') || '429683C4C977415CAAFCCE10F7D57E11',
+      apiKey: localStorage.getItem('wa_api_key') || '64EA06725633-4DBC-A2ED-F469AA0CDD14', // Updated Key
       instanceName: localStorage.getItem('wa_instance_name') || 'Whats-6010'
   });
 
@@ -53,7 +53,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     setQrCodeData(whatsappService.getQrCode());
     setConnectionLogs(whatsappService.getLogs());
 
-    // 2. Subscribe to status changes
+    // 2. FORCE CHECK REAL CONNECTION (Fix for persistence issue)
+    whatsappService.checkConnection();
+
+    // 3. Subscribe to status changes
     const handleStatusChange = (status: WhatsAppStatus) => {
         setWhatsappStatus(status);
         if (status === 'connected') {

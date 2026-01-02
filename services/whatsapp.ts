@@ -17,12 +17,13 @@ class WhatsAppService {
   // Configuration (Updated defaults based on user screenshot)
   private config: WhatsAppConfig = {
     apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
-    apiKey: localStorage.getItem('wa_api_key') || '429683C4C977415CAAFCCE10F7D57E11',
+    apiKey: localStorage.getItem('wa_api_key') || '64EA06725633-4DBC-A2ED-F469AA0CDD14', // Updated Key
     instanceName: localStorage.getItem('wa_instance_name') || 'Whats-6010'
   };
 
   constructor() {
-    // Initialize
+    // Initialize - Auto check on boot
+    this.checkConnection();
   }
 
   // --- Public API ---
@@ -61,6 +62,32 @@ class WhatsAppService {
 
   public getLogs(): string[] {
     return this.logs;
+  }
+
+  // --- Check Connection State (Persistence Fix) ---
+  public async checkConnection(): Promise<void> {
+      if (!this.config.apiUrl || !this.config.apiKey) return;
+
+      try {
+          // Check silently without changing status to 'connecting' UI yet
+          const response = await this.fetchApi(`/instance/connectionState/${this.config.instanceName}`);
+          const state = response?.instance?.state || response?.state;
+
+          if (state === 'open') {
+              this.updateStatus('connected');
+              this.startMessagePolling(); // Ensure sync is active
+          } else {
+              // Only set to disconnected if we are not in a middle of a process
+              if (this.status !== 'connecting' && this.status !== 'qr_ready') {
+                  this.updateStatus('disconnected');
+              }
+          }
+      } catch (error) {
+          // If instance doesn't exist (404), it's disconnected
+          if (this.status !== 'connecting') {
+             this.updateStatus('disconnected');
+          }
+      }
   }
 
   // --- Real Connection Logic (Evolution API v2) ---
