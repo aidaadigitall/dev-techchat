@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Activity, CheckCircle, XCircle, RefreshCw, Shield, Globe, Key } from 'lucide-react';
+import { Database, Activity, CheckCircle, XCircle, RefreshCw, Shield, Globe, Key, HelpCircle, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 const SuperAdminDatabase: React.FC = () => {
@@ -50,7 +50,6 @@ const SuperAdminDatabase: React.FC = () => {
 
     try {
       // Simple query to check connection (fetch 1 row from a system table or auth)
-      // We use auth.getSession because it's always available even without tables created
       const { error } = await supabase.auth.getSession();
       
       const end = performance.now();
@@ -71,9 +70,9 @@ const SuperAdminDatabase: React.FC = () => {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-             <Database className="mr-3 text-green-600" size={28} /> Status do Sistema (Supabase)
+             <Database className="mr-3 text-green-600" size={28} /> Banco de Dados & Ambiente
           </h1>
-          <p className="text-gray-500 mt-1">Diagnóstico de conectividade com a nuvem.</p>
+          <p className="text-gray-500 mt-1">Status da conexão e variáveis de ambiente.</p>
         </div>
         
         <button 
@@ -86,15 +85,15 @@ const SuperAdminDatabase: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         
         {/* Connection Status Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full">
            <h3 className="font-bold text-gray-800 mb-6 flex items-center">
               <Activity size={20} className="mr-2 text-purple-600" /> Saúde da Conexão
            </h3>
 
-           <div className="space-y-6">
+           <div className="space-y-6 flex-1">
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
                  <div className="flex items-center">
                     <div className={`p-2 rounded-full mr-4 ${status === 'success' ? 'bg-green-100 text-green-600' : status === 'error' ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-500'}`}>
@@ -136,14 +135,34 @@ const SuperAdminDatabase: React.FC = () => {
                     )}
                  </div>
               </div>
+              
+              {!envCheck.url && status === 'success' && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 flex items-start">
+                      <HelpCircle size={16} className="mr-2 flex-shrink-0 mt-0.5" />
+                      <div>
+                          <strong>Aviso:</strong> O sistema está conectado usando credenciais de <em>fallback</em> (teste). 
+                          Para conectar ao seu banco de dados real, configure o arquivo <code>.env</code> conforme instruções ao lado.
+                      </div>
+                  </div>
+              )}
            </div>
         </div>
 
         {/* Environment Config Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-           <h3 className="font-bold text-gray-800 mb-6 flex items-center">
-              <Shield size={20} className="mr-2 text-blue-600" /> Configuração de Ambiente
-           </h3>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full">
+           <div className="flex justify-between items-center mb-6">
+               <h3 className="font-bold text-gray-800 flex items-center">
+                  <Shield size={20} className="mr-2 text-blue-600" /> Variáveis de Ambiente (.env)
+               </h3>
+               <a 
+                 href="https://supabase.com/dashboard/project/_/settings/api" 
+                 target="_blank" 
+                 rel="noopener noreferrer"
+                 className="text-xs text-blue-600 hover:underline flex items-center font-medium"
+               >
+                 Abrir Supabase <ExternalLink size={10} className="ml-1" />
+               </a>
+           </div>
 
            <div className="space-y-4">
               <div className="flex items-center justify-between pb-4 border-b border-gray-100">
@@ -170,13 +189,24 @@ const SuperAdminDatabase: React.FC = () => {
                  )}
               </div>
 
-              <div className="mt-4 p-4 bg-blue-50 text-blue-800 text-xs rounded-lg leading-relaxed">
-                 <strong className="block mb-1">Como corrigir "Ausente":</strong>
-                 Crie um arquivo chamado <code>.env</code> na raiz do projeto e adicione as chaves abaixo. Reinicie o servidor após salvar.
-                 <div className="mt-2 p-2 bg-gray-900 text-green-400 font-mono rounded overflow-x-auto">
-                    VITE_SUPABASE_URL=sua-url<br/>
-                    VITE_SUPABASE_ANON_KEY=sua-chave
+              <div className="mt-4 p-4 bg-slate-50 text-slate-700 text-xs rounded-lg leading-relaxed border border-slate-200">
+                 <strong className="block mb-2 text-sm text-slate-900 flex items-center">
+                    <Key size={14} className="mr-1" /> Onde encontrar esses dados?
+                 </strong>
+                 <ol className="list-decimal pl-4 space-y-1.5 mb-3">
+                    <li>Acesse o painel do Supabase e selecione seu projeto.</li>
+                    <li>Vá em <strong>Settings (Engrenagem)</strong> {'>'} <strong>API</strong>.</li>
+                    <li>Copie o valor de <strong>Project URL</strong>.</li>
+                    <li>Copie o valor de <strong>anon public</strong> key.</li>
+                 </ol>
+                 <div className="bg-slate-900 text-green-400 font-mono p-3 rounded overflow-x-auto relative group">
+                    <div>VITE_SUPABASE_URL=https://seu-projeto.supabase.co</div>
+                    <div>VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...</div>
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-gray-500">Exemplo</div>
                  </div>
+                 <p className="mt-2 text-slate-500 italic">
+                    Copie e envie esses dados para o desenvolvedor ou crie o arquivo <code>.env</code> na raiz.
+                 </p>
               </div>
            </div>
         </div>

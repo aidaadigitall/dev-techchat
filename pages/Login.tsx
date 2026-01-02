@@ -89,7 +89,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       if (signUpError) {
          // Se erro for "User already registered", significa que o login falhou mas o registro diz que existe.
          if (signUpError.message.includes('already registered')) {
-             throw new Error("O usuário já existe. Se não consegue logar, vá no Supabase > Users, delete o usuário 'escinformaticago@gmail.com' e tente novamente.");
+             throw new Error("O usuário já existe. Tente logar normalmente. Se a senha estiver errada, delete o usuário no Supabase.");
          }
          // DETECT SIGNUP DISABLED ERROR
          if (signUpError.message.includes('Signups not allowed for this instance')) {
@@ -108,7 +108,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
          // Sucesso total (Login automático pós-registro)
          onLoginSuccess(signUpData.session);
       } else if (signUpData.user) {
-         setError("Conta criada! Se não entrou automaticamente, verifique se 'Confirm Email' está realmente desativado em Authentication > Providers > Email.");
+         setError("Conta criada! Tente fazer login agora. Se não funcionar, verifique se 'Confirm Email' está desativado no Supabase.");
          setLoading(false);
       }
 
@@ -280,8 +280,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
              <div className="mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800 flex items-start animate-fadeIn">
                 <Database size={18} className="mr-2 flex-shrink-0 mt-0.5 text-yellow-600" />
                 <span>
-                   <strong>Configuração Necessária:</strong> As variáveis de ambiente do Supabase não foram detectadas. 
-                   Configure <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_ANON_KEY</code> no seu arquivo <code>.env</code> para conectar ao banco de dados.
+                   <strong>Configuração Necessária:</strong> Variáveis do Supabase ausentes.
+                   Verifique o arquivo <code>.env</code> na raiz do projeto.
                 </span>
              </div>
            )}
@@ -354,18 +354,18 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                       />
                    </div>
                    
-                   {/* ACTION BUTTONS ROW */}
+                   {/* Link esqueceu senha e Botão de Criar Admin */}
                    <div className="flex justify-between items-center mt-3">
+                      <a href="#" className="text-xs font-medium text-gray-500 hover:text-gray-700">Esqueceu a senha?</a>
+                      
                       <button 
                         type="button" 
                         onClick={handleFirstTimeAdmin}
-                        className="text-xs font-bold text-purple-600 hover:text-purple-800 uppercase tracking-wide flex items-center bg-purple-50 px-2 py-1 rounded hover:bg-purple-100 transition-colors"
-                        title="Cria automaticamente a conta escinformaticago@gmail.com"
+                        className="text-[10px] font-bold text-purple-600 hover:text-purple-800 uppercase tracking-wide flex items-center bg-purple-50 px-2 py-1 rounded hover:bg-purple-100 transition-colors"
+                        title="Tenta criar a conta escinformaticago@gmail.com caso ela ainda não exista"
                       >
-                        <ShieldCheck size={12} className="mr-1" /> Primeiro Acesso Admin?
+                        <ShieldCheck size={12} className="mr-1" /> Criar Admin (Se não possuir)
                       </button>
-                      
-                      <a href="#" className="text-xs font-medium text-gray-500 hover:text-gray-700">Esqueceu a senha?</a>
                    </div>
                 </div>
 
