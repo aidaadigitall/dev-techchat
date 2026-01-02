@@ -31,7 +31,7 @@ const getEnv = (key: string) => {
 const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
 
-// Hardcoded fallbacks provided
+// Hardcoded fallbacks provided by user
 const FALLBACK_URL = 'https://uzrflpyexjxaztmqwifa.supabase.co';
 const FALLBACK_KEY = 'sb_publishable_gVgH65ce4ky8v2acrg5tSQ_h79S6YiH';
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { Branding } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck, Terminal, ExternalLink } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck, Terminal, ExternalLink, Eye, EyeOff } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
@@ -23,7 +23,11 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
 
+  // UI State
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  
   const [error, setError] = useState<string | null>(null);
   const [dbErrorHelp, setDbErrorHelp] = useState(false);
   const [signupDisabledHelp, setSignupDisabledHelp] = useState(false);
@@ -345,13 +349,21 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                          <Lock size={18} />
                       </div>
                       <input 
-                        type="password" 
+                        type={showPassword ? "text" : "password"} 
                         required
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
+                        className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                       />
+                      <button 
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer focus:outline-none"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                    </div>
                    
                    {/* Link esqueceu senha e Botão de Criar Admin */}
@@ -452,14 +464,24 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
                 <div>
                    <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                   <input 
-                     type="password" 
-                     required 
-                     className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                     placeholder="Criar senha segura" 
-                     value={regPassword} 
-                     onChange={e => setRegPassword(e.target.value)} 
-                   />
+                   <div className="relative">
+                      <input 
+                        type={showRegPassword ? "text" : "password"} 
+                        required 
+                        className="w-full border border-gray-300 rounded-lg p-2.5 pr-10 text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
+                        placeholder="Criar senha segura" 
+                        value={regPassword} 
+                        onChange={e => setRegPassword(e.target.value)} 
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setShowRegPassword(!showRegPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer focus:outline-none"
+                        tabIndex={-1}
+                      >
+                        {showRegPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                   </div>
                 </div>
 
                 <button 
