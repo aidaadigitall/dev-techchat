@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { Branding } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck, Terminal } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck, Terminal, ExternalLink } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
@@ -26,6 +26,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dbErrorHelp, setDbErrorHelp] = useState(false);
+  const [signupDisabledHelp, setSignupDisabledHelp] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [dbConfigured, setDbConfigured] = useState(true);
 
@@ -45,6 +46,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     setLoading(true);
     setError(null);
     setDbErrorHelp(false);
+    setSignupDisabledHelp(false);
     setSuccessMsg(null);
     
     // Credenciais solicitadas
@@ -86,9 +88,13 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
       if (signUpError) {
          // Se erro for "User already registered", significa que o login falhou mas o registro diz que existe.
-         // Geralmente isso acontece se a senha mudou ou se o usuário está travado.
          if (signUpError.message.includes('already registered')) {
              throw new Error("O usuário já existe. Se não consegue logar, vá no Supabase > Users, delete o usuário 'escinformaticago@gmail.com' e tente novamente.");
+         }
+         // DETECT SIGNUP DISABLED ERROR
+         if (signUpError.message.includes('Signups not allowed for this instance')) {
+             setSignupDisabledHelp(true);
+             throw new Error("Bloqueio de Segurança: Cadastros desativados no Supabase.");
          }
          // DETECT MISSING TABLES ERROR
          if (signUpError.message.includes('Database error saving new user')) {
@@ -102,9 +108,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
          // Sucesso total (Login automático pós-registro)
          onLoginSuccess(signUpData.session);
       } else if (signUpData.user) {
-         // Usuário criado, mas requer confirmação de email (configuração do Supabase)
-         // Se a opção "Confirm Email" estiver desmarcada no Supabase, isso não deveria acontecer, 
-         // a menos que o Supabase esteja instável ou demorando.
          setError("Conta criada! Se não entrou automaticamente, verifique se 'Confirm Email' está realmente desativado em Authentication > Providers > Email.");
          setLoading(false);
       }
@@ -126,6 +129,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     setLoading(true);
     setError(null);
     setDbErrorHelp(false);
+    setSignupDisabledHelp(false);
     setSuccessMsg(null);
     
     try {
@@ -163,6 +167,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     setLoading(true);
     setError(null);
     setDbErrorHelp(false);
+    setSignupDisabledHelp(false);
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -182,6 +187,10 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
           if (error.message.includes('Database error saving new user')) {
              setDbErrorHelp(true);
              throw new Error("Erro crítico: Banco de dados incompleto.");
+          }
+          if (error.message.includes('Signups not allowed for this instance')) {
+             setSignupDisabledHelp(true);
+             throw new Error("Novos cadastros estão bloqueados no servidor.");
           }
           throw error;
       }
@@ -289,6 +298,17 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                         <p className="flex items-center"><Terminal size={12} className="mr-1"/> Solução: Execute o script SQL de criação no painel do Supabase.</p>
                     </div>
                 )}
+                {signupDisabledHelp && (
+                    <div className="mt-2 text-xs text-gray-600 bg-white p-2 rounded border border-red-100 w-full">
+                        <p className="mb-1"><strong>Solução:</strong></p>
+                        <ol className="list-decimal pl-4 space-y-1">
+                            <li>Vá no Supabase Dashboard &gt; Authentication.</li>
+                            <li>Clique em <strong>Configuration</strong> (ou Settings) &gt; <strong>General</strong>.</li>
+                            <li>Ative a opção: <strong>"Allow new user signups"</strong>.</li>
+                            <li>Tente novamente.</li>
+                        </ol>
+                    </div>
+                )}
              </div>
            )}
 
@@ -340,7 +360,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                         type="button" 
                         onClick={handleFirstTimeAdmin}
                         className="text-xs font-bold text-purple-600 hover:text-purple-800 uppercase tracking-wide flex items-center bg-purple-50 px-2 py-1 rounded hover:bg-purple-100 transition-colors"
-                        title="Cria automaticamente a conta escinformaticago@gmail.com se não existir"
+                        title="Cria automaticamente a conta escinformaticago@gmail.com"
                       >
                         <ShieldCheck size={12} className="mr-1" /> Primeiro Acesso Admin?
                       </button>
