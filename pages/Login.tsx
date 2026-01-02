@@ -47,12 +47,12 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     setDbErrorHelp(false);
     setSuccessMsg(null);
     
-    // ATUALIZADO: Email solicitado pelo usuário
+    // Credenciais solicitadas
     const adminEmail = 'escinformaticago@gmail.com';
     const adminPass = 'Esc@20200#';
 
     try {
-      // 1. Tenta logar primeiro (caso a conta já tenha sido criada antes)
+      // 1. Tenta logar primeiro (caso a conta já tenha sido criada antes e esteja OK)
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: adminEmail,
         password: adminPass,
@@ -65,11 +65,11 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
       // Se der erro de email não confirmado no login direto
       if (signInError && signInError.message.includes('Email not confirmed')) {
-          throw new Error("Email não confirmado. No Supabase, vá em Auth > Providers > Email e desative 'Confirm email'.");
+          throw new Error("Conta existe mas está pendente. Vá no painel Supabase > Authentication > Users, delete este usuário e clique neste botão novamente.");
       }
 
-      // 2. Se falhar o login (usuário não existe), tenta registrar
-      console.log("Login de admin falhou, tentando criar conta...", signInError?.message);
+      // 2. Se falhar o login (usuário não existe ou senha errada), tenta registrar
+      console.log("Tentando criar conta admin...", signInError?.message);
       
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: adminEmail,
@@ -85,14 +85,15 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       });
 
       if (signUpError) {
-         // Se erro for "User already registered", significa que a senha está errada
+         // Se erro for "User already registered", significa que o login falhou mas o registro diz que existe.
+         // Geralmente isso acontece se a senha mudou ou se o usuário está travado.
          if (signUpError.message.includes('already registered')) {
-             throw new Error("A conta admin já existe (verifique se a senha está correta ou se o email está confirmado).");
+             throw new Error("O usuário já existe. Se não consegue logar, vá no Supabase > Users, delete o usuário 'escinformaticago@gmail.com' e tente novamente.");
          }
          // DETECT MISSING TABLES ERROR
          if (signUpError.message.includes('Database error saving new user')) {
              setDbErrorHelp(true);
-             throw new Error("Erro de Banco de Dados: Tabelas ou Triggers inexistentes.");
+             throw new Error("Erro de Banco de Dados: As tabelas não foram criadas. Execute o script SQL no Supabase.");
          }
          throw signUpError;
       }
@@ -102,7 +103,9 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
          onLoginSuccess(signUpData.session);
       } else if (signUpData.user) {
          // Usuário criado, mas requer confirmação de email (configuração do Supabase)
-         setError("Conta criada, mas o Supabase exige confirmação de email. Vá no painel do Supabase > Authentication > Providers > Email e desative 'Confirm Email' para logar imediatamente.");
+         // Se a opção "Confirm Email" estiver desmarcada no Supabase, isso não deveria acontecer, 
+         // a menos que o Supabase esteja instável ou demorando.
+         setError("Conta criada! Se não entrou automaticamente, verifique se 'Confirm Email' está realmente desativado em Authentication > Providers > Email.");
          setLoading(false);
       }
 
@@ -143,7 +146,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       } else if (err.message.includes('Invalid login credentials')) {
           msg = 'Email ou senha incorretos.';
       } else if (err.message.includes('Email not confirmed')) {
-          msg = 'Email não confirmado. Desative a opção "Confirm Email" no painel do Supabase (Auth > Providers > Email).';
+          msg = 'Email pendente. Se já desativou a confirmação no Supabase, delete este usuário no painel (Auth > Users) e crie novamente.';
       }
       setError(msg);
       setLoading(false);
