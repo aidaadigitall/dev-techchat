@@ -853,7 +853,7 @@ const Tasks: React.FC = () => {
       </main>
 
       {/* Edit Task Modal */}
-      <Modal isOpen={activeModal} onClose={() => setActiveModal(false)} title="" size="lg">
+      <Modal isOpen={activeModal} onClose={() => setActiveModal(false)} title="" size="lg" isDark={isDark}>
          <div className={`space-y-4 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
             <div className="flex gap-2 mb-2">
                 <span className="text-xs border px-2 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">
@@ -937,7 +937,7 @@ const Tasks: React.FC = () => {
       </Modal>
 
       {/* AI Analyst Modal */}
-      <Modal isOpen={showAIModal} onClose={() => setShowAIModal(false)} title="IA Analista de Produtividade" size="md">
+      <Modal isOpen={showAIModal} onClose={() => setShowAIModal(false)} title="IA Analista de Produtividade" size="md" isDark={isDark}>
           {aiLoading ? (
               <div className="flex flex-col items-center justify-center py-10">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mb-4"></div>
