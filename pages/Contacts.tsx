@@ -38,6 +38,9 @@ const Contacts: React.FC = () => {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null); // Modern Alert State
 
+  // Import Feedback State
+  const [importFeedback, setImportFeedback] = useState<{success: number, skipped: number, errors: string[]} | null>(null);
+
   const [syncConfig, setSyncConfig] = useState({
       startDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0],
@@ -262,8 +265,8 @@ const Contacts: React.FC = () => {
       addToast('Exportação iniciada.', 'success');
   };
 
-  // Helper to parse CSV row respecting quotes
-  const parseCSVRow = (row: string) => {
+  // Helper to parse CSV row respecting quotes and delimiter
+  const parseCSVRow = (row: string, delimiter: string) => {
       const result = [];
       let current = '';
       let inQuotes = false;
@@ -271,7 +274,7 @@ const Contacts: React.FC = () => {
           const char = row[i];
           if (char === '"') {
               inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
+          } else if (char === delimiter && !inQuotes) {
               result.push(current.trim());
               current = '';
           } else {
@@ -288,6 +291,7 @@ const Contacts: React.FC = () => {
 
       setImportModalOpen(false);
       setLoading(true);
+      setImportFeedback(null);
 
       const reader = new FileReader();
       reader.onload = async (event) => {
@@ -298,18 +302,23 @@ const Contacts: React.FC = () => {
         }
 
         const lines = text.split(/\r\n|\n/);
-        // We know the format: ID,Nome,Telefone,Email,Empresa,Tags
+        
+        // Auto-detect delimiter from the first line
+        const headerLine = lines[0];
+        const delimiter = headerLine.includes(';') ? ';' : ',';
         
         const newContacts: Partial<Contact>[] = [];
+        const skippedRows: string[] = [];
 
+        // Start from 1 to skip header
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
 
-            const data = parseCSVRow(line);
+            const data = parseCSVRow(line, delimiter);
             
-            // Fixed mapping based on user request: ID,Nome,Telefone,Email,Empresa,Tags
-            // Index 0 = ID (Ignore), 1=Nome, 2=Telefone, 3=Email, 4=Empresa, 5=Tags
+            // Expected: ID, Nome, Telefone, Email, Empresa, Tags
+            // Index: 0, 1, 2, 3, 4, 5
             
             let name = data[1] || '';
             let phone = data[2] || '';
@@ -317,57 +326,69 @@ const Contacts: React.FC = () => {
             let company = data[4] || '';
             let tagsRaw = data[5] || '';
 
-            // Cleanup Phone (Remove non-digits)
-            if (phone) phone = phone.replace(/\D/g, ''); 
-
-            // Basic validation
-            if (name && phone) {
-                // Ensure DDI (55 for Brazil) if missing and length suggests it (10 or 11 digits)
-                if (phone.length === 10 || phone.length === 11) {
-                    phone = '55' + phone;
-                }
-
-                newContacts.push({
-                    name,
-                    phone,
-                    email,
-                    company, // Will be mapped to custom_fields.company in api.contacts.create
-                    tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t !== '') : [],
-                    status: 'open', 
-                    source: 'Importação CSV'
-                });
+            // If name is empty, try using ID column as fallback if ID looks like a name (common error)
+            // Or if data shifted
+            if (!name && data[0] && data[0].length > 3 && isNaN(Number(data[0]))) {
+               name = data[0];
             }
+
+            if (!phone) {
+               skippedRows.push(`Linha ${i + 1}: Telefone vazio (${name || 'Sem nome'})`);
+               continue;
+            }
+
+            if (!name) {
+               skippedRows.push(`Linha ${i + 1}: Nome vazio (${phone})`);
+               continue;
+            }
+
+            // Cleanup Phone (Remove non-digits)
+            phone = phone.replace(/\D/g, ''); 
+
+            if (phone.length < 8) {
+               skippedRows.push(`Linha ${i + 1}: Telefone inválido/curto (${phone})`);
+               continue;
+            }
+
+            // Ensure DDI (55 for Brazil) if missing and length suggests it (10 or 11 digits)
+            if (phone.length === 10 || phone.length === 11) {
+                phone = '55' + phone;
+            }
+
+            newContacts.push({
+                name,
+                phone,
+                email,
+                company, 
+                tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t !== '') : [],
+                status: 'open', 
+                source: 'Importação CSV'
+            });
         }
 
         let successCount = 0;
-        let errors = [];
+        let errors: string[] = [];
 
         for (const contact of newContacts) {
             try {
-                // Use API to create (handles upsert by phone internally)
-                // Now throws error if DB fails
                 await api.contacts.create(contact);
                 successCount++;
             } catch (err: any) {
                 console.error("Failed to import contact:", contact.name, err);
-                // Extract useful message from PostgrestError if available
                 const msg = err.message || err.details || 'Erro desconhecido';
                 errors.push(`${contact.name}: ${msg}`);
             }
         }
 
-        await loadContacts(); // Refresh list logic
+        await loadContacts(); 
         setLoading(false);
         
-        if (successCount > 0) {
-            addToast(`${successCount} contatos importados/atualizados com sucesso!`, 'success');
-        }
-        
-        if (errors.length > 0) {
-            // Show first 3 errors to avoid huge toast
-            const errorMsg = errors.slice(0, 3).join(' | ') + (errors.length > 3 ? `... e mais ${errors.length - 3}` : '');
-            addToast(`Falha ao importar ${errors.length} contatos: ${errorMsg}`, 'error');
-        }
+        // Show Detailed Feedback Modal
+        setImportFeedback({
+            success: successCount,
+            skipped: skippedRows.length,
+            errors: [...skippedRows, ...errors] // Combine parsing skips with DB errors
+        });
 
         if (importFileRef.current) importFileRef.current.value = '';
       };
@@ -624,8 +645,41 @@ const Contacts: React.FC = () => {
                   <ul className="text-xs text-blue-700 list-disc pl-4 space-y-1">
                       <li>O cabeçalho deve ser exatamente: <code>ID,Nome,Telefone,Email,Empresa,Tags</code></li>
                       <li>Use <strong>+55</strong> no telefone se possível (Ex: 5511999999999).</li>
-                      <li>ID é ignorado, mas a coluna deve existir.</li>
+                      <li>Suporta separação por <strong>vírgula (,)</strong> ou <strong>ponto e vírgula (;)</strong>.</li>
                   </ul>
+              </div>
+          </div>
+      </Modal>
+
+      {/* Import Feedback Modal */}
+      <Modal isOpen={!!importFeedback} onClose={() => setImportFeedback(null)} title="Relatório de Importação">
+          <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
+                      <h3 className="text-2xl font-bold text-green-700">{importFeedback?.success || 0}</h3>
+                      <p className="text-xs text-green-600 font-medium">Importados com Sucesso</p>
+                  </div>
+                  <div className={`p-4 rounded-lg border text-center ${importFeedback?.skipped ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                      <h3 className="text-2xl font-bold">{importFeedback?.skipped || 0}</h3>
+                      <p className="text-xs font-medium">Linhas Ignoradas</p>
+                  </div>
+              </div>
+
+              {importFeedback?.errors && importFeedback.errors.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <h4 className="text-xs font-bold text-gray-700 mb-2 flex items-center">
+                          <AlertTriangle size={12} className="mr-1 text-orange-500" /> Detalhes dos erros/ignorados:
+                      </h4>
+                      <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-1">
+                          {importFeedback.errors.map((err, idx) => (
+                              <p key={idx} className="text-xs text-red-600 border-b border-gray-100 pb-1 last:border-0">{err}</p>
+                          ))}
+                      </div>
+                  </div>
+              )}
+
+              <div className="flex justify-end pt-2">
+                  <button onClick={() => setImportFeedback(null)} className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm hover:bg-black">Fechar</button>
               </div>
           </div>
       </Modal>

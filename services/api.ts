@@ -168,19 +168,19 @@ export const api = {
         }
       };
       
-      // Manual "Upsert" to allow duplicate checking without DB constraints
-      // 1. Check if contact exists
+      // Manual "Upsert" logic to avoid "ON CONFLICT" errors if unique constraint is missing
+      // 1. Check if contact exists by phone
       const { data: existing } = await supabase
         .from('contacts')
         .select('id')
         .eq('phone', cleanPhone)
-        .maybeSingle(); // maybeSingle prevents errors if multiple or none
+        .maybeSingle();
 
-      let response;
+      let result;
 
       if (existing) {
         // 2. Update existing
-        response = await supabase
+        result = await supabase
           .from('contacts')
           .update(payload)
           .eq('id', existing.id)
@@ -188,15 +188,15 @@ export const api = {
           .single();
       } else {
         // 3. Create new
-        response = await supabase
+        result = await supabase
           .from('contacts')
           .insert(payload)
           .select()
           .single();
       }
 
-      if (response.error) throw response.error; 
-      return adaptContact(response.data);
+      if (result.error) throw result.error; 
+      return adaptContact(result.data);
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
       try {
@@ -372,12 +372,14 @@ export const api = {
     createCard: async (columnId: string, cardData: any) => {
         try {
             const company_id = await getCompanyId();
+            if (!company_id) throw new Error("Empresa não identificada");
+
             const { data, error } = await supabase.from('kanban_cards').insert({
                 company_id,
                 column_id: columnId,
                 title: cardData.title,
                 value: cardData.value,
-                contact_id: cardData.contactId,
+                contact_id: cardData.contactId || null, // Ensure explicit null if empty string
                 priority: cardData.priority,
                 tags: cardData.tags || []
             }).select().single();
