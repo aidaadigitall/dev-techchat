@@ -19,7 +19,7 @@ import { useToast } from '../components/ToastContext';
 
 const COMMON_EMOJIS = [
   "😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞", "👀", "🚀", "✨", "💯",
-  "😊", "🥺", "😭", "😤", "😴", "🤒", "🤒", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
+  "😊", "🥺", "😭", "😤", "🤒", "🤒", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
 ];
 
 const DEPARTMENTS = [
@@ -269,7 +269,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                  className="group relative flex items-center justify-center p-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors shadow-sm"
                >
                    <Plus size={20} />
-                   <span className="absolute top-full right-0 mt-2 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none">
+                   <span className="absolute top-full right-0 mt-2 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap">
                        Novo Atendimento
                    </span>
                </button>
