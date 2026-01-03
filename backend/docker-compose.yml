@@ -1,0 +1,58 @@
+
+version: '3.8'
+
+services:
+  # 1. API Gateway & Business Logic
+  api:
+    build: .
+    container_name: tech_backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - WHATSMEOW_URL=http://whatsmeow:8080
+    depends_on:
+      - redis
+      - whatsmeow
+    networks:
+      - tech_net
+
+  # 2. Redis for Queues (BullMQ)
+  redis:
+    image: redis:alpine
+    container_name: tech_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - tech_net
+
+  # 3. WhatsApp Engine (Standard)
+  # Nota: Substituir pela imagem oficial do seu microserviço Go ou wrapper HTTP
+  whatsmeow:
+    image: mikelue/whatsmeow-http-api:latest 
+    container_name: tech_whatsmeow
+    restart: always
+    volumes:
+      - whatsmeow_data:/app/db
+    networks:
+      - tech_net
+
+  # 4. Evolution API (Optional/Fallback) - Descomentar se for rodar local
+  # evolution:
+  #   image: atendai/evolution-api:v2.1.1
+  #   container_name: tech_evolution
+  #   networks:
+  #     - tech_net
+  #   environment:
+  #     - SERVER_URL=https://evolution.escsistemas.com
+
+networks:
+  tech_net:
+    driver: bridge
+
+volumes:
+  redis_data:
+  whatsmeow_data:
