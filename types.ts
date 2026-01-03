@@ -96,7 +96,7 @@ export interface Contact {
   lastMessage?: string;
   lastMessageTime?: string;
   unreadCount?: number;
-  status: 'open' | 'pending' | 'resolved';
+  status: 'open' | 'pending' | 'resolved' | 'saved'; // 'saved' = Apenas na base, sem ticket
   pipelineStage?: string; // ID of the kanban stage
   pipelineValue?: number;
   notes?: string;

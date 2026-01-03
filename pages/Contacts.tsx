@@ -207,7 +207,7 @@ const Contacts: React.FC = () => {
                 phone: rawContact.phone,
                 email: rawContact.email,
                 source: 'Importação CSV',
-                status: 'resolved' // FIXED: Import as resolved so they don't clog up the chat pending queue
+                status: 'saved' // STATUS 'SAVED' (Apenas na base, sem ticket gerado)
              });
              currentJob.successCount++;
           } else {
@@ -347,7 +347,7 @@ const Contacts: React.FC = () => {
       phone: '',
       email: '',
       tags: [],
-      status: 'pending',
+      status: 'saved', // Padrão: Salvo na base (não abre ticket)
       avatar: '',
       source: 'Indicação',
       role: '',
@@ -439,6 +439,7 @@ const Contacts: React.FC = () => {
           }
 
           // 2. Update contact sector/connection info (Simulated via update)
+          // CHANGE STATUS TO OPEN (This creates the ticket)
           await api.contacts.update(newChatForm.contactId, {
               status: 'open',
               // In a real app, you would pass sector/connection to backend here
@@ -606,7 +607,7 @@ const Contacts: React.FC = () => {
                   <th className="px-6 py-4">Nome</th>
                   <th className="px-6 py-4">Cargo / Empresa</th>
                   <th className="px-6 py-4">Contato (WhatsApp)</th>
-                  <th className="px-6 py-4">Origem</th>
+                  <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
@@ -648,7 +649,13 @@ const Contacts: React.FC = () => {
                       <div className="text-xs text-gray-400">{contact.email}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                       {contact.source ? <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full border border-blue-100">{contact.source}</span> : <span className="text-gray-400 text-xs">-</span>}
+                       {contact.status === 'saved' ? (
+                           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full border border-gray-200">Base</span>
+                       ) : contact.status === 'open' ? (
+                           <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-full border border-green-100">Em Aberto</span>
+                       ) : (
+                           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full border border-blue-100">{contact.source || 'Lead'}</span>
+                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
                       <button onClick={(e) => { e.stopPropagation(); setActionMenuOpenId(actionMenuOpenId === contact.id ? null : contact.id); }} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><MoreVertical size={18} /></button>

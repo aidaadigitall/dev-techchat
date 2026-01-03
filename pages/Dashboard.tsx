@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { DASHBOARD_STATS, MOCK_USERS } from '../constants';
 import { api } from '../services/api'; // Import API to fetch real data
@@ -80,10 +81,12 @@ const Dashboard: React.FC = () => {
             // 2. Update Stats Array with REAL numbers (no fake multipliers)
             const newStats = [...DASHBOARD_STATS];
             
-            // Total de Entradas (Assuming contacts is proxy for entries/conversations started)
+            // Total de Entradas (Atendimentos reais = Open + Resolved + Pending)
+            // Exclui 'saved' da contagem de tickets
+            const tickets = contacts.filter(c => c.status !== 'saved');
             newStats[0] = { 
                 ...newStats[0], 
-                value: contacts.length.toString(), 
+                value: tickets.length.toString(), 
                 change: '+Realtime' 
             }; 
 
@@ -102,11 +105,11 @@ const Dashboard: React.FC = () => {
                 change: 'Status: Aberto' 
             }; 
 
-            // Contatos Totais
+            // Contatos Totais (Base completa)
             newStats[3] = { 
                 ...newStats[3], 
                 value: contacts.length.toString(), 
-                change: '+Realtime' 
+                change: 'Base Completa' 
             };
 
             setStats(newStats);
