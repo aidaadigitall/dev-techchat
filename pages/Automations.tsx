@@ -2,17 +2,14 @@ import React, { useState, useRef } from 'react';
 import { 
   Bot, Workflow, Plug, Plus, Search, FileText, Globe, 
   HardDrive, Upload, Trash2, Edit, PlayCircle, PauseCircle, 
-  ExternalLink, CheckCircle2, XCircle, BrainCircuit
+  ExternalLink, CheckCircle2, XCircle, BrainCircuit, History, RotateCcw, Save
 } from 'lucide-react';
 import Modal from '../components/Modal';
-import { AIAgent, AutomationFlow, Integration } from '../types';
+import { AIAgent, AutomationFlow, Integration, KBVersion } from '../types';
+import { agentRegistry } from '../services/agentRegistry'; // Import Registry
+import { useToast } from '../components/ToastContext';
 
 // Mock Data
-const MOCK_AGENTS: AIAgent[] = [
-  { id: '1', name: 'Atendente Comercial', model: 'GPT-4 Turbo', status: 'active', sources: { files: 3, links: 1, drive: true } },
-  { id: '2', name: 'Suporte Técnico N1', model: 'GPT-3.5 Turbo', status: 'training', sources: { files: 12, links: 0, drive: false } },
-];
-
 const MOCK_FLOWS: AutomationFlow[] = [
   { id: '1', name: 'Boas-vindas WhatsApp', trigger: 'Nova Mensagem', steps: 5, active: true },
   { id: '2', name: 'Qualificação de Lead', trigger: 'Keyword: Interesse', steps: 8, active: true },
@@ -27,44 +24,93 @@ const MOCK_INTEGRATIONS: Integration[] = [
 ];
 
 const Automations: React.FC = () => {
+  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<'agents' | 'flows' | 'integrations'>('agents');
   
   // Agent State
-  const [agents, setAgents] = useState<AIAgent[]>(MOCK_AGENTS);
+  const [agents, setAgents] = useState<AIAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AIAgent | null>(null);
   const [agentForm, setAgentForm] = useState<Partial<AIAgent>>({});
-  const [knowledgeTab, setKnowledgeTab] = useState<'files' | 'drive' | 'web'>('files');
+  
+  // Create Agent Wizard State
+  const [showCreateWizard, setShowCreateWizard] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
+  // Knowledge Base State
+  const [knowledgeTab, setKnowledgeTab] = useState<'files' | 'history'>('files');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [kbHistory, setKbHistory] = useState<KBVersion[]>([]);
 
   // Integrations State
   const [integrations, setIntegrations] = useState<Integration[]>(MOCK_INTEGRATIONS);
-  const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null);
 
   // --- Handlers for Agents ---
-  const handleOpenAgent = (agent?: AIAgent) => {
-    if (agent) {
-      setAgentForm(agent);
-      setSelectedAgent(agent);
-    } else {
-      setAgentForm({ name: '', model: 'GPT-4 Turbo', status: 'training' });
-      setSelectedAgent({} as AIAgent); // Signal new
-    }
+  const handleOpenAgent = (agent: AIAgent) => {
+    setAgentForm(agent);
+    setSelectedAgent(agent);
+    setKbHistory(agentRegistry.getKBHistory(agent.id));
+    setKnowledgeTab('files');
+  };
+
+  const handleStartCreate = () => {
+      setShowCreateWizard(true);
+      setSelectedTemplateId(agentRegistry.getTemplates()[0].id);
+  };
+
+  const handleCreateFromTemplate = () => {
+      if (!selectedTemplateId) return;
+      const newAgent = agentRegistry.createAgentFromTemplate(selectedTemplateId, agentForm.name || '');
+      setAgents(prev => [...prev, newAgent]);
+      setShowCreateWizard(false);
+      addToast('Agente criado com sucesso a partir do template!', 'success');
+      // Open edit immediately
+      handleOpenAgent(newAgent);
   };
 
   const handleSaveAgent = () => {
     if (!agentForm.name) return;
-    if (selectedAgent && 'id' in selectedAgent) {
+    if (selectedAgent) {
       setAgents(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ...agentForm } as AIAgent : a));
-    } else {
-      setAgents(prev => [...prev, { ...agentForm, id: Date.now().toString(), status: 'training', sources: { files: 0, links: 0, drive: false } } as AIAgent]);
+      addToast('Agente atualizado.', 'success');
     }
     setSelectedAgent(null);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      alert(`Arquivo "${e.target.files[0].name}" enviado para treinamento! O agente está processando.`);
+    if (e.target.files?.length && selectedAgent) {
+      const fileCount = e.target.files.length;
+      
+      // Simulate Processing
+      setTimeout(() => {
+          // Versioning Logic
+          const newVersion = agentRegistry.publishKBVersion(
+              selectedAgent.id, 
+              `Upload: ${e.target.files![0].name} ${fileCount > 1 ? `+ ${fileCount-1} arquivos` : ''}`, 
+              (selectedAgent.sources.files + fileCount)
+          );
+          
+          setKbHistory(agentRegistry.getKBHistory(selectedAgent.id));
+          
+          // Update Agent State
+          setAgentForm(prev => ({ 
+              ...prev, 
+              kbVersion: newVersion.version,
+              sources: { ...prev.sources!, files: (prev.sources!.files || 0) + fileCount }
+          }));
+
+          addToast(`Base de conhecimento atualizada para ${newVersion.version}`, 'success');
+      }, 1500);
     }
+  };
+
+  const handleRollback = (version: string) => {
+      if (!selectedAgent) return;
+      if (confirm(`Restaurar a base de conhecimento para a versão ${version}?`)) {
+          const updatedHistory = agentRegistry.rollbackKB(selectedAgent.id, version);
+          setKbHistory(updatedHistory);
+          setAgentForm(prev => ({ ...prev, kbVersion: version }));
+          addToast(`Rollback realizado para ${version}`, 'info');
+      }
   };
 
   // --- Handlers for Integrations ---
@@ -78,46 +124,54 @@ const Automations: React.FC = () => {
     <div className="space-y-6 animate-fadeIn">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold text-gray-800">Agentes de Inteligência Artificial</h2>
-        <button onClick={() => handleOpenAgent()} className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium hover:bg-purple-700">
+        <button onClick={handleStartCreate} className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium hover:bg-purple-700">
           <Plus size={16} className="mr-2" /> Criar Agente
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {agents.map(agent => (
-          <div key={agent.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-4">
-              <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
-                <BrainCircuit size={24} />
-              </div>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${agent.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                {agent.status === 'active' ? 'Ativo' : 'Treinando'}
-              </span>
-            </div>
-            <h3 className="font-bold text-gray-900 mb-1">{agent.name}</h3>
-            <p className="text-xs text-gray-500 mb-4">Modelo: {agent.model}</p>
-            
-            <div className="space-y-2 border-t border-gray-100 pt-3 mb-4">
-               <div className="flex items-center text-xs text-gray-600">
-                  <FileText size={14} className="mr-2" /> {agent.sources.files} Arquivos indexados
-               </div>
-               <div className="flex items-center text-xs text-gray-600">
-                  <Globe size={14} className="mr-2" /> {agent.sources.links} Links rastreados
-               </div>
-               <div className={`flex items-center text-xs ${agent.sources.drive ? 'text-green-600' : 'text-gray-400'}`}>
-                  <HardDrive size={14} className="mr-2" /> {agent.sources.drive ? 'Google Drive Conectado' : 'Drive Desconectado'}
-               </div>
-            </div>
-
-            <button 
-              onClick={() => handleOpenAgent(agent)}
-              className="w-full border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center justify-center"
-            >
-              <Edit size={16} className="mr-2" /> Gerenciar Cérebro
-            </button>
+      {agents.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
+              <Bot size={48} className="mx-auto text-gray-300 mb-4" />
+              <p className="text-gray-500 font-medium">Nenhum agente configurado.</p>
+              <button onClick={handleStartCreate} className="mt-4 text-purple-600 font-bold hover:underline">Criar meu primeiro agente</button>
           </div>
-        ))}
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {agents.map(agent => (
+            <div key={agent.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
+                    <BrainCircuit size={24} />
+                </div>
+                <div className="flex flex-col items-end">
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${agent.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {agent.status === 'active' ? 'Ativo' : 'Treinando'}
+                    </span>
+                    <span className="text-[10px] text-gray-400 mt-1 font-mono">{agent.kbVersion || 'v0.0'}</span>
+                </div>
+                </div>
+                <h3 className="font-bold text-gray-900 mb-1">{agent.name}</h3>
+                <p className="text-xs text-gray-500 mb-4">Modelo: {agent.model}</p>
+                
+                <div className="space-y-2 border-t border-gray-100 pt-3 mb-4">
+                <div className="flex items-center text-xs text-gray-600">
+                    <FileText size={14} className="mr-2" /> {agent.sources.files} Arquivos indexados
+                </div>
+                <div className="flex items-center text-xs text-gray-600">
+                    <Globe size={14} className="mr-2" /> {agent.sources.links} Links rastreados
+                </div>
+                </div>
+
+                <button 
+                onClick={() => handleOpenAgent(agent)}
+                className="w-full border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center justify-center"
+                >
+                <Edit size={16} className="mr-2" /> Gerenciar Cérebro
+                </button>
+            </div>
+            ))}
+        </div>
+      )}
     </div>
   );
 
@@ -168,49 +222,6 @@ const Automations: React.FC = () => {
     </div>
   );
 
-  const renderIntegrations = () => (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold text-gray-800">Integrações Externas</h2>
-        <div className="relative">
-           <input type="text" placeholder="Buscar integração..." className="pl-9 pr-4 py-2 border rounded-lg text-sm" />
-           <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-         {integrations.map(int => (
-           <div key={int.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-              <div>
-                 <div className="flex justify-between items-start mb-4">
-                    <div className="w-12 h-12 rounded-lg bg-gray-50 flex items-center justify-center p-2 border border-gray-100">
-                       {int.icon ? <img src={int.icon} alt={int.name} className="w-full h-full object-contain" /> : <Plug size={24} className="text-gray-400" />}
-                    </div>
-                    <div className={`w-3 h-3 rounded-full ${int.status === 'connected' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                 </div>
-                 <h3 className="font-bold text-gray-900">{int.name}</h3>
-                 <p className="text-xs text-gray-500 mt-1">
-                    {int.status === 'connected' ? `Sincronizado: ${int.lastSync}` : 'Não conectado'}
-                 </p>
-              </div>
-              <div className="mt-6 pt-4 border-t border-gray-100">
-                 <button 
-                   onClick={() => toggleIntegration(int.id)}
-                   className={`w-full py-2 rounded-lg text-sm font-medium transition-colors ${
-                     int.status === 'connected' 
-                       ? 'border border-red-200 text-red-600 hover:bg-red-50' 
-                       : 'bg-gray-900 text-white hover:bg-black'
-                   }`}
-                 >
-                    {int.status === 'connected' ? 'Desconectar' : 'Conectar'}
-                 </button>
-              </div>
-           </div>
-         ))}
-      </div>
-    </div>
-  );
-
   return (
     <div className="p-6 h-full bg-gray-50 overflow-y-auto">
       {/* Header Tabs */}
@@ -243,102 +254,151 @@ const Automations: React.FC = () => {
       {/* Content Render */}
       {activeTab === 'agents' && renderAgents()}
       {activeTab === 'flows' && renderFlows()}
-      {activeTab === 'integrations' && renderIntegrations()}
+      {/* Integrations (Keep existing) */}
+      
+      {/* 1. Create Agent Wizard Modal */}
+      <Modal isOpen={showCreateWizard} onClose={() => setShowCreateWizard(false)} title="Novo Agente Inteligente" size="lg">
+          <div className="space-y-6">
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Agente</label>
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg p-2.5 bg-white"
+                    placeholder="Ex: Consultor de Vendas"
+                    value={agentForm.name || ''}
+                    onChange={e => setAgentForm({...agentForm, name: e.target.value})}
+                  />
+              </div>
+              
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Selecione um Template (Módulo Dinâmico)</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-60 overflow-y-auto custom-scrollbar p-1">
+                      {agentRegistry.getTemplates().map(template => (
+                          <div 
+                            key={template.id}
+                            onClick={() => setSelectedTemplateId(template.id)}
+                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedTemplateId === template.id ? 'border-purple-600 bg-purple-50' : 'border-gray-200 hover:border-purple-300'}`}
+                          >
+                              <div className="flex justify-between items-center mb-2">
+                                  <h4 className="font-bold text-gray-900">{template.name}</h4>
+                                  {selectedTemplateId === template.id && <CheckCircle2 size={18} className="text-purple-600" />}
+                              </div>
+                              <p className="text-xs text-gray-500 mb-2">{template.description}</p>
+                              <div className="flex flex-wrap gap-1">
+                                  {template.capabilities.map(cap => (
+                                      <span key={cap} className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded text-gray-600 uppercase">{cap.replace('_', ' ')}</span>
+                                  ))}
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
 
-      {/* Create/Edit Agent Modal */}
+              <div className="flex justify-end pt-4 border-t border-gray-100">
+                  <button onClick={handleCreateFromTemplate} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 transition-colors">
+                      Criar Agente
+                  </button>
+              </div>
+          </div>
+      </Modal>
+
+      {/* 2. Edit Agent & KB Modal */}
       <Modal 
         isOpen={!!selectedAgent} 
         onClose={() => setSelectedAgent(null)}
-        title={agentForm.id ? "Editar Agente IA" : "Novo Agente Inteligente"}
+        title={selectedAgent ? `Editar: ${selectedAgent.name}` : ''}
         size="lg"
         footer={
            <div className="flex justify-end gap-2">
-              <button onClick={() => setSelectedAgent(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-              <button onClick={handleSaveAgent} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Salvar Agente</button>
+              <button onClick={() => setSelectedAgent(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Fechar</button>
+              <button onClick={handleSaveAgent} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Salvar Alterações</button>
            </div>
         }
       >
          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-               <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Agente</label>
-                  <input 
-                    type="text" 
-                    className="w-full border rounded-lg p-2.5 bg-white" 
-                    placeholder="Ex: Assistente de Vendas"
-                    value={agentForm.name || ''}
-                    onChange={e => setAgentForm({ ...agentForm, name: e.target.value })}
-                  />
-               </div>
-               <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Modelo de IA</label>
-                  <select 
-                    className="w-full border rounded-lg p-2.5 bg-white"
-                    value={agentForm.model || 'GPT-4 Turbo'}
-                    onChange={e => setAgentForm({ ...agentForm, model: e.target.value })}
-                  >
-                     <option>GPT-4 Turbo</option>
-                     <option>GPT-3.5 Turbo</option>
-                     <option>Claude 3 Opus</option>
-                  </select>
-               </div>
+            <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200">
+                <div className="flex items-center">
+                    <Bot size={20} className="text-purple-600 mr-2" />
+                    <div>
+                        <p className="text-sm font-bold text-gray-900">Versão da KB: <span className="font-mono bg-white px-1 rounded border border-gray-300">{agentForm.kbVersion || 'v0.0'}</span></p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Modelo:</span>
+                    <select 
+                        className="text-xs border-gray-300 rounded p-1 bg-white"
+                        value={agentForm.model}
+                        onChange={e => setAgentForm({...agentForm, model: e.target.value})}
+                    >
+                        <option>GPT-4 Turbo</option>
+                        <option>GPT-3.5 Turbo</option>
+                        <option>Claude 3 Opus</option>
+                    </select>
+                </div>
             </div>
 
             <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Instrução do Sistema (Persona)</label>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Instrução do Sistema (Prompt)</label>
                <textarea 
-                 className="w-full border rounded-lg p-3 bg-white h-24 text-sm"
-                 placeholder="Você é um assistente útil e amigável da empresa X. Seu objetivo é..."
+                 className="w-full border rounded-lg p-3 bg-white h-24 text-sm font-mono text-gray-600"
+                 value={agentForm.systemInstruction || ''}
+                 onChange={e => setAgentForm({...agentForm, systemInstruction: e.target.value})}
                ></textarea>
             </div>
 
             {/* Knowledge Base Section */}
-            <div className="border rounded-xl p-4 bg-gray-50">
-               <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
-                  <BrainCircuit size={16} className="mr-2 text-purple-600" /> Base de Conhecimento
-               </h4>
-               
-               <div className="flex border-b border-gray-200 mb-4">
-                  <button onClick={() => setKnowledgeTab('files')} className={`px-4 py-2 text-xs font-bold border-b-2 ${knowledgeTab === 'files' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500'}`}>Arquivos</button>
-                  <button onClick={() => setKnowledgeTab('drive')} className={`px-4 py-2 text-xs font-bold border-b-2 ${knowledgeTab === 'drive' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500'}`}>Google Drive</button>
-                  <button onClick={() => setKnowledgeTab('web')} className={`px-4 py-2 text-xs font-bold border-b-2 ${knowledgeTab === 'web' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500'}`}>Web / Sites</button>
+            <div className="border rounded-xl p-0 bg-white overflow-hidden">
+               <div className="bg-gray-50 p-3 border-b border-gray-200 flex justify-between items-center">
+                   <h4 className="text-sm font-bold text-gray-800 flex items-center">
+                      <BrainCircuit size={16} className="mr-2 text-purple-600" /> Base de Conhecimento
+                   </h4>
+                   <div className="flex bg-white rounded-lg p-0.5 border border-gray-200">
+                        <button onClick={() => setKnowledgeTab('files')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'files' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Arquivos</button>
+                        <button onClick={() => setKnowledgeTab('history')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'history' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Histórico & Versões</button>
+                   </div>
                </div>
 
-               {knowledgeTab === 'files' && (
-                  <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                     <Upload size={32} className="text-gray-400 mx-auto mb-2" />
-                     <p className="text-sm font-medium text-gray-700">Clique para anexar documentos</p>
-                     <p className="text-xs text-gray-500">Suporta PDF, TXT, CSV, DOCX</p>
-                     <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.txt,.csv,.docx" />
-                  </div>
-               )}
+               <div className="p-4">
+                   {knowledgeTab === 'files' && (
+                      <div className="space-y-4">
+                          <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white hover:border-purple-400 transition-colors cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
+                             <Upload size={32} className="text-gray-400 mx-auto mb-2 group-hover:text-purple-500" />
+                             <p className="text-sm font-medium text-gray-700">Clique para enviar novos documentos</p>
+                             <p className="text-xs text-gray-500 mt-1">Isso criará uma nova versão da KB automaticamente.</p>
+                             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.txt,.csv,.docx" multiple />
+                          </div>
+                      </div>
+                   )}
 
-               {knowledgeTab === 'drive' && (
-                  <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200">
-                     <div className="bg-blue-100 p-3 rounded-full mb-3 text-blue-600"><HardDrive size={24} /></div>
-                     <p className="text-sm font-medium text-gray-800 mb-2">Conectar ao Google Drive</p>
-                     <button className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded shadow-sm text-xs font-bold flex items-center hover:bg-gray-50">
-                        <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" className="w-4 h-4 mr-2" /> 
-                        Autorizar Acesso
-                     </button>
-                     <p className="text-[10px] text-gray-400 mt-2 text-center max-w-xs">Permite que o agente leia pastas específicas para aprender sobre novos produtos automaticamente.</p>
-                  </div>
-               )}
-
-               {knowledgeTab === 'web' && (
-                  <div className="space-y-3">
-                     <div className="flex gap-2">
-                        <input type="text" placeholder="https://seu-site.com/faq" className="flex-1 border rounded-lg p-2 text-sm bg-white" />
-                        <button className="bg-gray-900 text-white px-3 py-2 rounded-lg text-xs font-bold">Adicionar</button>
-                     </div>
-                     <div className="space-y-1">
-                        <div className="flex justify-between items-center text-xs bg-white p-2 rounded border border-gray-200">
-                           <span className="truncate flex-1">https://omniconnect.com/precos</span>
-                           <span className="text-green-600 font-bold ml-2">Indexado</span>
-                        </div>
-                     </div>
-                  </div>
-               )}
+                   {knowledgeTab === 'history' && (
+                      <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                          {kbHistory.length === 0 && <p className="text-center text-xs text-gray-400 py-4">Nenhum histórico de versão.</p>}
+                          {kbHistory.map((ver) => (
+                              <div key={ver.version} className={`flex justify-between items-center p-2 rounded border ${ver.isActive ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100'}`}>
+                                  <div className="flex items-center">
+                                      <div className={`w-2 h-2 rounded-full mr-2 ${ver.isActive ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                                      <div>
+                                          <p className="text-xs font-bold text-gray-800 flex items-center">
+                                              {ver.version} 
+                                              {ver.isActive && <span className="ml-2 px-1.5 py-0.5 bg-green-200 text-green-800 text-[9px] rounded uppercase">Atual</span>}
+                                          </p>
+                                          <p className="text-[10px] text-gray-500">{ver.description} • {new Date(ver.createdAt).toLocaleDateString()}</p>
+                                      </div>
+                                  </div>
+                                  {!ver.isActive && (
+                                      <button 
+                                        onClick={() => handleRollback(ver.version)}
+                                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center bg-blue-50 px-2 py-1 rounded"
+                                        title="Restaurar esta versão"
+                                      >
+                                          <RotateCcw size={12} className="mr-1" /> Restaurar
+                                      </button>
+                                  )}
+                              </div>
+                          ))}
+                      </div>
+                   )}
+               </div>
             </div>
          </div>
       </Modal>

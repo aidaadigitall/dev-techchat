@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { KanbanColumn, Pipeline, KanbanCard, Contact } from '../types';
 import { api } from '../services/api';
-import { Plus, MoreHorizontal, DollarSign, Filter, Search, RotateCw, Clock, Save, X, AlignLeft } from 'lucide-react';
+import { Plus, MoreHorizontal, DollarSign, Filter, Search, RotateCw, Clock, Save, X, AlignLeft, AlertCircle } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
 
@@ -146,30 +146,40 @@ const Kanban: React.FC = () => {
   // --- Create Handlers ---
   const handleCreateCard = async () => {
       if (!createForm.title) {
-          addToast('Informe o título', 'warning');
+          addToast('Informe o título da oportunidade', 'warning');
           return;
       }
       
       const firstColumn = columns[0];
-      if (!firstColumn) return;
+      if (!firstColumn) {
+          addToast('Nenhuma coluna disponível no funil', 'error');
+          return;
+      }
 
       try {
-          // Find contact to link
-          const contact = contacts.find(c => c.id === createForm.contactId);
-          
+          // Sanitização de valor monetário (PT-BR)
+          // Ex: "1.800,00" -> "1800.00"
+          let rawValue = createForm.value;
+          if (typeof rawValue === 'string') {
+              rawValue = rawValue.replace(/\./g, '').replace(',', '.');
+          }
+          const numericValue = parseFloat(rawValue) || 0;
+
           await api.crm.createCard(firstColumn.id, {
               title: createForm.title,
-              value: parseFloat(createForm.value) || 0,
+              value: numericValue,
               contactId: createForm.contactId || null,
               priority: createForm.priority
           });
           
-          addToast('Card criado com sucesso!', 'success');
+          addToast('Negócio criado com sucesso!', 'success');
           setShowCreateModal(false);
           setCreateForm({ title: '', value: '', contactId: '', priority: 'medium' });
           loadPipelines(); // Reload
-      } catch (error) {
-          addToast('Erro ao criar card', 'error');
+      } catch (error: any) {
+          console.error("Erro criação card:", error);
+          const msg = error.message || 'Erro desconhecido ao criar card.';
+          addToast(`Erro: ${msg}`, 'error');
       }
   };
 
@@ -272,6 +282,11 @@ const Kanban: React.FC = () => {
       >
         {loading ? (
           <div className="flex h-full items-center justify-center text-gray-400">Carregando funil...</div>
+        ) : columns.length === 0 ? (
+            <div className="flex h-full items-center justify-center flex-col text-gray-400">
+                <AlertCircle size={32} className="mb-2"/>
+                <p>Nenhuma coluna encontrada neste funil.</p>
+            </div>
         ) : (
           <div className="flex h-full space-x-4 pointer-events-none">
             {columns.map((column) => {
@@ -372,12 +387,13 @@ const Kanban: React.FC = () => {
             <div>
                <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
                <input 
-                 type="number" 
+                 type="text" 
                  className="w-full border border-gray-300 rounded-md p-2 bg-white" 
                  placeholder="0,00"
                  value={createForm.value}
                  onChange={e => setCreateForm({...createForm, value: e.target.value})}
                />
+               <p className="text-xs text-gray-500 mt-1">Use vírgula para centavos (ex: 1200,50)</p>
             </div>
             <div>
                <label className="block text-sm font-medium text-gray-700 mb-1">Contato Vinculado</label>
@@ -407,7 +423,7 @@ const Kanban: React.FC = () => {
          </div>
       </Modal>
 
-      {/* Edit Card Modal */}
+      {/* Edit Card Modal - Same as before ... */}
       <Modal 
         isOpen={!!editingCard} 
         onClose={() => setEditingCard(null)} 

@@ -192,16 +192,38 @@ export interface Task {
 }
 
 // --- Automations & AI ---
+
+export interface KBVersion {
+  version: string; // v1.0, v1.1
+  createdAt: string;
+  description: string;
+  fileCount: number;
+  isActive: boolean;
+}
+
 export interface AIAgent {
   id: string;
   name: string;
   model: string;
+  templateId?: string; // Link to registry
   status: 'active' | 'training' | 'inactive';
+  systemInstruction?: string;
   sources: {
     files: number;
     links: number;
     drive: boolean;
   };
+  kbVersion: string; // Current Active Version
+  kbHistory: KBVersion[];
+}
+
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  baseModel: string;
+  defaultInstruction: string;
+  capabilities: string[];
 }
 
 export interface AutomationFlow {
