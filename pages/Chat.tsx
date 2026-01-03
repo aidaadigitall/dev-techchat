@@ -44,7 +44,9 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // Right Panel States
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   
-  const [aiPanelOpen, setAiPanelOpen] = useState(false); 
+  // AI States
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<any | null>(null);
   
   // Chat States
   const [isTyping, setIsTyping] = useState(false);
@@ -74,8 +76,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [modalData, setModalData] = useState<any>(null); 
   
   const [newTaskForm, setNewTaskForm] = useState({ title: '', dueDate: '', priority: 'p2' as TaskPriority });
-  const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
-  const [aiLoading, setAiLoading] = useState(false);
   
   // New Chat Modal States
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
@@ -128,6 +128,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     if (!selectedContact) return;
     loadMessages(selectedContact.id);
     loadQuickReplies(); // Load on contact switch to ensure freshness
+    setAiAnalysisResult(null); // Clear previous analysis
     
     const chatChannel = supabase.channel(`chat-${selectedContact.id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `contact_id=eq.${selectedContact.id}` }, (payload) => {
@@ -275,7 +276,23 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const confirmDeleteMessage = () => { setMessages(prev => prev.filter(m => m.id !== modalData.messageId)); setActiveModal(null); };
   const handleCreateTask = () => { if(selectedContact) setActiveModal('createTask'); };
   const confirmCreateTask = async () => { if(newTaskForm.title) { await api.tasks.create(newTaskForm); setActiveModal(null); addToast('Tarefa criada', 'success'); } };
-  const handleAnalyzeChat = async () => { if(selectedContact) { setAiLoading(true); setAiPanelOpen(true); const insights = await api.ai.generateInsight('chat', {}); setAiInsights(insights); setAiLoading(false); } };
+  
+  // AI Analysis Logic
+  const handleAnalyzeChat = async () => { 
+      if(selectedContact) { 
+          setIsAnalyzing(true);
+          try {
+              const rawResult = await api.ai.analyzeConversation(messages);
+              const parsedResult = JSON.parse(rawResult);
+              setAiAnalysisResult(parsedResult);
+              setRightPanelOpen(true); // Ensure panel is open to see result
+          } catch(e) {
+              addToast('Erro ao analisar conversa.', 'error');
+          } finally {
+              setIsAnalyzing(false); 
+          }
+      } 
+  };
   
   // Start New Chat Handler
   const handleStartChat = async () => {
@@ -409,7 +426,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                 </div>
                 <div className="flex items-center space-x-2">
                     <button onClick={() => setIsMessageSearchOpen(!isMessageSearchOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Search size={20} /></button>
-                    <button onClick={handleAnalyzeChat} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg"><Sparkles size={18} /></button>
                     <button onClick={() => setRightPanelOpen(!rightPanelOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title="Ver Detalhes"><Info size={20} /></button>
                     <button onClick={() => setHeaderMenuOpen(!headerMenuOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><MoreVertical size={20} /></button>
                     {headerMenuOpen && (
@@ -670,6 +686,55 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                           <p className="text-xs text-gray-700 line-clamp-4 italic">
                               "{selectedContact.strategicNotes}"
                           </p>
+                      </div>
+                  )}
+              </div>
+
+              {/* AI Intelligence Section */}
+              <div className="border-t border-gray-100 pt-4">
+                  <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center">
+                      <BrainCircuit size={16} className="mr-2 text-purple-600" /> Inteligência Artificial
+                  </h4>
+                  
+                  {!aiAnalysisResult ? (
+                      <button 
+                        onClick={handleAnalyzeChat} 
+                        disabled={isAnalyzing}
+                        className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg p-2.5 text-sm font-medium hover:opacity-90 flex items-center justify-center shadow-md transition-all"
+                      >
+                          {isAnalyzing ? <Loader2 size={16} className="animate-spin mr-2" /> : <Sparkles size={16} className="mr-2" />}
+                          {isAnalyzing ? 'Analisando...' : 'Analisar Conversa'}
+                      </button>
+                  ) : (
+                      <div className="bg-purple-50 rounded-xl border border-purple-100 p-3 text-sm animate-fadeIn">
+                          <div className="flex justify-between items-center mb-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${aiAnalysisResult.sentiment === 'positive' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'}`}>
+                                  {aiAnalysisResult.sentiment === 'positive' ? 'Positivo' : 'Neutro'}
+                              </span>
+                              <span className="flex items-center text-[10px] text-purple-700 font-bold">
+                                  <Target size={10} className="mr-1"/> Oportunidade: {aiAnalysisResult.opportunity === 'high' ? 'Alta' : 'Normal'}
+                              </span>
+                          </div>
+                          
+                          <p className="text-gray-700 text-xs mb-3 italic leading-relaxed">
+                              "{aiAnalysisResult.summary}"
+                          </p>
+                          
+                          <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Sugestões de Ação:</p>
+                          <ul className="space-y-1">
+                              {aiAnalysisResult.actions?.map((action: string, i: number) => (
+                                  <li key={i} className="flex items-start text-xs text-gray-700">
+                                      <span className="mr-1.5 mt-0.5 text-purple-500">•</span> {action}
+                                  </li>
+                              ))}
+                          </ul>
+                          
+                          <button 
+                            onClick={() => setAiAnalysisResult(null)}
+                            className="w-full text-center text-[10px] text-gray-400 mt-3 hover:text-purple-600 underline"
+                          >
+                              Nova Análise
+                          </button>
                       </div>
                   )}
               </div>

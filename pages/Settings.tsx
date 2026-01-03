@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon, Server, Globe, RotateCcw, Edit2 } from 'lucide-react';
-import { User, Branding, Tag, Sector } from '../types';
+import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon, Server, Globe, RotateCcw, Edit2, Bot } from 'lucide-react';
+import { User, Branding, Tag, Sector, AIAgent } from '../types';
 import { api } from '../services/api';
 import { whatsappService, WhatsAppStatus } from '../services/whatsapp';
 import Modal from '../components/Modal';
@@ -30,6 +30,9 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const [connections, setConnections] = useState<any[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<any>(null);
   
+  // Agents State
+  const [availableAgents, setAvailableAgents] = useState<AIAgent[]>([]);
+  
   // Create Connection
   const [isCreating, setIsCreating] = useState(false);
   const [newConnectionName, setNewConnectionName] = useState('');
@@ -43,10 +46,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // --- Load Connections ---
+  // --- Load Connections & Agents ---
   useEffect(() => {
       if (activeTab === 'integrations') {
           loadConnections();
+          loadAgents();
       }
   }, [activeTab]);
 
@@ -60,6 +64,15 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
           }
       } catch (e) {
           console.error("Failed to load connections", e);
+      }
+  };
+
+  const loadAgents = async () => {
+      try {
+          const data = await api.ai.listAgents();
+          setAvailableAgents(data);
+      } catch (e) {
+          console.error("Failed to load agents", e);
       }
   };
 
@@ -158,6 +171,22 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
       addToast('Perfil salvo (Simulação)', 'success');
   };
 
+  const handleAgentChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const agentId = e.target.value;
+      if (selectedConnection) {
+          try {
+              // Optimistic UI
+              setSelectedConnection(prev => ({ ...prev, agent_id: agentId }));
+              setConnections(prev => prev.map(c => c.id === selectedConnection.id ? { ...c, agent_id: agentId } : c));
+              
+              await api.whatsapp.update(selectedConnection.id, { agent_id: agentId });
+              addToast('Agente vinculado com sucesso.', 'success');
+          } catch (e) {
+              addToast('Erro ao vincular agente.', 'error');
+          }
+      }
+  };
+
   // --- Renderers ---
 
   const renderIntegrations = () => (
@@ -212,8 +241,9 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
               {/* Detail */}
               <div className="flex-1 space-y-6">
                   {selectedConnection ? (
-                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                          <div className="flex items-center justify-between mb-6">
+                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-6">
+                          {/* Connection Header */}
+                          <div className="flex items-center justify-between">
                               <h3 className="text-lg font-bold text-gray-900 flex items-center">
                                   <Smartphone size={24} className="mr-2 text-purple-600"/> {selectedConnection.name}
                               </h3>
@@ -222,19 +252,40 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
                               </div>
                           </div>
 
-                          <div className="flex gap-3">
+                          {/* AI Agent Configuration */}
+                          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                              <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                                  <Bot size={16} className="mr-2 text-blue-600" /> Agente de IA Vinculado
+                              </h4>
+                              <p className="text-xs text-gray-500 mb-3">
+                                  Selecione o "cérebro" que responderá automaticamente neste número.
+                              </p>
+                              <select 
+                                className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
+                                value={selectedConnection.agent_id || ''}
+                                onChange={handleAgentChange}
+                              >
+                                  <option value="">-- Sem Agente (Manual) --</option>
+                                  {availableAgents.map(agent => (
+                                      <option key={agent.id} value={agent.id}>{agent.name} ({agent.model})</option>
+                                  ))}
+                              </select>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="pt-4 border-t border-gray-100 flex gap-3">
                               {whatsappStatus === 'connected' ? (
-                                  <button onClick={handleDisconnect} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-medium">Desconectar</button>
+                                  <button onClick={handleDisconnect} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-medium w-full">Desconectar Sessão</button>
                               ) : (
-                                  <button onClick={handleConnectClick} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md">
-                                      <QrCode size={18} className="mr-2" /> Conectar WhatsApp
+                                  <button onClick={handleConnectClick} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center justify-center shadow-md w-full">
+                                      <QrCode size={18} className="mr-2" /> Gerar QR Code
                                   </button>
                               )}
                           </div>
                       </div>
                   ) : (
                       <div className="h-full flex items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
-                          Selecione uma conexão
+                          Selecione uma conexão para configurar
                       </div>
                   )}
               </div>

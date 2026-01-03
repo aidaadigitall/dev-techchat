@@ -1,5 +1,5 @@
 
-import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User } from '../types';
+import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User, AIAgent } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from './supabase';
 import { whatsappService } from './whatsapp'; // Integrated WhatsApp Service
@@ -126,7 +126,15 @@ export const api = {
   contacts: {
     list: async (): Promise<Contact[]> => {
       try {
-          const { data, error } = await supabase.from('contacts').select('*').order('last_message_at', { ascending: false });
+          const cid = await getCompanyId();
+          let query = supabase.from('contacts').select('*').order('last_message_at', { ascending: false });
+          
+          // Force filter by company if ID is resolved (Defense in Depth)
+          if (cid) {
+              query = query.eq('company_id', cid);
+          }
+
+          const { data, error } = await query;
           if (error) throw error;
           return data.map(adaptContact);
       } catch (e) { return []; }
@@ -159,7 +167,7 @@ export const api = {
         }
       };
       // Upsert logic
-      const { data: existing } = await supabase.from('contacts').select('id').eq('phone', cleanPhone).maybeSingle();
+      const { data: existing } = await supabase.from('contacts').select('id').eq('phone', cleanPhone).eq('company_id', company_id).maybeSingle();
       let result;
       if (existing) {
         result = await supabase.from('contacts').update(payload).eq('id', existing.id).select().single();
@@ -195,7 +203,15 @@ export const api = {
   },
   whatsapp: {
       list: async () => {
-          const { data, error } = await supabase.from('whatsapp_connections').select('*').order('created_at');
+          const cid = await getCompanyId();
+          let query = supabase.from('whatsapp_connections').select('*').order('created_at');
+          
+          // Strict Multi-tenant Filter
+          if (cid) {
+              query = query.eq('company_id', cid);
+          }
+
+          const { data, error } = await query;
           if (error) throw error;
           return data;
       },
@@ -205,6 +221,11 @@ export const api = {
           });
           if (error) throw error;
           if (data.error) throw new Error(data.error);
+          return data;
+      },
+      update: async (id: string, updates: any) => {
+          const { data, error } = await supabase.from('whatsapp_connections').update(updates).eq('id', id).select().single();
+          if (error) throw error;
           return data;
       },
       delete: async (dbId: string, instanceName: string) => {
@@ -539,8 +560,54 @@ export const api = {
       create: async(d: any) => d 
   },
   ai: { 
+      // Returns a list of agents (mocked for now, but following Interface)
+      listAgents: async (): Promise<AIAgent[]> => {
+          return [
+              {
+                id: 'agent_onboarding',
+                name: 'Guia de Onboarding',
+                model: 'GPT-4 Turbo',
+                status: 'active',
+                templateId: 'onboarding_guide',
+                systemInstruction: 'Você é um guia amigável...',
+                sources: { files: 2, links: 1, drive: false },
+                knowledgeLinks: [],
+                knowledgeFiles: [],
+                kbVersion: 'v1.0',
+                kbHistory: []
+              },
+              {
+                id: 'agent_sales_expert',
+                name: 'Assistente de Vendas',
+                model: 'GPT-4o',
+                status: 'active',
+                templateId: 'sales_expert',
+                systemInstruction: 'Atue como um analista de CRM sênior. Analise o sentimento do cliente e sugira as melhores respostas.',
+                sources: { files: 0, links: 0, drive: false },
+                knowledgeLinks: [],
+                knowledgeFiles: [],
+                kbVersion: 'v1.0',
+                kbHistory: []
+              }
+          ];
+      },
       generateInsight: async(type: string, context: any): Promise<AIInsight[]> => [], 
-      analyzeConversation: async(messages: Message[]): Promise<string> => "Análise de conversa indisponível no momento." 
+      analyzeConversation: async(messages: Message[]): Promise<string> => {
+          // Simulate latency
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Realistic Mock Response
+          return JSON.stringify({
+              sentiment: "positive",
+              summary: "O cliente demonstra interesse no plano Pro, mas tem dúvidas sobre a fidelidade. Menciona que já usa um concorrente (Zapier) e quer saber as vantagens de migrar.",
+              opportunity: "high",
+              actions: [
+                  "Explicar que o plano anual tem 20% de desconto",
+                  "Enviar comparativo: Nossa Plataforma vs Zapier",
+                  "Oferecer trial estendido de 14 dias para teste"
+              ]
+          });
+      } 
   },
   reports: { 
       generatePdf: async() => {} 
