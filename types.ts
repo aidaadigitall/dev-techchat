@@ -209,8 +209,11 @@ export interface AIAgent {
   templateId?: string; // Link to registry
   status: 'active' | 'training' | 'inactive';
   systemInstruction?: string;
+  // Fontes de conhecimento detalhadas
+  knowledgeLinks: string[]; // Lista de URLs
+  knowledgeFiles: { name: string; size: string; date: string }[]; // Metadados dos arquivos
   sources: {
-    files: number;
+    files: number; // Mantido para estatísticas rápidas
     links: number;
     drive: boolean;
   };

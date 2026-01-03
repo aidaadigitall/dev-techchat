@@ -35,6 +35,11 @@ const INITIAL_AGENTS: AIAgent[] = [
     templateId: 'onboarding_guide',
     systemInstruction: 'Você é um guia amigável. Explique o passo a passo com emojis e clareza. Valide se o usuário completou a etapa antes de avançar.',
     sources: { files: 2, links: 1, drive: false },
+    knowledgeLinks: ['https://empresa.com/manual-inicio'],
+    knowledgeFiles: [
+        { name: 'manual_v1.pdf', size: '2.4 MB', date: '2023-10-01' },
+        { name: 'regras_uso.docx', size: '500 KB', date: '2023-10-05' }
+    ],
     kbVersion: 'v1.0',
     kbHistory: []
   },
@@ -46,6 +51,8 @@ const INITIAL_AGENTS: AIAgent[] = [
     templateId: 'support_n1',
     systemInstruction: 'Você é um assistente de suporte técnico. Responda apenas com base na KB fornecida. Utilize o histórico de mensagens para contexto.',
     sources: { files: 15, links: 0, drive: true },
+    knowledgeLinks: [],
+    knowledgeFiles: [],
     kbVersion: 'v2.3',
     kbHistory: []
   },
@@ -57,6 +64,8 @@ const INITIAL_AGENTS: AIAgent[] = [
     templateId: 'sales_expert',
     systemInstruction: 'Atue como um analista de CRM sênior. Analise o sentimento do cliente e sugira as melhores respostas para conversão.',
     sources: { files: 5, links: 5, drive: false },
+    knowledgeLinks: ['https://empresa.com/tabela-precos', 'https://empresa.com/cases'],
+    knowledgeFiles: [],
     kbVersion: 'v0.1',
     kbHistory: []
   }
@@ -91,8 +100,14 @@ const Automations: React.FC = () => {
 
   // --- Handlers for Agents ---
   const handleOpenAgent = (agent: AIAgent) => {
-    setAgentForm(agent);
-    setSelectedAgent(agent);
+    // Ensure arrays exist
+    const safeAgent = {
+        ...agent,
+        knowledgeLinks: agent.knowledgeLinks || [],
+        knowledgeFiles: agent.knowledgeFiles || []
+    };
+    setAgentForm(safeAgent);
+    setSelectedAgent(safeAgent);
     setKbHistory(agentRegistry.getKBHistory(agent.id));
     setKnowledgeTab('files');
   };
@@ -105,6 +120,9 @@ const Automations: React.FC = () => {
   const handleCreateFromTemplate = () => {
       if (!selectedTemplateId) return;
       const newAgent = agentRegistry.createAgentFromTemplate(selectedTemplateId, agentForm.name || '');
+      // Init arrays
+      newAgent.knowledgeLinks = [];
+      newAgent.knowledgeFiles = [];
       setAgents(prev => [...prev, newAgent]);
       setShowCreateWizard(false);
       addToast('Agente criado com sucesso a partir do template!', 'success');
@@ -114,21 +132,40 @@ const Automations: React.FC = () => {
   const handleSaveAgent = () => {
     if (!agentForm.name) return;
     if (selectedAgent) {
-      setAgents(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ...agentForm } as AIAgent : a));
-      addToast('Agente atualizado.', 'success');
+      // Update counts based on arrays
+      const updatedAgent = {
+          ...agentForm,
+          sources: {
+              ...agentForm.sources!,
+              links: agentForm.knowledgeLinks?.length || 0,
+              files: agentForm.knowledgeFiles?.length || 0
+          }
+      } as AIAgent;
+
+      setAgents(prev => prev.map(a => a.id === selectedAgent.id ? updatedAgent : a));
+      addToast('Agente atualizado com sucesso.', 'success');
     }
     setSelectedAgent(null);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length && selectedAgent) {
-      const fileCount = e.target.files.length;
+      const newFiles = Array.from(e.target.files).map(f => ({
+          name: f.name,
+          size: `${(f.size / 1024).toFixed(1)} KB`,
+          date: new Date().toISOString().split('T')[0]
+      }));
       
+      const fileCount = newFiles.length;
+      
+      // Simulate Processing
+      addToast('Processando arquivos...', 'info');
+
       setTimeout(() => {
           const newVersion = agentRegistry.publishKBVersion(
               selectedAgent.id, 
-              `Upload: ${e.target.files![0].name} ${fileCount > 1 ? `+ ${fileCount-1} arquivos` : ''}`, 
-              (selectedAgent.sources.files + fileCount)
+              `Upload: ${newFiles[0].name} ${fileCount > 1 ? `+ ${fileCount-1} arquivos` : ''}`, 
+              (agentForm.knowledgeFiles?.length || 0) + fileCount
           );
           
           setKbHistory(agentRegistry.getKBHistory(selectedAgent.id));
@@ -136,23 +173,41 @@ const Automations: React.FC = () => {
           setAgentForm(prev => ({ 
               ...prev, 
               kbVersion: newVersion.version,
-              sources: { ...prev.sources!, files: (prev.sources!.files || 0) + fileCount }
+              knowledgeFiles: [...(prev.knowledgeFiles || []), ...newFiles]
           }));
 
-          addToast(`Base de conhecimento atualizada para ${newVersion.version}`, 'success');
+          addToast(`Arquivos indexados. Versão ${newVersion.version}`, 'success');
       }, 1500);
     }
   };
 
-  const handleAddLink = () => {
-      if (!newLinkInput || !selectedAgent) return;
-      // Simulate adding link
+  const handleRemoveFile = (fileName: string) => {
       setAgentForm(prev => ({
           ...prev,
-          sources: { ...prev.sources!, links: (prev.sources!.links || 0) + 1 }
+          knowledgeFiles: prev.knowledgeFiles?.filter(f => f.name !== fileName)
+      }));
+  };
+
+  const handleAddLink = () => {
+      if (!newLinkInput || !selectedAgent) return;
+      if (!newLinkInput.startsWith('http')) {
+          addToast('Insira uma URL válida (http/https)', 'warning');
+          return;
+      }
+      
+      setAgentForm(prev => ({
+          ...prev,
+          knowledgeLinks: [...(prev.knowledgeLinks || []), newLinkInput]
       }));
       setNewLinkInput('');
       addToast('Link adicionado à base de conhecimento.', 'success');
+  };
+
+  const handleRemoveLink = (link: string) => {
+      setAgentForm(prev => ({
+          ...prev,
+          knowledgeLinks: prev.knowledgeLinks?.filter(l => l !== link)
+      }));
   };
 
   const toggleDrive = () => {
@@ -237,10 +292,10 @@ const Automations: React.FC = () => {
                 
                 <div className="space-y-2 border-t border-gray-100 pt-3 mb-4">
                 <div className="flex items-center text-xs text-gray-600">
-                    <FileText size={14} className="mr-2" /> {agent.sources.files} Arquivos indexados
+                    <FileText size={14} className="mr-2" /> {agent.knowledgeFiles?.length || agent.sources.files} Arquivos indexados
                 </div>
                 <div className="flex items-center text-xs text-gray-600">
-                    <Globe size={14} className="mr-2" /> {agent.sources.links} Links rastreados
+                    <Globe size={14} className="mr-2" /> {agent.knowledgeLinks?.length || agent.sources.links} Links rastreados
                 </div>
                 <div className="flex items-center text-xs text-gray-600">
                     <HardDrive size={14} className="mr-2" /> {agent.sources.drive ? 'Drive Conectado' : 'Drive Desconectado'}
@@ -559,8 +614,8 @@ const Automations: React.FC = () => {
                       <BrainCircuit size={16} className="mr-2 text-purple-600" /> Fontes de Conhecimento
                    </h4>
                    <div className="flex bg-white rounded-lg p-0.5 border border-gray-200">
-                        <button onClick={() => setKnowledgeTab('files')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'files' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Arquivos</button>
-                        <button onClick={() => setKnowledgeTab('links')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'links' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Links</button>
+                        <button onClick={() => setKnowledgeTab('files')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'files' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Arquivos ({agentForm.knowledgeFiles?.length || 0})</button>
+                        <button onClick={() => setKnowledgeTab('links')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'links' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Links ({agentForm.knowledgeLinks?.length || 0})</button>
                         <button onClick={() => setKnowledgeTab('history')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'history' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Versões</button>
                    </div>
                </div>
@@ -585,9 +640,28 @@ const Automations: React.FC = () => {
                           <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white hover:border-purple-400 transition-colors cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
                              <Upload size={32} className="text-gray-400 mx-auto mb-2 group-hover:text-purple-500" />
                              <p className="text-sm font-medium text-gray-700">Enviar Documentos (PDF, DOCX, TXT)</p>
-                             <p className="text-xs text-gray-500 mt-1">{agentForm.sources?.files || 0} arquivos carregados</p>
+                             <p className="text-xs text-gray-500 mt-1">Clique para selecionar</p>
                              <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.txt,.csv,.docx" multiple />
                           </div>
+
+                          {/* List of Files */}
+                          {agentForm.knowledgeFiles && agentForm.knowledgeFiles.length > 0 && (
+                              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <div className="bg-gray-50 px-3 py-2 text-xs font-bold text-gray-500 border-b border-gray-200">Arquivos Indexados</div>
+                                  <div className="divide-y divide-gray-100 max-h-40 overflow-y-auto custom-scrollbar">
+                                      {agentForm.knowledgeFiles.map((file, idx) => (
+                                          <div key={idx} className="flex justify-between items-center p-2 text-sm hover:bg-gray-50">
+                                              <div className="flex items-center truncate">
+                                                  <FileText size={14} className="text-gray-400 mr-2 flex-shrink-0" />
+                                                  <span className="truncate text-gray-700">{file.name}</span>
+                                                  <span className="text-xs text-gray-400 ml-2">({file.size})</span>
+                                              </div>
+                                              <button onClick={() => handleRemoveFile(file.name)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          )}
                       </div>
                    )}
 
@@ -596,25 +670,30 @@ const Automations: React.FC = () => {
                            <div className="flex gap-2">
                                <input 
                                  type="text" 
-                                 className="flex-1 border border-gray-300 rounded-lg p-2 text-sm" 
+                                 className="flex-1 border border-gray-300 rounded-lg p-2 text-sm bg-white" 
                                  placeholder="https://sua-empresa.com/faq"
                                  value={newLinkInput}
                                  onChange={(e) => setNewLinkInput(e.target.value)}
                                />
-                               <button onClick={handleAddLink} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 rounded-lg">
+                               <button onClick={handleAddLink} className="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 rounded-lg border border-purple-200">
                                    <Plus size={18} />
                                </button>
                            </div>
+                           
                            <div className="space-y-2">
-                               <p className="text-xs text-gray-500 font-bold uppercase">Links Ativos ({agentForm.sources?.links || 0})</p>
-                               {/* Mock List */}
-                               <div className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-100 text-sm">
-                                   <div className="flex items-center text-blue-600 truncate">
-                                       <LinkIcon size={14} className="mr-2 flex-shrink-0" />
-                                       <span className="truncate">https://exemplo.com/manual-usuario</span>
+                               <p className="text-xs text-gray-500 font-bold uppercase">Links Ativos</p>
+                               {(!agentForm.knowledgeLinks || agentForm.knowledgeLinks.length === 0) && (
+                                   <p className="text-sm text-gray-400 italic">Nenhum link adicionado.</p>
+                               )}
+                               {agentForm.knowledgeLinks?.map((link, idx) => (
+                                   <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-100 text-sm hover:border-purple-200 transition-colors">
+                                       <div className="flex items-center text-blue-600 truncate">
+                                           <LinkIcon size={14} className="mr-2 flex-shrink-0 text-gray-400" />
+                                           <a href={link} target="_blank" rel="noreferrer" className="truncate hover:underline">{link}</a>
+                                       </div>
+                                       <button onClick={() => handleRemoveLink(link)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
                                    </div>
-                                   <button className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
-                               </div>
+                               ))}
                            </div>
                        </div>
                    )}

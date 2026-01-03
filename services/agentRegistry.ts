@@ -56,7 +56,9 @@ export const agentRegistry = {
             systemInstruction: template.defaultInstruction,
             sources: { files: 0, links: 0, drive: false },
             kbVersion: 'v0.0',
-            kbHistory: []
+            kbHistory: [],
+            knowledgeLinks: [],
+            knowledgeFiles: []
         };
     },
 
