@@ -1,3 +1,4 @@
+
 // services/whatsapp.ts
 import { WhatsAppConfig, MessageType } from '../types';
 import { supabase } from './supabase';
@@ -53,7 +54,7 @@ class WhatsAppService {
     // If critical connection details changed, reconnect
     if (newConfig.instanceName !== oldInstance || newConfig.apiUrl !== oldUrl || newConfig.apiKey !== oldKey) {
         this.addLog(`Detectada alteração na configuração (De: ${oldInstance} Para: ${this.config.instanceName}). Reiniciando conexão...`);
-        this.status = 'disconnected'; // Force status reset
+        this.updateStatus('disconnected'); // Force status reset
         this.qrCode = null;
         this.emit('qr', null);
         // Do not auto connect here, wait for manual trigger to avoid loops
@@ -187,44 +188,41 @@ class WhatsAppService {
       }
 
       try {
-          this.addLog('Sincronizando chats...');
           // 1. Fetch Chats (Evolution V2 usually returns recent chats with last message)
+          // console.log("Polling chats...");
           const chats = await this.fetchApi(`/chat/findChats/${this.config.instanceName}`);
           
           if (Array.isArray(chats)) {
-              this.addLog(`${chats.length} conversas encontradas.`);
-              
               // Process chats in chunks to avoid overwhelming the DB
-              const processChunk = async (chunk: any[]) => {
-                  for (const chat of chunk) {
-                      // Extract preview logic
-                      let lastContent = '';
-                      // Attempt to find the last message content from the chat object structure (varies by version)
-                      const lastMsgObj = chat.lastMessage || (chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null);
-                      
-                      if (lastMsgObj) {
-                          lastContent = lastMsgObj.message?.conversation || 
-                                        lastMsgObj.message?.extendedTextMessage?.text || 
-                                        lastMsgObj.content || 
-                                        (lastMsgObj.message?.imageMessage ? '📷 Imagem' : '');
-                      }
-
-                      // Save Contact to Supabase
-                      await this.upsertContact(chat, lastContent);
-                      
-                      // For active chats (unread > 0), sync messages immediately
-                      if (chat.unreadCount > 0) {
-                          await this.fetchChatMessages(chat.id);
-                      }
+              const recentChats = chats.slice(0, 15); // Focus on top 15
+              
+              for (let i = 0; i < recentChats.length; i++) {
+                  const chat = recentChats[i];
+                  // Extract preview logic
+                  let lastContent = '';
+                  // Attempt to find the last message content from the chat object structure (varies by version)
+                  const lastMsgObj = chat.lastMessage || (chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null);
+                  
+                  if (lastMsgObj) {
+                      lastContent = lastMsgObj.message?.conversation || 
+                                    lastMsgObj.message?.extendedTextMessage?.text || 
+                                    lastMsgObj.content || 
+                                    (lastMsgObj.message?.imageMessage ? '📷 Imagem' : '');
                   }
-              };
 
-              // Process top 20 chats immediately, others in background if needed
-              await processChunk(chats.slice(0, 20));
+                  // Save Contact to Supabase
+                  await this.upsertContact(chat, lastContent);
+                  
+                  // SYNC MESSAGES LOGIC
+                  // Sync if unread > 0 OR if it's one of the top 3 recent chats (to catch outgoing messages sent from phone)
+                  if (chat.unreadCount > 0 || i < 3) {
+                      await this.fetchChatMessages(chat.id);
+                  }
+              }
           }
       } catch (error: any) {
-          console.warn(`Erro na sincronização silenciosa: ${error.message}`);
-          this.addLog(`Erro ao sincronizar chats: ${error.message}`);
+          // console.warn(`Erro na sincronização silenciosa: ${error.message}`);
+          // Don't spam logs on polling errors
       }
   }
 
@@ -252,16 +250,16 @@ class WhatsAppService {
   private startMessagePolling() {
       if (this.pollInterval) clearInterval(this.pollInterval);
       
-      this.addLog('Iniciando verificação automática de novas mensagens (Polling 10s)...');
+      this.addLog('Iniciando verificação automática de novas mensagens (Polling 5s)...');
       
-      // Poll every 10 seconds to check for new messages
+      // Poll every 5 seconds to check for new messages
       this.pollInterval = setInterval(() => {
           if (this.status === 'connected') {
               this.syncHistory();
           } else {
               clearInterval(this.pollInterval);
           }
-      }, 10000); 
+      }, 5000); 
   }
 
   private async upsertContact(chatData: any, lastMessagePreview: string = '') {
@@ -520,7 +518,10 @@ class WhatsAppService {
       this.addLog(`Enviando mensagem para ${to}...`);
       
       // Get the correct number format (remoteJid)
-      const remoteJid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+      // Evolution API expects 551199999999@s.whatsapp.net
+      // Assuming 'to' is digits only or partial
+      const cleanTo = to.replace(/\D/g, '');
+      const remoteJid = `${cleanTo}@s.whatsapp.net`;
 
       try {
           await this.fetchApi('/message/sendText/' + this.config.instanceName, 'POST', {
@@ -536,7 +537,7 @@ class WhatsAppService {
           });
           this.addLog('Mensagem enviada via API.');
           // Force a sync shortly after sending to ensure consistency
-          setTimeout(() => this.fetchChatMessages(to), 1000);
+          setTimeout(() => this.fetchChatMessages(remoteJid), 1000);
       } catch (e: any) {
           this.addLog(`Erro ao enviar mensagem: ${e.message}`);
           throw e;
@@ -562,6 +563,8 @@ class WhatsAppService {
   // --- Private Helpers ---
 
   private updateStatus(newStatus: WhatsAppStatus) {
+    // FIX: Only emit if status actually changed to prevent toast spam
+    if (this.status === newStatus) return;
     this.status = newStatus;
     this.emit('status', newStatus);
   }

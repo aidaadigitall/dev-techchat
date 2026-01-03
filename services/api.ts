@@ -2,6 +2,7 @@
 import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from './supabase';
+import { whatsappService } from './whatsapp'; // Integrated WhatsApp Service
 
 // Helper: Get Current User Company ID (Robust Version)
 const getCompanyId = async () => {
@@ -198,13 +199,31 @@ export const api = {
       },
       sendMessage: async (cid: string, content: string, type: MessageType = MessageType.TEXT) => {
           const company_id = await getCompanyId();
+          
+          // 1. Fetch Contact Phone to send real message
+          const { data: contact } = await supabase.from('contacts').select('phone').eq('id', cid).single();
+          
+          if (!contact || !contact.phone) {
+              throw new Error("Contato inválido ou sem telefone.");
+          }
+
+          // 2. Send via WhatsApp Service
+          try {
+              await whatsappService.sendMessage(contact.phone, content);
+          } catch (e: any) {
+              console.error("WhatsApp Send Error:", e);
+              // We throw so the UI knows it failed, preventing optimistic update if strict
+              throw new Error("Falha ao enviar para o WhatsApp: " + (e.message || "Erro desconhecido"));
+          }
+
+          // 3. Save to Database (History)
           const { data } = await supabase.from('messages').insert({
               company_id, contact_id: cid, content, type, sender_id: 'me', status: 'sent'
           }).select().single();
+          
           await supabase.from('contacts').update({ last_message_at: new Date() }).eq('id', cid);
           return adaptMessage(data);
       },
-      // Updated Quick Reply Methods
       getQuickReplies: async (): Promise<QuickReply[]> => {
           const { data } = await supabase.from('quick_replies').select('*');
           return (data || []).map((q: any) => ({ id: q.id, shortcut: q.shortcut, content: q.content }));
