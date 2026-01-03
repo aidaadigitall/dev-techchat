@@ -2,25 +2,63 @@ import React, { useState, useRef } from 'react';
 import { 
   Bot, Workflow, Plug, Plus, Search, FileText, Globe, 
   HardDrive, Upload, Trash2, Edit, PlayCircle, PauseCircle, 
-  ExternalLink, CheckCircle2, XCircle, BrainCircuit, History, RotateCcw, Save
+  ExternalLink, CheckCircle2, XCircle, BrainCircuit, History, RotateCcw, Save, Code
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { AIAgent, AutomationFlow, Integration, KBVersion } from '../types';
 import { agentRegistry } from '../services/agentRegistry'; // Import Registry
 import { useToast } from '../components/ToastContext';
 
-// Mock Data
+// Mock Data - Atualizado conforme solicitação
 const MOCK_FLOWS: AutomationFlow[] = [
   { id: '1', name: 'Boas-vindas WhatsApp', trigger: 'Nova Mensagem', steps: 5, active: true },
-  { id: '2', name: 'Qualificação de Lead', trigger: 'Keyword: Interesse', steps: 8, active: true },
+  { id: '2', name: 'Qualificação de Leads', trigger: 'Keyword: preço, orçamento', steps: 5, active: true }, // Novo Fluxo
   { id: '3', name: 'Pesquisa de Satisfação', trigger: 'Ticket Fechado', steps: 3, active: false },
 ];
 
 const MOCK_INTEGRATIONS: Integration[] = [
-  { id: '1', name: 'n8n', type: 'n8n', status: 'connected', icon: 'https://cdn.icon-icons.com/icons2/2699/PNG/512/n8n_logo_icon_169222.png', lastSync: '10 min atrás' },
-  { id: '2', name: 'Typebot', type: 'typebot', status: 'connected', icon: 'https://avatars.githubusercontent.com/u/96489376?s=200&v=4', lastSync: '2 horas atrás' },
+  { id: '1', name: 'n8n', type: 'n8n', status: 'disconnected', icon: 'https://cdn.icon-icons.com/icons2/2699/PNG/512/n8n_logo_icon_169222.png', lastSync: '-' },
+  { id: '2', name: 'Typebot', type: 'typebot', status: 'disconnected', icon: 'https://avatars.githubusercontent.com/u/96489376?s=200&v=4', lastSync: '-' },
   { id: '3', name: 'Make (Integromat)', type: 'make', status: 'disconnected', icon: 'https://seeklogo.com/images/M/make-logo-F967909336-seeklogo.com.png' },
-  { id: '4', name: 'Webhooks', type: 'webhook', status: 'connected', lastSync: 'Agora' },
+  { id: '4', name: 'API Externa (REST)', type: 'webhook', status: 'disconnected', icon: 'https://cdn-icons-png.flaticon.com/512/2165/2165061.png', lastSync: '-' },
+  { id: '5', name: 'OpenAI', type: 'openai', status: 'connected', lastSync: 'Agora' },
+];
+
+// Agentes Pré-criados conforme solicitação
+const INITIAL_AGENTS: AIAgent[] = [
+  {
+    id: 'agent_onboarding',
+    name: 'Guia de Onboarding',
+    model: 'GPT-4 Turbo',
+    status: 'active',
+    templateId: 'onboarding_guide',
+    systemInstruction: 'Você é um guia amigável. Explique o passo a passo com emojis e clareza. Valide se o usuário completou a etapa antes de avançar.',
+    sources: { files: 2, links: 1, drive: false },
+    kbVersion: 'v1.0',
+    kbHistory: []
+  },
+  {
+    id: 'agent_support_n1',
+    name: 'Suporte Nível 1',
+    model: 'GPT-3.5 Turbo',
+    status: 'active',
+    templateId: 'support_n1',
+    systemInstruction: 'Você é um assistente de suporte técnico. Responda apenas com base na KB fornecida. Utilize o histórico de mensagens para contexto.',
+    sources: { files: 15, links: 0, drive: true },
+    kbVersion: 'v2.3',
+    kbHistory: []
+  },
+  {
+    id: 'agent_sales_analyst',
+    name: 'Analista de Vendas',
+    model: 'GPT-4o',
+    status: 'training',
+    templateId: 'sales_expert',
+    systemInstruction: 'Atue como um analista de CRM sênior. Analise o sentimento do cliente e sugira as melhores respostas para conversão.',
+    sources: { files: 5, links: 5, drive: false },
+    kbVersion: 'v0.1',
+    kbHistory: []
+  }
 ];
 
 const Automations: React.FC = () => {
@@ -28,7 +66,7 @@ const Automations: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'agents' | 'flows' | 'integrations'>('agents');
   
   // Agent State
-  const [agents, setAgents] = useState<AIAgent[]>([]);
+  const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AGENTS);
   const [selectedAgent, setSelectedAgent] = useState<AIAgent | null>(null);
   const [agentForm, setAgentForm] = useState<Partial<AIAgent>>({});
   
@@ -116,6 +154,7 @@ const Automations: React.FC = () => {
   // --- Handlers for Integrations ---
   const toggleIntegration = (id: string) => {
     setIntegrations(prev => prev.map(i => i.id === id ? { ...i, status: i.status === 'connected' ? 'disconnected' : 'connected' } : i));
+    addToast('Status da integração atualizado.', 'info');
   };
 
   // --- Renderers ---
@@ -222,6 +261,46 @@ const Automations: React.FC = () => {
     </div>
   );
 
+  const renderIntegrations = () => (
+    <div className="space-y-6 animate-fadeIn">
+       <div className="flex justify-between items-center">
+        <h2 className="text-lg font-semibold text-gray-800">Integrações Externas</h2>
+        <button className="bg-gray-900 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium hover:bg-black">
+          <Plus size={16} className="mr-2" /> Adicionar
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+         {integrations.map(integ => (
+            <div key={integ.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                <div className="flex items-center">
+                   <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center mr-4 border border-gray-100">
+                      {integ.icon && integ.icon.startsWith('http') ? (
+                          <img src={integ.icon} alt={integ.name} className="w-8 h-8 object-contain" />
+                      ) : (
+                          <Code size={24} className="text-gray-400" />
+                      )}
+                   </div>
+                   <div>
+                      <h3 className="font-bold text-gray-900">{integ.name}</h3>
+                      <p className="text-xs text-gray-500">Última sync: {integ.lastSync}</p>
+                   </div>
+                </div>
+                <div className="flex items-center">
+                   <span className={`mr-4 text-xs font-bold px-2 py-1 rounded-full ${integ.status === 'connected' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {integ.status === 'connected' ? 'Conectado' : 'Desconectado'}
+                   </span>
+                   <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={integ.status === 'connected'} onChange={() => toggleIntegration(integ.id)} />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                   </label>
+                </div>
+            </div>
+         ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="p-6 h-full bg-gray-50 overflow-y-auto">
       {/* Header Tabs */}
@@ -254,7 +333,7 @@ const Automations: React.FC = () => {
       {/* Content Render */}
       {activeTab === 'agents' && renderAgents()}
       {activeTab === 'flows' && renderFlows()}
-      {/* Integrations (Keep existing) */}
+      {activeTab === 'integrations' && renderIntegrations()}
       
       {/* 1. Create Agent Wizard Modal */}
       <Modal isOpen={showCreateWizard} onClose={() => setShowCreateWizard(false)} title="Novo Agente Inteligente" size="lg">
@@ -330,9 +409,12 @@ const Automations: React.FC = () => {
                         value={agentForm.model}
                         onChange={e => setAgentForm({...agentForm, model: e.target.value})}
                     >
+                        <option>GPT-4o</option>
+                        <option>GPT-4o mini</option>
                         <option>GPT-4 Turbo</option>
                         <option>GPT-3.5 Turbo</option>
-                        <option>Claude 3 Opus</option>
+                        <option>Claude 3.5 Sonnet</option>
+                        <option>Gemini 1.5 Pro</option>
                     </select>
                 </div>
             </div>

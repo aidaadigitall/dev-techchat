@@ -4,26 +4,26 @@ import { AgentTemplate, AIAgent, KBVersion } from '../types';
 const AGENT_TEMPLATES: AgentTemplate[] = [
     {
         id: 'sales_expert',
-        name: 'Especialista em Vendas',
-        description: 'Focado em conversão, upsell e agendamento de reuniões.',
-        baseModel: 'GPT-4 Turbo',
-        defaultInstruction: 'Você é um vendedor sênior. Seu objetivo é qualificar leads e agendar demos. Use gatilhos mentais de escassez e autoridade.',
-        capabilities: ['crm_integration', 'calendar_booking', 'objection_handling']
+        name: 'Analista de Vendas',
+        description: 'Focado em conversão, upsell, análise de sentimento e sugestão de respostas.',
+        baseModel: 'GPT-4o',
+        defaultInstruction: 'Atue como um analista de CRM sênior e especialista em vendas. Analise o sentimento do cliente e sugira as melhores respostas para conversão e upsell. Use gatilhos mentais de escassez e autoridade quando apropriado.',
+        capabilities: ['crm_integration', 'sentiment_analysis', 'response_suggestion', 'objection_handling']
     },
     {
         id: 'support_n1',
-        name: 'Suporte Técnico N1',
-        description: 'Triagem inicial e resolução de dúvidas frequentes baseada em manuais.',
+        name: 'Suporte Nível 1',
+        description: 'Triagem inicial e resolução de dúvidas frequentes com base em histórico e manuais.',
         baseModel: 'GPT-3.5 Turbo',
-        defaultInstruction: 'Você é um assistente de suporte técnico. Responda apenas com base na KB fornecida. Se não souber, transfira para humano.',
-        capabilities: ['faq_search', 'ticket_creation', 'sentiment_analysis']
+        defaultInstruction: 'Você é um assistente de suporte técnico. Responda apenas com base na KB fornecida e consulte o histórico de mensagens para contexto. Se não souber a resposta, transfira para um humano.',
+        capabilities: ['faq_search', 'sentiment_analysis', 'history_awareness', 'ticket_creation']
     },
     {
         id: 'onboarding_guide',
         name: 'Guia de Onboarding',
-        description: 'Acompanha novos clientes passo-a-passo na configuração da conta.',
+        description: 'Acompanha novos clientes passo-a-passo, monitora progresso e envia materiais.',
         baseModel: 'GPT-4 Turbo',
-        defaultInstruction: 'Você é um guia amigável. Explique o passo a passo com emojis e clareza. Valide se o usuário completou a etapa antes de avançar.',
+        defaultInstruction: 'Você é um guia amigável de onboarding. Explique o passo a passo com emojis e clareza. Valide se o usuário completou a etapa (rastreamento de progresso) antes de enviar o próximo material (mídia).',
         capabilities: ['step_tracking', 'media_sending', 'progress_report']
     }
 ];
