@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import { whatsappService } from '../services/whatsapp'; // Import WhatsApp Service
 import { Contact, Message, MessageType } from '../types';
 import { useToast } from '../components/ToastContext';
-import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle, Clock, Map, UserCheck } from 'lucide-react';
+import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle, Clock, Map, UserCheck, AlertCircle } from 'lucide-react';
 import Modal from '../components/Modal';
 
 const Contacts: React.FC = () => {
@@ -222,8 +222,66 @@ const Contacts: React.FC = () => {
       addToast('Exportação iniciada.', 'success');
   };
 
-  // CSV Import (Simplified for brevity, same logic as before)
-  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => { /* Same as previous implementation */ };
+  // CSV Import Logic
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+        const text = evt.target?.result as string;
+        const lines = text.split('\n');
+        
+        let successCount = 0;
+        let skippedCount = 0;
+        const errors: string[] = [];
+
+        setLoading(true);
+        setImportModalOpen(false); // Close modal to show loading or feedback later
+
+        // Skip header if likely present (checking for "nome" or "phone" or "telefone")
+        const startIdx = lines[0].toLowerCase().includes('nome') || lines[0].toLowerCase().includes('telefone') ? 1 : 0;
+
+        for(let i = startIdx; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if(!line) continue;
+            
+            // Simple CSV Split (Does not handle commas inside quotes perfectly, good enough for simple contact lists)
+            const parts = line.split(','); 
+            if (parts.length >= 2) { // Need at least Name and Phone
+                const name = parts[0]?.trim();
+                const phone = parts[1]?.trim().replace(/\D/g, '');
+                const email = parts[2]?.trim();
+                
+                if (name && phone && phone.length >= 10) {
+                    try {
+                        await api.contacts.create({
+                            name,
+                            phone,
+                            email,
+                            source: 'Importação CSV'
+                        });
+                        successCount++;
+                    } catch (err) {
+                        // Likely duplicate
+                        skippedCount++;
+                    }
+                } else {
+                    skippedCount++;
+                }
+            } else {
+                skippedCount++;
+            }
+        }
+
+        setLoading(false);
+        addToast(`${successCount} contatos importados. ${skippedCount} pulados (inválidos ou duplicados).`, 'success');
+        
+        if (importFileRef.current) importFileRef.current.value = '';
+        await loadContacts();
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div className="p-6 h-full bg-gray-50 overflow-y-auto" onClick={() => { setActionMenuOpenId(null); setShowFilter(false); }}>
@@ -407,7 +465,79 @@ const Contacts: React.FC = () => {
         )}
       </Modal>
 
-      {/* Other Modals (Sync, Import, Delete Confirm) would go here similarly */}
+      {/* Sync Modal */}
+      <Modal 
+        isOpen={syncModalOpen} 
+        onClose={() => setSyncModalOpen(false)}
+        title="Sincronizar com WhatsApp"
+        size="sm"
+        footer={
+           <div className="flex justify-end gap-2 w-full">
+              <button onClick={() => setSyncModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm">Cancelar</button>
+              <button onClick={performSync} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center text-sm shadow-sm">
+                <RefreshCw size={16} className="mr-2" /> Iniciar Sincronização
+              </button>
+           </div>
+        }
+      >
+         <div className="p-2">
+            <div className="flex items-center bg-blue-50 p-3 rounded-lg border border-blue-100 mb-4">
+                <RefreshCw className="text-blue-600 mr-3 flex-shrink-0" size={24} />
+                <p className="text-sm text-blue-800">Isso importará conversas e contatos recentes do seu WhatsApp conectado.</p>
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+               A operação pode levar alguns instantes dependendo do volume de dados. Certifique-se de que o aparelho esteja conectado.
+            </p>
+         </div>
+      </Modal>
+
+      {/* Import CSV Modal */}
+      <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title="Importar Contatos (CSV)">
+         <div className="space-y-4">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => importFileRef.current?.click()}>
+               <Upload size={32} className="text-gray-400 mb-2" />
+               <p className="text-sm font-medium text-gray-700">Clique para selecionar o arquivo CSV</p>
+               <p className="text-xs text-gray-500 mt-1">Formato: Nome, Telefone, Email (Opcional)</p>
+               <input 
+                 type="file" 
+                 accept=".csv" 
+                 ref={importFileRef} 
+                 className="hidden" 
+                 onChange={handleImportCSV} 
+               />
+            </div>
+            
+            <div className="bg-gray-50 p-3 rounded text-xs text-gray-600 border border-gray-200">
+               <p className="font-bold mb-1 flex items-center"><AlertCircle size={14} className="mr-1"/> Exemplo de formato:</p>
+               <pre className="bg-gray-100 p-2 rounded mt-1 overflow-x-auto text-[10px]">
+                  Nome,Telefone,Email{'\n'}
+                  João Silva,5511999999999,joao@email.com{'\n'}
+                  Maria Souza,5511888888888,
+               </pre>
+            </div>
+
+            <div className="flex justify-end pt-2">
+               <button onClick={() => setImportModalOpen(false)} className="text-gray-600 text-sm hover:underline">Cancelar</button>
+            </div>
+         </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={!!deleteConfirmationId} onClose={() => setDeleteConfirmationId(null)} title="Excluir Contato" size="sm">
+         <div className="text-center p-2">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+               <AlertTriangle size={24} className="text-red-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Tem certeza?</h3>
+            <p className="text-sm text-gray-500 mb-6">
+               Esta ação removerá o contato e seu histórico local. Para apagar do WhatsApp, use o aplicativo móvel.
+            </p>
+            <div className="flex justify-center gap-3">
+               <button onClick={() => setDeleteConfirmationId(null)} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium text-sm">Cancelar</button>
+               <button onClick={executeDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium shadow-sm text-sm">Excluir</button>
+            </div>
+         </div>
+      </Modal>
     </div>
   );
 };
