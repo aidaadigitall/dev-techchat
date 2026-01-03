@@ -12,7 +12,7 @@ import {
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
   Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
-  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File, Copy, Forward
+  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File, Copy, Forward, Info
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
@@ -43,7 +43,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   
   // Right Panel States
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightPanelView, setRightPanelView] = useState<'info' | 'media'>('info'); 
   
   const [aiPanelOpen, setAiPanelOpen] = useState(false); 
   
@@ -140,6 +139,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     setAttachment(null);
     setMessageInput('');
     setReplyingTo(null);
+    setIsContactTyping(false); // Reset typing state
     return () => { supabase.removeChannel(chatChannel); };
   }, [selectedContact]);
 
@@ -195,7 +195,16 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     setMessageInput(''); setAttachment(null); setReplyingTo(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
 
-    try { await api.chat.sendMessage(selectedContact.id, contentToSend, optimisticMessage.type); } 
+    try { 
+        await api.chat.sendMessage(selectedContact.id, contentToSend, optimisticMessage.type); 
+        
+        // Simulate contact typing response after 1.5 seconds for UX demo
+        setTimeout(() => {
+            setIsContactTyping(true);
+            setTimeout(() => setIsContactTyping(false), 3000); // Stop typing after 3s
+        }, 1500);
+
+    } 
     catch (e: any) { setMessages(prev => prev.filter(m => m.id !== tempId)); addToast(`Erro: ${e.message}`, 'error'); } 
     finally { setIsSending(false); }
   };
@@ -260,6 +269,26 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       addToast('Copiado para a área de transferência', 'info');
   };
 
+  // --- Attachment Handling ---
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const isImage = file.type.startsWith('image');
+      const isVideo = file.type.startsWith('video');
+      
+      const type = isImage ? MessageType.IMAGE : isVideo ? MessageType.VIDEO : MessageType.DOCUMENT;
+      const preview = URL.createObjectURL(file);
+      
+      setAttachment({ file, preview, type });
+      setAttachmentMenuOpen(false);
+    }
+  };
+
+  const removeAttachment = () => {
+      setAttachment(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const filteredMessages = messages.filter(m => m.content.toLowerCase().includes(messageSearchQuery.toLowerCase()));
 
   // Render Helpers
@@ -311,16 +340,24 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
            <>
              {/* Header */}
              <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-10 shadow-sm">
-                <div className="flex items-center flex-1">
-                   <button onClick={() => setSelectedContact(null)} className="md:hidden mr-3 text-gray-600"><ChevronLeft size={24} /></button>
-                   <div className="flex items-center cursor-pointer flex-1" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+                <div className="flex items-center flex-1" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+                   <button onClick={(e) => { e.stopPropagation(); setSelectedContact(null); }} className="md:hidden mr-3 text-gray-600"><ChevronLeft size={24} /></button>
+                   <div className="flex items-center cursor-pointer flex-1">
                       <img src={selectedContact.avatar} className="w-9 h-9 rounded-full object-cover mr-3" />
-                      <div><h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3><p className="text-xs text-gray-500">{selectedContact.company || 'Cliente'}</p></div>
+                      <div>
+                          <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
+                          {isContactTyping ? (
+                              <p className="text-xs text-green-600 font-bold animate-pulse">Digitando...</p>
+                          ) : (
+                              <p className="text-xs text-gray-500">{selectedContact.company || 'Cliente'}</p>
+                          )}
+                      </div>
                    </div>
                 </div>
                 <div className="flex items-center space-x-2">
                     <button onClick={() => setIsMessageSearchOpen(!isMessageSearchOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Search size={20} /></button>
                     <button onClick={handleAnalyzeChat} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg"><Sparkles size={18} /></button>
+                    <button onClick={() => setRightPanelOpen(!rightPanelOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title="Ver Detalhes"><Info size={20} /></button>
                     <button onClick={() => setHeaderMenuOpen(!headerMenuOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><MoreVertical size={20} /></button>
                     {headerMenuOpen && (
                         <div className="absolute right-4 top-12 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-50 animate-fadeIn">
@@ -337,7 +374,22 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                 {filteredMessages.map((msg) => (
                    <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} group mb-2 relative`}>
                       <div className={`max-w-[85%] relative shadow-sm rounded-lg px-3 py-2 text-sm ${msg.senderId === 'me' ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' : 'bg-white text-gray-900 rounded-tl-none'}`}>
-                         {msg.type === MessageType.TEXT && <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
+                         
+                         {/* Attachment Rendering */}
+                         {msg.type === MessageType.IMAGE && msg.mediaUrl && (
+                             <div className="mb-1 rounded overflow-hidden">
+                                 <img src={msg.mediaUrl} alt="anexo" className="max-w-full h-auto object-cover max-h-64" />
+                             </div>
+                         )}
+                         {msg.type === MessageType.DOCUMENT && (
+                             <div className="flex items-center bg-gray-100 p-2 rounded mb-1 border border-gray-200">
+                                 <FileText size={24} className="text-red-500 mr-2" />
+                                 <span className="truncate max-w-[200px]">{msg.fileName || 'Documento'}</span>
+                             </div>
+                         )}
+
+                         {msg.content && <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
+                         
                          <div className="flex items-center justify-end space-x-1 mt-1">
                             {msg.starred && <Star size={10} className="text-yellow-500 fill-yellow-500" />}
                             <span className="text-[10px] text-gray-500">{msg.timestamp}</span>
@@ -347,7 +399,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                          {/* Enhanced Context Menu Button */}
                          <button 
                            onClick={(e) => { e.stopPropagation(); setMessageMenuOpenId(messageMenuOpenId === msg.id ? null : msg.id); }} 
-                           className={`absolute top-0 right-0 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-black/5 transition-opacity ${messageMenuOpenId === msg.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                           className={`absolute top-0 right-0 p-1 rounded-full bg-white/50 text-gray-500 hover:bg-white hover:text-gray-800 transition-all opacity-0 group-hover:opacity-100 shadow-sm`}
                          >
                            <ChevronDown size={14} />
                          </button>
@@ -384,21 +436,79 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
              {/* Footer */}
              <div className="bg-[#f0f2f5] px-4 py-2 border-t border-gray-200">
-                {replyingTo && <div className="mb-2 p-2 bg-white rounded border-l-4 border-purple-500 flex justify-between"><div className="text-xs text-gray-500 truncate">Respondendo: {replyingTo.content}</div><button onClick={() => setReplyingTo(null)}><X size={14}/></button></div>}
+                {replyingTo && <div className="mb-2 p-2 bg-white rounded border-l-4 border-purple-500 flex justify-between animate-fadeIn"><div className="text-xs text-gray-500 truncate">Respondendo: {replyingTo.content}</div><button onClick={() => setReplyingTo(null)}><X size={14}/></button></div>}
                 
+                {/* Attachment Preview Area */}
+                {attachment && (
+                    <div className="mb-2 p-2 bg-gray-200 rounded-lg flex items-center justify-between animate-fadeIn border border-gray-300">
+                        <div className="flex items-center gap-3">
+                            {attachment.type === MessageType.IMAGE || attachment.type === MessageType.VIDEO ? (
+                                <img src={attachment.preview} alt="preview" className="h-16 w-16 object-cover rounded-md border border-gray-300" />
+                            ) : (
+                                <div className="h-16 w-16 bg-white rounded-md flex items-center justify-center border border-gray-300">
+                                    <FileText size={24} className="text-gray-500" />
+                                </div>
+                            )}
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold text-gray-700 truncate max-w-[150px]">{attachment.file?.name}</span>
+                                <span className="text-[10px] text-gray-500 uppercase">{attachment.type}</span>
+                            </div>
+                        </div>
+                        <button onClick={removeAttachment} className="p-1 bg-white rounded-full text-gray-500 hover:text-red-500 shadow-sm transition-colors">
+                            <X size={16} />
+                        </button>
+                    </div>
+                )}
+
                 <div className="flex items-end gap-2 relative">
                    <div className="relative">
-                      <button onClick={() => setAttachmentMenuOpen(!attachmentMenuOpen)} className="p-3 text-gray-500 hover:bg-gray-200 rounded-full"><Paperclip size={24} /></button>
+                      <button onClick={() => setAttachmentMenuOpen(!attachmentMenuOpen)} className="p-3 text-gray-500 hover:bg-gray-200 rounded-full transition-colors"><Paperclip size={24} /></button>
+                      
+                      {/* Attachment Menu */}
                       {attachmentMenuOpen && (
                          <div className="absolute bottom-14 left-0 flex flex-col gap-2 animate-scaleIn origin-bottom-left z-20">
-                            <div onClick={() => setShowQuickReplies(true)} className="flex items-center gap-2 cursor-pointer group"><div className="w-10 h-10 rounded-full bg-yellow-500 text-white flex items-center justify-center shadow-lg"><Zap size={20} /></div><span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100">Respostas Rápidas</span></div>
+                            {/* Hidden Input for Files */}
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                className="hidden" 
+                                onChange={handleFileSelect} 
+                                accept="image/*,video/*,application/pdf,.doc,.docx"
+                            />
+                            
+                            <div 
+                                onClick={() => fileInputRef.current?.click()} 
+                                className="flex items-center gap-2 cursor-pointer group"
+                            >
+                                <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
+                                    <ImageIcon size={20} />
+                                </div>
+                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Fotos e Vídeos</span>
+                            </div>
+
+                            <div 
+                                onClick={() => fileInputRef.current?.click()} 
+                                className="flex items-center gap-2 cursor-pointer group"
+                            >
+                                <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
+                                    <FileText size={20} />
+                                </div>
+                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Documento</span>
+                            </div>
+
+                            <div onClick={() => setShowQuickReplies(true)} className="flex items-center gap-2 cursor-pointer group">
+                                <div className="w-10 h-10 rounded-full bg-yellow-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
+                                    <Zap size={20} />
+                                </div>
+                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Respostas Rápidas</span>
+                            </div>
                          </div>
                       )}
                    </div>
                    <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 flex items-center px-2 py-1">
                       <input type="text" placeholder="Digite uma mensagem..." className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 py-3" value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyDown={handleKeyPress} />
                    </div>
-                   <button onClick={handleSendMessage} className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 shadow-sm"><Send size={20} /></button>
+                   <button onClick={handleSendMessage} className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 shadow-sm transition-transform active:scale-95"><Send size={20} /></button>
                 </div>
              </div>
            </>
@@ -407,10 +517,97 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
          )}
       </div>
 
-      {/* 3. Right Panel (Simplified) */}
-      <div className={`w-80 bg-white border-l border-gray-200 flex flex-col h-full absolute right-0 z-20 transition-transform duration-300 ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200"><h3 className="font-bold">Dados</h3><button onClick={() => setRightPanelOpen(false)}><X size={20}/></button></div>
-          <div className="p-4"><h4 className="font-bold text-gray-800">{selectedContact?.name}</h4><p className="text-sm text-gray-500">{selectedContact?.phone}</p></div>
+      {/* 3. Right Panel (Expanded Info) */}
+      <div className={`w-80 bg-white border-l border-gray-200 flex flex-col h-full absolute right-0 z-20 transition-transform duration-300 ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'} shadow-xl`}>
+          <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="font-bold text-gray-700">Dados do Contato</h3>
+              <button onClick={() => setRightPanelOpen(false)} className="text-gray-500 hover:bg-gray-200 rounded-full p-1"><X size={20}/></button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Profile Header */}
+              <div className="flex flex-col items-center">
+                  <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md mb-3">
+                      <img src={selectedContact?.avatar} className="w-full h-full object-cover" alt={selectedContact?.name} />
+                  </div>
+                  <h2 className="text-lg font-bold text-gray-900">{selectedContact?.name}</h2>
+                  <p className="text-sm text-gray-500">{selectedContact?.phone}</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-center gap-4">
+                  <button className="flex flex-col items-center text-gray-600 hover:text-purple-600 transition-colors">
+                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-1 hover:bg-purple-50">
+                          <Phone size={18} />
+                      </div>
+                      <span className="text-xs">Ligar</span>
+                  </button>
+                  <button className="flex flex-col items-center text-gray-600 hover:text-purple-600 transition-colors">
+                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-1 hover:bg-purple-50">
+                          <Video size={18} />
+                      </div>
+                      <span className="text-xs">Vídeo</span>
+                  </button>
+                  <button className="flex flex-col items-center text-gray-600 hover:text-purple-600 transition-colors">
+                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-1 hover:bg-purple-50">
+                          <Search size={18} />
+                      </div>
+                      <span className="text-xs">Buscar</span>
+                  </button>
+              </div>
+
+              {/* Info Details */}
+              <div className="space-y-4 border-t border-gray-100 pt-4">
+                  <div>
+                      <label className="text-xs font-bold text-gray-400 uppercase">Email</label>
+                      <p className="text-sm text-gray-800">{selectedContact?.email || '-'}</p>
+                  </div>
+                  <div>
+                      <label className="text-xs font-bold text-gray-400 uppercase">Empresa / Cargo</label>
+                      <p className="text-sm text-gray-800">{selectedContact?.company || '-'} / {selectedContact?.role || '-'}</p>
+                  </div>
+                  <div>
+                      <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">Etiquetas</label>
+                      <div className="flex flex-wrap gap-1">
+                          {selectedContact?.tags && selectedContact.tags.length > 0 ? (
+                              selectedContact.tags.map(tag => (
+                                  <span key={tag} className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs border border-gray-200">{tag}</span>
+                              ))
+                          ) : (
+                              <span className="text-xs text-gray-400 italic">Sem etiquetas</span>
+                          )}
+                          <button className="px-2 py-1 bg-purple-50 text-purple-600 rounded text-xs hover:bg-purple-100 transition-colors border border-purple-100">+ Add</button>
+                      </div>
+                  </div>
+                  
+                  {/* Strategic Notes Preview */}
+                  {selectedContact?.strategicNotes && (
+                      <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+                          <label className="text-xs font-bold text-yellow-700 uppercase mb-1 flex items-center"><StickyNote size={12} className="mr-1"/> Notas Estratégicas</label>
+                          <p className="text-xs text-gray-700 line-clamp-4 italic">
+                              "{selectedContact.strategicNotes}"
+                          </p>
+                      </div>
+                  )}
+              </div>
+
+              {/* CRM Shortcuts */}
+              <div className="border-t border-gray-100 pt-4">
+                  <h4 className="text-sm font-bold text-gray-800 mb-2">Ações CRM</h4>
+                  <button onClick={handleCreateTask} className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors group">
+                      <div className="flex items-center text-sm text-gray-700">
+                          <CheckSquare size={16} className="mr-2 text-gray-400 group-hover:text-purple-600"/> Criar Tarefa
+                      </div>
+                      <ChevronDown size={14} className="text-gray-400 -rotate-90"/>
+                  </button>
+                  <button className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors group">
+                      <div className="flex items-center text-sm text-gray-700">
+                          <Briefcase size={16} className="mr-2 text-gray-400 group-hover:text-purple-600"/> Criar Oportunidade
+                      </div>
+                      <ChevronDown size={14} className="text-gray-400 -rotate-90"/>
+                  </button>
+              </div>
+          </div>
       </div>
 
       {/* Quick Replies Modal */}
