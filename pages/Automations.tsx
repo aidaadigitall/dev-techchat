@@ -2,17 +2,17 @@ import React, { useState, useRef } from 'react';
 import { 
   Bot, Workflow, Plug, Plus, Search, FileText, Globe, 
   HardDrive, Upload, Trash2, Edit, PlayCircle, PauseCircle, 
-  ExternalLink, CheckCircle2, XCircle, BrainCircuit, History, RotateCcw, Save, Code
+  ExternalLink, CheckCircle2, XCircle, BrainCircuit, History, RotateCcw, Save, Code, Zap, ArrowRight, MessageSquare, Tag
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { AIAgent, AutomationFlow, Integration, KBVersion } from '../types';
-import { agentRegistry } from '../services/agentRegistry'; // Import Registry
+import { agentRegistry } from '../services/agentRegistry'; 
 import { useToast } from '../components/ToastContext';
 
 // Mock Data - Atualizado conforme solicitação
-const MOCK_FLOWS: AutomationFlow[] = [
+const INITIAL_FLOWS: AutomationFlow[] = [
   { id: '1', name: 'Boas-vindas WhatsApp', trigger: 'Nova Mensagem', steps: 5, active: true },
-  { id: '2', name: 'Qualificação de Leads', trigger: 'Keyword: preço, orçamento', steps: 5, active: true }, // Novo Fluxo
+  { id: '2', name: 'Qualificação de Leads', trigger: 'Keyword: preço, orçamento', steps: 5, active: true },
   { id: '3', name: 'Pesquisa de Satisfação', trigger: 'Ticket Fechado', steps: 3, active: false },
 ];
 
@@ -70,6 +70,11 @@ const Automations: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState<AIAgent | null>(null);
   const [agentForm, setAgentForm] = useState<Partial<AIAgent>>({});
   
+  // Flows State
+  const [flows, setFlows] = useState<AutomationFlow[]>(INITIAL_FLOWS);
+  const [showFlowModal, setShowFlowModal] = useState(false);
+  const [flowForm, setFlowForm] = useState({ name: '', trigger: 'keyword', keywords: '', action: 'send_message' });
+
   // Create Agent Wizard State
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -101,7 +106,6 @@ const Automations: React.FC = () => {
       setAgents(prev => [...prev, newAgent]);
       setShowCreateWizard(false);
       addToast('Agente criado com sucesso a partir do template!', 'success');
-      // Open edit immediately
       handleOpenAgent(newAgent);
   };
 
@@ -118,9 +122,7 @@ const Automations: React.FC = () => {
     if (e.target.files?.length && selectedAgent) {
       const fileCount = e.target.files.length;
       
-      // Simulate Processing
       setTimeout(() => {
-          // Versioning Logic
           const newVersion = agentRegistry.publishKBVersion(
               selectedAgent.id, 
               `Upload: ${e.target.files![0].name} ${fileCount > 1 ? `+ ${fileCount-1} arquivos` : ''}`, 
@@ -129,7 +131,6 @@ const Automations: React.FC = () => {
           
           setKbHistory(agentRegistry.getKBHistory(selectedAgent.id));
           
-          // Update Agent State
           setAgentForm(prev => ({ 
               ...prev, 
               kbVersion: newVersion.version,
@@ -149,6 +150,27 @@ const Automations: React.FC = () => {
           setAgentForm(prev => ({ ...prev, kbVersion: version }));
           addToast(`Rollback realizado para ${version}`, 'info');
       }
+  };
+
+  // --- Handlers for Flows ---
+  const handleSaveFlow = () => {
+      if(!flowForm.name) {
+          addToast('Nome do fluxo é obrigatório', 'error');
+          return;
+      }
+      
+      const newFlow: AutomationFlow = {
+          id: `flow_${Date.now()}`,
+          name: flowForm.name,
+          trigger: flowForm.trigger === 'keyword' ? `Palavra-chave: ${flowForm.keywords}` : 'Novo Ticket',
+          steps: 1,
+          active: true
+      };
+      
+      setFlows(prev => [...prev, newFlow]);
+      setShowFlowModal(false);
+      setFlowForm({ name: '', trigger: 'keyword', keywords: '', action: 'send_message' });
+      addToast('Fluxo de automação criado!', 'success');
   };
 
   // --- Handlers for Integrations ---
@@ -218,7 +240,7 @@ const Automations: React.FC = () => {
     <div className="space-y-6 animate-fadeIn">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold text-gray-800">Fluxos de Conversa (Chatbots)</h2>
-        <button className="bg-gray-900 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium hover:bg-black">
+        <button onClick={() => setShowFlowModal(true)} className="bg-gray-900 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium hover:bg-black">
           <Plus size={16} className="mr-2" /> Novo Fluxo
         </button>
       </div>
@@ -235,7 +257,7 @@ const Automations: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {MOCK_FLOWS.map(flow => (
+            {flows.map(flow => (
               <tr key={flow.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-6 py-4 font-medium text-gray-900 flex items-center">
                    <Workflow size={18} className="mr-3 text-purple-500" />
@@ -381,7 +403,81 @@ const Automations: React.FC = () => {
           </div>
       </Modal>
 
-      {/* 2. Edit Agent & KB Modal */}
+      {/* 2. Create Flow Modal */}
+      <Modal 
+        isOpen={showFlowModal} 
+        onClose={() => setShowFlowModal(false)}
+        title="Novo Fluxo de Automação"
+        footer={
+           <div className="flex justify-end gap-2">
+              <button onClick={() => setShowFlowModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+              <button onClick={handleSaveFlow} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Criar Fluxo</button>
+           </div>
+        }
+      >
+         <div className="space-y-4">
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Fluxo</label>
+               <input 
+                 type="text" 
+                 className="w-full border rounded-lg p-2.5 bg-white"
+                 placeholder="Ex: Resposta Automática Fora de Horário"
+                 value={flowForm.name}
+                 onChange={e => setFlowForm({...flowForm, name: e.target.value})}
+               />
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+               <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                  <Zap size={16} className="mr-2 text-yellow-600" /> Gatilho (Trigger)
+               </h4>
+               <div className="space-y-3">
+                  <select 
+                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                    value={flowForm.trigger}
+                    onChange={e => setFlowForm({...flowForm, trigger: e.target.value})}
+                  >
+                     <option value="keyword">Palavra-chave (Keyword)</option>
+                     <option value="new_ticket">Novo Ticket Aberto</option>
+                     <option value="tag_added">Etiqueta Adicionada</option>
+                     <option value="schedule">Horário Agendado</option>
+                  </select>
+                  
+                  {flowForm.trigger === 'keyword' && (
+                     <input 
+                       type="text" 
+                       className="w-full border rounded-lg p-2 text-sm bg-white"
+                       placeholder="Ex: preço, orçamento, ajuda"
+                       value={flowForm.keywords}
+                       onChange={e => setFlowForm({...flowForm, keywords: e.target.value})}
+                     />
+                  )}
+               </div>
+            </div>
+
+            <div className="flex justify-center">
+               <ArrowRight size={20} className="text-gray-400 rotate-90" />
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+               <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                  <PlayCircle size={16} className="mr-2 text-green-600" /> Ação Inicial
+               </h4>
+               <select 
+                 className="w-full border rounded-lg p-2 text-sm bg-white"
+                 value={flowForm.action}
+                 onChange={e => setFlowForm({...flowForm, action: e.target.value})}
+               >
+                  <option value="send_message">Enviar Mensagem</option>
+                  <option value="transfer_sector">Transferir para Setor</option>
+                  <option value="add_tag">Adicionar Etiqueta</option>
+                  <option value="start_agent">Iniciar Agente IA</option>
+               </select>
+            </div>
+         </div>
+      </Modal>
+
+      {/* 3. Edit Agent & KB Modal */}
       <Modal 
         isOpen={!!selectedAgent} 
         onClose={() => setSelectedAgent(null)}
@@ -443,6 +539,18 @@ const Automations: React.FC = () => {
                <div className="p-4">
                    {knowledgeTab === 'files' && (
                       <div className="space-y-4">
+                          <div className="grid grid-cols-3 gap-2 mb-4">
+                             <div className="bg-gray-50 border border-gray-200 rounded p-2 text-center text-xs text-gray-600">
+                                <FileText size={16} className="mx-auto mb-1 text-blue-500"/> Arquivos
+                             </div>
+                             <div className="bg-gray-50 border border-gray-200 rounded p-2 text-center text-xs text-gray-600">
+                                <Globe size={16} className="mx-auto mb-1 text-green-500"/> Links
+                             </div>
+                             <div className="bg-gray-50 border border-gray-200 rounded p-2 text-center text-xs text-gray-600">
+                                <HardDrive size={16} className="mx-auto mb-1 text-orange-500"/> Google Drive
+                             </div>
+                          </div>
+
                           <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white hover:border-purple-400 transition-colors cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
                              <Upload size={32} className="text-gray-400 mx-auto mb-2 group-hover:text-purple-500" />
                              <p className="text-sm font-medium text-gray-700">Clique para enviar novos documentos</p>

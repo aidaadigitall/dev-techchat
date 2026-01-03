@@ -11,7 +11,7 @@ import {
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
   Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
-  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File
+  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File, Copy, Forward
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
@@ -151,6 +151,13 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping, attachment, isContactTyping, replyingTo, messageSearchQuery]);
 
+  // Click outside to close message menu
+  useEffect(() => {
+    const handleClickOutside = () => setMessageMenuOpenId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   const loadMessages = async (contactId: string) => {
     const data = await api.chat.getMessages(contactId);
     setMessages(data);
@@ -215,6 +222,18 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const confirmCreateTask = async () => { if(newTaskForm.title) { await api.tasks.create(newTaskForm); setActiveModal(null); addToast('Tarefa criada', 'success'); } };
   const handleAnalyzeChat = async () => { if(selectedContact) { setAiLoading(true); setAiPanelOpen(true); const insights = await api.ai.generateInsight('chat', {}); setAiInsights(insights); setAiLoading(false); } };
   
+  const handleStarMessage = (message: Message) => {
+      setMessages(prev => prev.map(m => m.id === message.id ? { ...m, starred: !m.starred } : m));
+      setMessageMenuOpenId(null);
+      addToast(message.starred ? 'Mensagem removida dos favoritos' : 'Mensagem favoritada', 'success');
+  };
+
+  const handleCopyMessage = (content: string) => {
+      navigator.clipboard.writeText(content);
+      setMessageMenuOpenId(null);
+      addToast('Copiado para a área de transferência', 'info');
+  };
+
   const getMediaMessages = (type: string) => messages.filter(m => (type === 'images' && m.type === MessageType.IMAGE) || (type === 'videos' && m.type === MessageType.VIDEO) || (type === 'docs' && m.type === MessageType.DOCUMENT));
   const filteredMessages = messages.filter(m => m.content.toLowerCase().includes(messageSearchQuery.toLowerCase()));
 
@@ -274,18 +293,45 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
              {/* Messages */}
              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
                 {filteredMessages.map((msg) => (
-                   <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} group mb-2`}>
+                   <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} group mb-2 relative`}>
                       <div className={`max-w-[85%] relative shadow-sm rounded-lg px-3 py-2 text-sm ${msg.senderId === 'me' ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' : 'bg-white text-gray-900 rounded-tl-none'}`}>
                          {msg.type === MessageType.TEXT && <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
                          <div className="flex items-center justify-end space-x-1 mt-1">
+                            {msg.starred && <Star size={10} className="text-yellow-500 fill-yellow-500" />}
                             <span className="text-[10px] text-gray-500">{msg.timestamp}</span>
                             {msg.senderId === 'me' && <StatusIcon status={msg.status} />}
                          </div>
-                         <button onClick={() => setMessageMenuOpenId(messageMenuOpenId === msg.id ? null : msg.id)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 bg-gray-100 rounded-full"><ChevronDown size={12} /></button>
+                         
+                         {/* Enhanced Context Menu Button */}
+                         <button 
+                           onClick={(e) => { e.stopPropagation(); setMessageMenuOpenId(messageMenuOpenId === msg.id ? null : msg.id); }} 
+                           className={`absolute top-0 right-0 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-black/5 transition-opacity ${messageMenuOpenId === msg.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                         >
+                           <ChevronDown size={14} />
+                         </button>
+
+                         {/* Enhanced Dropdown Menu */}
                          {messageMenuOpenId === msg.id && (
-                            <div className="absolute top-6 right-2 bg-white rounded shadow-lg z-50 w-32 py-1">
-                               <button onClick={() => handleReplyMessage(msg)} className="w-full text-left px-3 py-1 text-xs hover:bg-gray-100">Responder</button>
-                               <button onClick={() => handleDeleteMessage(msg.id)} className="w-full text-left px-3 py-1 text-xs text-red-600 hover:bg-gray-100">Apagar</button>
+                            <div className="absolute top-6 right-0 bg-white rounded-xl shadow-xl border border-gray-100 z-50 w-48 overflow-hidden animate-scaleIn origin-top-right">
+                               <div className="p-1">
+                                  <button onClick={() => handleReplyMessage(msg)} className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
+                                     <Reply size={14} className="mr-3 text-gray-500"/> Responder
+                                  </button>
+                                  <button onClick={() => handleStarMessage(msg)} className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
+                                     <Star size={14} className={`mr-3 ${msg.starred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-500'}`}/> {msg.starred ? 'Desfavoritar' : 'Favoritar'}
+                                  </button>
+                                  <button onClick={() => handleCopyMessage(msg.content)} className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
+                                     <Copy size={14} className="mr-3 text-gray-500"/> Copiar
+                                  </button>
+                                  <button className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
+                                     <Forward size={14} className="mr-3 text-gray-500"/> Encaminhar
+                                  </button>
+                               </div>
+                               <div className="border-t border-gray-100 p-1 bg-gray-50/50">
+                                  <button onClick={() => handleDeleteMessage(msg.id)} className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-lg flex items-center transition-colors font-medium">
+                                     <Trash2 size={14} className="mr-3"/> Apagar
+                                  </button>
+                               </div>
                             </div>
                          )}
                       </div>
