@@ -29,6 +29,11 @@ const DEPARTMENTS = [
   { id: 'retencao', name: 'Retenção' }
 ];
 
+const CONNECTIONS = [
+  { id: 'wa_default', name: 'WhatsApp Principal' },
+  { id: 'wa_support', name: 'WhatsApp Suporte' }
+];
+
 interface ChatProps {
   branding?: Branding;
 }
@@ -55,6 +60,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [messageMenuOpenId, setMessageMenuOpenId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [loading, setLoading] = useState(false);
   
   // Search Messages State
   const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
@@ -77,6 +83,15 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   
+  // New Chat Modal States
+  const [newChatModalOpen, setNewChatModalOpen] = useState(false);
+  const [newChatForm, setNewChatForm] = useState({
+      contactId: '',
+      connectionId: 'wa_default',
+      sectorId: '',
+      initialMessage: ''
+  });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,6 +201,38 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const confirmCreateTask = async () => { if(newTaskForm.title) { await api.tasks.create(newTaskForm); setActiveModal(null); addToast('Tarefa criada', 'success'); } };
   const handleAnalyzeChat = async () => { if(selectedContact) { setAiLoading(true); setAiPanelOpen(true); const insights = await api.ai.generateInsight('chat', {}); setAiInsights(insights); setAiLoading(false); } };
   
+  // Start New Chat Handler
+  const handleStartChat = async () => {
+      if (!newChatForm.contactId) {
+          addToast("Selecione um contato para iniciar.", "warning");
+          return;
+      }
+      if (!newChatForm.sectorId) {
+          addToast("Selecione o setor responsável.", "warning");
+          return;
+      }
+
+      setLoading(true);
+      try {
+          if (newChatForm.initialMessage.trim()) {
+              await api.chat.sendMessage(newChatForm.contactId, newChatForm.initialMessage);
+          }
+          await api.contacts.update(newChatForm.contactId, { status: 'open' });
+
+          addToast("Atendimento iniciado com sucesso!", "success");
+          setNewChatModalOpen(false);
+          setNewChatForm({ contactId: '', connectionId: 'wa_default', sectorId: '', initialMessage: '' });
+          
+          // Switch to new contact
+          const selected = contacts.find(c => c.id === newChatForm.contactId);
+          if (selected) setSelectedContact(selected);
+      } catch (error) {
+          addToast("Erro ao iniciar atendimento.", "error");
+      } finally {
+          setLoading(false);
+      }
+  };
+
   // New Message Actions
   const handleStarMessage = (message: Message) => {
       setMessages(prev => prev.map(m => m.id === message.id ? { ...m, starred: !m.starred } : m));
@@ -208,9 +255,26 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     <div className="flex h-full bg-white overflow-hidden relative">
       {/* 1. Sidebar - Contact List */}
       <div className={`w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50 h-full absolute md:relative z-20 md:z-auto transition-transform duration-300 ${selectedContact ? '-translate-x-full md:translate-x-0' : 'translate-x-0'}`}>
-         {/* ... Sidebar content identical to original ... */}
+         
+         {/* Search & New Chat Button */}
          <div className="p-4 bg-white border-b border-gray-100">
-           <div className="relative mb-3"><input type="text" placeholder="Buscar conversa..." className="w-full bg-gray-100 border-none rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 transition-all" /><Search className="absolute left-3 top-2.5 text-gray-400" size={16} /></div>
+           <div className="flex gap-2 mb-3">
+               <div className="relative flex-1">
+                   <input type="text" placeholder="Buscar conversa..." className="w-full bg-gray-100 border-none rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 transition-all" />
+                   <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+               </div>
+               
+               <button 
+                 onClick={() => setNewChatModalOpen(true)}
+                 className="group relative flex items-center justify-center p-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors shadow-sm"
+               >
+                   <Plus size={20} />
+                   <span className="absolute top-full right-0 mt-2 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none">
+                       Novo Atendimento
+                   </span>
+               </button>
+           </div>
+
            <div className="flex bg-gray-100 rounded-lg p-1">
               {[{ id: 'open', label: 'Abertos' }, { id: 'pending', label: 'Pendentes' }, { id: 'resolved', label: 'Fechados' }].map(tab => (
                  <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === tab.id ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tab.label}</button>
@@ -335,7 +399,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
           <div className="p-4"><h4 className="font-bold text-gray-800">{selectedContact?.name}</h4><p className="text-sm text-gray-500">{selectedContact?.phone}</p></div>
       </div>
 
-      {/* Quick Replies Modal (Fixed) */}
+      {/* Quick Replies Modal */}
       <Modal isOpen={showQuickReplies} onClose={() => { setShowQuickReplies(false); setIsCreatingQuickReply(false); }} title="Respostas Rápidas">
          <div className="space-y-2">
             {!isCreatingQuickReply ? (
@@ -362,7 +426,86 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
          </div>
       </Modal>
 
-      {/* Other Modals (Reuse logic from previous, simplified here for length constraint but logically present) */}
+      {/* Start Chat Modal */}
+      <Modal
+        isOpen={newChatModalOpen}
+        onClose={() => setNewChatModalOpen(false)}
+        title="Iniciar Novo Atendimento"
+        size="md"
+      >
+         <div className="space-y-4">
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Selecionar Contato</label>
+               <select 
+                 className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                 value={newChatForm.contactId}
+                 onChange={e => setNewChatForm({...newChatForm, contactId: e.target.value})}
+               >
+                  <option value="">Selecione um contato...</option>
+                  {contacts.map(c => (
+                     <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
+                  ))}
+               </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Conexão (WhatsApp)</label>
+                   <select 
+                     className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm"
+                     value={newChatForm.connectionId}
+                     onChange={e => setNewChatForm({...newChatForm, connectionId: e.target.value})}
+                   >
+                      {CONNECTIONS.map(conn => (
+                         <option key={conn.id} value={conn.id}>{conn.name}</option>
+                      ))}
+                   </select>
+                </div>
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Setor / Departamento</label>
+                   <select 
+                     className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm"
+                     value={newChatForm.sectorId}
+                     onChange={e => setNewChatForm({...newChatForm, sectorId: e.target.value})}
+                   >
+                      <option value="">Selecione...</option>
+                      {DEPARTMENTS.map(dept => (
+                         <option key={dept.id} value={dept.id}>{dept.name}</option>
+                      ))}
+                   </select>
+                </div>
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Mensagem Inicial (Opcional)</label>
+               <textarea 
+                 className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm h-24 resize-none focus:ring-2 focus:ring-blue-500 outline-none"
+                 placeholder="Olá, como podemos ajudar hoje?"
+                 value={newChatForm.initialMessage}
+                 onChange={e => setNewChatForm({...newChatForm, initialMessage: e.target.value})}
+               ></textarea>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-gray-100 mt-2">
+                <button 
+                  onClick={() => setNewChatModalOpen(false)} 
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg mr-2"
+                >
+                   Cancelar
+                </button>
+                <button 
+                  onClick={handleStartChat} 
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center shadow-sm font-medium"
+                >
+                   {loading ? <RefreshCw size={16} className="animate-spin mr-2"/> : <Send size={16} className="mr-2" />} 
+                   Iniciar Conversa
+                </button>
+            </div>
+         </div>
+      </Modal>
+
+      {/* Other Modals */}
       <Modal isOpen={activeModal === 'resolve'} onClose={() => setActiveModal(null)} title="Finalizar" footer={<button onClick={confirmResolveTicket} className="bg-green-600 text-white px-4 py-2 rounded">Confirmar</button>}><p>Deseja finalizar este atendimento?</p></Modal>
       <Modal isOpen={activeModal === 'delete'} onClose={() => setActiveModal(null)} title="Excluir" footer={<button onClick={confirmDeleteChat} className="bg-red-600 text-white px-4 py-2 rounded">Excluir</button>}><p>Tem certeza?</p></Modal>
     </div>

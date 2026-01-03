@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { MOCK_COMPANIES, MOCK_PLANS } from '../constants';
 import { api } from '../services/api';
 import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw, CheckSquare, AlertTriangle } from 'lucide-react';
 import Modal from '../components/Modal';
-import { Company } from '../types';
+import { Company, Plan } from '../types';
 import { useToast } from '../components/ToastContext';
 
 const SuperAdminCompanies: React.FC = () => {
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [selectedCompany, setSelectedCompany] = useState<Partial<Company> | null>(null);
@@ -23,17 +23,24 @@ const SuperAdminCompanies: React.FC = () => {
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadCompanies();
+    loadData();
   }, []);
 
-  const loadCompanies = async () => {
+  const loadData = async () => {
     setLoading(true);
-    const data = await api.companies.list();
-    setCompanies(data);
+    const [companiesData, plansData] = await Promise.all([
+        api.companies.list(),
+        api.plans.list()
+    ]);
+    setCompanies(companiesData);
+    setPlans(plansData);
     setLoading(false);
   };
 
-  const getPlanName = (id: string) => MOCK_PLANS.find(p => p.id === id)?.name || id;
+  const getPlanName = (id: string) => {
+      const plan = plans.find(p => p.id === id);
+      return plan ? plan.name : id;
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -48,7 +55,7 @@ const SuperAdminCompanies: React.FC = () => {
   const handleOpenCreate = () => {
     setSelectedCompany({
       status: 'active',
-      planId: 'basic',
+      planId: plans[0]?.id || '', // Default to first valid plan
       userCount: 1,
       subscriptionEnd: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
       aiLimit: 5000,
@@ -91,8 +98,8 @@ const SuperAdminCompanies: React.FC = () => {
           addToast('Erro ao excluir: Possíveis dependências no banco de dados não puderam ser removidas.', 'error');
       } finally {
           setDeleteConfirmationId(null);
-          // Opcional: Recarregar para garantir estado real
-          loadCompanies();
+          // Reload to ensure state consistency
+          loadData();
       }
     }
   };
@@ -114,8 +121,9 @@ const SuperAdminCompanies: React.FC = () => {
           addToast('Nova empresa criada.', 'success');
         }
         setSelectedCompany(null);
-    } catch(e) {
-        addToast('Erro ao salvar empresa.', 'error');
+    } catch(e: any) {
+        console.error(e);
+        addToast(`Erro ao salvar: ${e.message || e.details || 'Verifique o console'}`, 'error');
     }
   };
 
@@ -331,7 +339,8 @@ const SuperAdminCompanies: React.FC = () => {
                  value={selectedCompany?.planId}
                  onChange={e => setSelectedCompany({...selectedCompany, planId: e.target.value})}
                >
-                 {MOCK_PLANS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                 {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                 {plans.length === 0 && <option value="basic">Carregando planos...</option>}
                </select>
              </div>
              <div>

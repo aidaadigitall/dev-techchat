@@ -105,15 +105,15 @@ const SuperAdminPlans: React.FC = () => {
                         <ul className="space-y-2 text-sm text-gray-600">
                         <li className="flex justify-between">
                             <span>Usuários</span>
-                            <span className="font-bold">{plan.limits.users}</span>
+                            <span className="font-bold">{plan.limits?.users || 0}</span>
                         </li>
                         <li className="flex justify-between">
                             <span>Conexões (WhatsApp)</span>
-                            <span className="font-bold">{plan.limits.connections}</span>
+                            <span className="font-bold">{plan.limits?.connections || 0}</span>
                         </li>
                         <li className="flex justify-between">
                             <span>Mensagens/mês</span>
-                            <span className="font-bold">{plan.limits.messages.toLocaleString()}</span>
+                            <span className="font-bold">{plan.limits?.messages?.toLocaleString() || 0}</span>
                         </li>
                         </ul>
                     </div>
@@ -122,16 +122,16 @@ const SuperAdminPlans: React.FC = () => {
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Módulos</p>
                         <ul className="space-y-2 text-sm">
                         <li className="flex items-center">
-                            {plan.features.crm ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
-                            <span className={plan.features.crm ? 'text-gray-900' : 'text-gray-400'}>CRM Kanban</span>
+                            {plan.features?.crm ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
+                            <span className={plan.features?.crm ? 'text-gray-900' : 'text-gray-400'}>CRM Kanban</span>
                         </li>
                         <li className="flex items-center">
-                            {plan.features.campaigns ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
-                            <span className={plan.features.campaigns ? 'text-gray-900' : 'text-gray-400'}>Campanhas em Massa</span>
+                            {plan.features?.campaigns ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
+                            <span className={plan.features?.campaigns ? 'text-gray-900' : 'text-gray-400'}>Campanhas em Massa</span>
                         </li>
                         <li className="flex items-center">
-                            {plan.features.api ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
-                            <span className={plan.features.api ? 'text-gray-900' : 'text-gray-400'}>API Pública</span>
+                            {plan.features?.api ? <Check size={16} className="text-green-500 mr-2" /> : <X size={16} className="text-red-400 mr-2" />}
+                            <span className={plan.features?.api ? 'text-gray-900' : 'text-gray-400'}>API Pública</span>
                         </li>
                         </ul>
                     </div>

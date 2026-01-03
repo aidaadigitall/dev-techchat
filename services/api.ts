@@ -114,6 +114,7 @@ const adaptPlan = (data: any): Plan => ({
     id: data.id,
     name: data.name,
     price: data.price,
+    // Ensure nested objects exist to prevent UI crashes
     limits: data.limits || { users: 1, connections: 1, messages: 1000 },
     features: data.features || { crm: true, campaigns: false, api: false }
 });
@@ -359,19 +360,36 @@ export const api = {
               // 1. Delete Profiles (Users) linked to company
               await supabase.from('profiles').delete().eq('company_id', id);
               
-              // 2. Delete Contacts
-              await supabase.from('contacts').delete().eq('company_id', id);
-              
-              // 3. Delete Messages
+              // 2. Delete Messages (Refer to Contacts)
               await supabase.from('messages').delete().eq('company_id', id);
               
-              // 4. Delete Tasks
+              // 3. Delete Tasks
               await supabase.from('tasks').delete().eq('company_id', id);
               
-              // 5. Delete Quick Replies
+              // 4. Delete Quick Replies
               await supabase.from('quick_replies').delete().eq('company_id', id);
 
-              // 6. Finally Delete Company
+              // 5. Delete CRM Data (Pipelines -> Columns -> Cards)
+              const { data: pipelines } = await supabase.from('pipelines').select('id').eq('company_id', id);
+              if (pipelines && pipelines.length > 0) {
+                  const pipelineIds = pipelines.map(p => p.id);
+                  const { data: columns } = await supabase.from('kanban_columns').select('id').in('pipeline_id', pipelineIds);
+                  if (columns && columns.length > 0) {
+                      const columnIds = columns.map(c => c.id);
+                      await supabase.from('kanban_cards').delete().in('column_id', columnIds);
+                      await supabase.from('kanban_columns').delete().in('id', columnIds);
+                  }
+                  await supabase.from('pipelines').delete().in('id', pipelineIds);
+              }
+
+              // 6. Delete Proposals & Campaigns
+              await supabase.from('proposals').delete().eq('company_id', id);
+              await supabase.from('campaigns').delete().eq('company_id', id);
+
+              // 7. Delete Contacts (Must be after messages/cards/etc)
+              await supabase.from('contacts').delete().eq('company_id', id);
+
+              // 8. Finally Delete Company
               const { error } = await supabase.from('companies').delete().eq('id', id);
               
               if (error) {

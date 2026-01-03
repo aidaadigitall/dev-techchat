@@ -31,27 +31,26 @@ const getEnv = (key: string) => {
 const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
 
-// Hardcoded fallbacks provided by user
-const FALLBACK_URL = 'https://uzrflpyexjxaztmqwifa.supabase.co';
-const FALLBACK_KEY = 'sb_publishable_gVgH65ce4ky8v2acrg5tSQ_h79S6YiH';
-
 // Ensure valid URL format to prevent crash during initialization if env vars are missing
-// We use the provided fallback URL if env var is missing
-const validUrl = supabaseUrl && supabaseUrl.startsWith('http') ? supabaseUrl : FALLBACK_URL;
-const validKey = supabaseAnonKey || FALLBACK_KEY;
+const validUrl = supabaseUrl && supabaseUrl.startsWith('http') ? supabaseUrl : '';
+const validKey = supabaseAnonKey || '';
 
 let client;
 
-try {
-    client = createClient(validUrl, validKey);
-} catch (error) {
-    console.error("Supabase Client Init Error:", error);
+if (validUrl && validKey) {
+    try {
+        client = createClient(validUrl, validKey);
+    } catch (error) {
+        console.error("Supabase Client Init Error:", error);
+    }
 }
 
-export const supabase = client || createClient(FALLBACK_URL, FALLBACK_KEY);
+// Export client (might be undefined if config is missing, handled in App)
+// We export a dummy client if config is missing to prevent immediate crash on import, 
+// but auth calls will fail gracefully handled by Login.tsx checks
+export const supabase = client || createClient('https://placeholder.supabase.co', 'placeholder');
 
 // Helper to check if we are running with real config or placeholders
 export const isSupabaseConfigured = () => {
-    // If we have a URL that isn't the generic placeholder, we are configured
-    return validUrl !== 'https://placeholder.supabase.co' && validUrl !== '';
+    return validUrl !== '' && validKey !== '';
 };
