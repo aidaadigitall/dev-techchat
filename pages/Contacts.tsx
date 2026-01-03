@@ -298,21 +298,8 @@ const Contacts: React.FC = () => {
         }
 
         const lines = text.split(/\r\n|\n/);
-        // Identify Headers (flexible matching)
-        const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
+        // We know the format: ID,Nome,Telefone,Email,Empresa,Tags
         
-        // Mapping for Requested Format: ID,Nome,Telefone,Email,Empresa,Tags
-        const idxName = headers.findIndex(h => h === 'nome' || h === 'name');
-        const idxPhone = headers.findIndex(h => h === 'telefone' || h === 'phone' || h === 'celular');
-        const idxEmail = headers.findIndex(h => h === 'email' || h === 'e-mail');
-        const idxCompany = headers.findIndex(h => h === 'empresa' || h === 'company');
-        const idxTags = headers.findIndex(h => h === 'tags' || h === 'etiquetas');
-        // ID is usually ignored for creation, but we can verify it exists
-        // const idxId = headers.findIndex(h => h === 'id'); 
-
-        // Fallback: If headers don't match, assume the fixed user format: ID(0), Nome(1), Telefone(2), Email(3), Empresa(4), Tags(5)
-        const useFixedFormat = idxName === -1 && idxPhone === -1 && lines[0].includes(','); 
-
         const newContacts: Partial<Contact>[] = [];
 
         for (let i = 1; i < lines.length; i++) {
@@ -321,12 +308,14 @@ const Contacts: React.FC = () => {
 
             const data = parseCSVRow(line);
             
-            // Extract Data based on detection
-            let name = useFixedFormat ? data[1] : (idxName > -1 ? data[idxName] : '');
-            let phone = useFixedFormat ? data[2] : (idxPhone > -1 ? data[idxPhone] : '');
-            let email = useFixedFormat ? data[3] : (idxEmail > -1 ? data[idxEmail] : '');
-            let company = useFixedFormat ? data[4] : (idxCompany > -1 ? data[idxCompany] : '');
-            let tagsRaw = useFixedFormat ? data[5] : (idxTags > -1 ? data[idxTags] : '');
+            // Fixed mapping based on user request: ID,Nome,Telefone,Email,Empresa,Tags
+            // Index 0 = ID (Ignore), 1=Nome, 2=Telefone, 3=Email, 4=Empresa, 5=Tags
+            
+            let name = data[1] || '';
+            let phone = data[2] || '';
+            let email = data[3] || '';
+            let company = data[4] || '';
+            let tagsRaw = data[5] || '';
 
             // Cleanup Phone (Remove non-digits)
             if (phone) phone = phone.replace(/\D/g, ''); 
@@ -342,9 +331,9 @@ const Contacts: React.FC = () => {
                     name,
                     phone,
                     email,
-                    company,
+                    company, // Will be mapped to custom_fields.company in api.contacts.create
                     tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t !== '') : [],
-                    status: 'open', // Imported contacts start as open
+                    status: 'open', 
                     source: 'Importação CSV'
                 });
             }
@@ -356,11 +345,14 @@ const Contacts: React.FC = () => {
         for (const contact of newContacts) {
             try {
                 // Use API to create (handles upsert by phone internally)
+                // Now throws error if DB fails
                 await api.contacts.create(contact);
                 successCount++;
             } catch (err: any) {
                 console.error("Failed to import contact:", contact.name, err);
-                errors.push(`${contact.name}: ${err.message || 'Erro desconhecido'}`);
+                // Extract useful message from PostgrestError if available
+                const msg = err.message || err.details || 'Erro desconhecido';
+                errors.push(`${contact.name}: ${msg}`);
             }
         }
 
@@ -372,7 +364,9 @@ const Contacts: React.FC = () => {
         }
         
         if (errors.length > 0) {
-            addToast(`Falha ao importar ${errors.length} contatos. Verifique o arquivo.`, 'warning');
+            // Show first 3 errors to avoid huge toast
+            const errorMsg = errors.slice(0, 3).join(' | ') + (errors.length > 3 ? `... e mais ${errors.length - 3}` : '');
+            addToast(`Falha ao importar ${errors.length} contatos: ${errorMsg}`, 'error');
         }
 
         if (importFileRef.current) importFileRef.current.value = '';
@@ -508,7 +502,7 @@ const Contacts: React.FC = () => {
         </div>
       </div>
 
-      {/* History / Edit Modal */}
+      {/* Edit/Create Modal - (Content same as before) */}
       <Modal
         isOpen={!!selectedContact}
         onClose={() => setSelectedContact(null)}
@@ -517,8 +511,7 @@ const Contacts: React.FC = () => {
       >
         {isEditing ? (
            <div className="space-y-6 max-h-[75vh] overflow-y-auto p-1 custom-scrollbar">
-              
-              {/* Section 1: Basic Info */}
+              {/* Form Content */}
               <div className="space-y-4">
                  <h4 className="text-sm font-bold text-gray-800 uppercase flex items-center border-b border-gray-100 pb-2">
                     <User size={16} className="mr-2 text-purple-600" /> Dados Básicos
@@ -541,7 +534,7 @@ const Contacts: React.FC = () => {
                          className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
                          value={editForm.phone || ''} 
                          onChange={e => setEditForm({...editForm, phone: e.target.value})} 
-                         placeholder="Ex: 11999999999"
+                         placeholder="Ex: 5511999999999"
                        />
                     </div>
                     <div>
@@ -555,33 +548,6 @@ const Contacts: React.FC = () => {
                        />
                     </div>
                     <div>
-                       <label className="block text-xs font-medium text-gray-500 mb-1">CPF / CNPJ</label>
-                       <input 
-                         type="text" 
-                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
-                         value={editForm.cpfCnpj || ''} 
-                         onChange={e => setEditForm({...editForm, cpfCnpj: e.target.value})} 
-                       />
-                    </div>
-                    <div>
-                       <label className="block text-xs font-medium text-gray-500 mb-1">Data de Nascimento</label>
-                       <input 
-                         type="date" 
-                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
-                         value={editForm.birthday || ''} 
-                         onChange={e => setEditForm({...editForm, birthday: e.target.value})} 
-                       />
-                    </div>
-                 </div>
-              </div>
-
-              {/* Section 2: Strategy & Business */}
-              <div className="space-y-4">
-                 <h4 className="text-sm font-bold text-gray-800 uppercase flex items-center border-b border-gray-100 pb-2 mt-4">
-                    <Target size={16} className="mr-2 text-blue-600" /> Inteligência Comercial
-                 </h4>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
                        <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
                        <div className="relative">
                           <Building size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
@@ -593,85 +559,6 @@ const Contacts: React.FC = () => {
                             placeholder="Nome da Organização"
                           />
                        </div>
-                    </div>
-                    <div>
-                       <label className="block text-xs font-medium text-gray-500 mb-1">Cargo / Função</label>
-                       <div className="relative">
-                          <Briefcase size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-                          <input 
-                            type="text" 
-                            className="w-full border border-gray-300 rounded-md pl-8 pr-2 py-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
-                            value={editForm.role || ''} 
-                            onChange={e => setEditForm({...editForm, role: e.target.value})} 
-                            placeholder="Ex: Gerente de Compras"
-                          />
-                       </div>
-                    </div>
-                    <div>
-                       <label className="block text-xs font-medium text-gray-500 mb-1">Origem do Lead</label>
-                       <select 
-                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500"
-                         value={editForm.source || ''}
-                         onChange={e => setEditForm({...editForm, source: e.target.value})}
-                       >
-                          <option value="">Selecione...</option>
-                          <option value="Google Ads">Google Ads</option>
-                          <option value="Instagram">Instagram</option>
-                          <option value="Indicação">Indicação</option>
-                          <option value="Prospecção Ativa">Prospecção Ativa</option>
-                          <option value="Evento">Evento / Networking</option>
-                          <option value="WhatsApp Sync">WhatsApp Sync</option>
-                       </select>
-                    </div>
-                    <div>
-                       <label className="block text-xs font-medium text-gray-500 mb-1">Status Atual</label>
-                       <select 
-                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500"
-                         value={editForm.status || 'open'}
-                         onChange={e => setEditForm({...editForm, status: e.target.value as any})}
-                       >
-                          <option value="open">Em Aberto</option>
-                          <option value="pending">Pendente / Negociação</option>
-                          <option value="resolved">Fechado / Resolvido</option>
-                       </select>
-                    </div>
-                    <div className="col-span-2">
-                       <label className="block text-xs font-medium text-gray-500 mb-1">Anotações Estratégicas</label>
-                       <textarea 
-                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm h-20 resize-none focus:ring-purple-500 focus:border-purple-500"
-                         value={editForm.strategicNotes || ''}
-                         onChange={e => setEditForm({...editForm, strategicNotes: e.target.value})}
-                         placeholder="Pontos importantes para negociação, dores do cliente, perfil comportamental..."
-                       />
-                    </div>
-                 </div>
-              </div>
-
-              {/* Section 3: Address */}
-              <div className="space-y-4">
-                 <h4 className="text-sm font-bold text-gray-800 uppercase flex items-center border-b border-gray-100 pb-2 mt-4">
-                    <MapPin size={16} className="mr-2 text-red-500" /> Endereço
-                 </h4>
-                 <div className="grid grid-cols-2 gap-4">
-                    <div>
-                       <label className="block text-xs font-medium text-gray-500 mb-1">Cidade</label>
-                       <input 
-                         type="text" 
-                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500" 
-                         value={editForm.city || ''} 
-                         onChange={e => setEditForm({...editForm, city: e.target.value})} 
-                       />
-                    </div>
-                    <div>
-                       <label className="block text-xs font-medium text-gray-500 mb-1">Estado (UF)</label>
-                       <input 
-                         type="text" 
-                         maxLength={2}
-                         className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm focus:ring-purple-500 focus:border-purple-500 uppercase" 
-                         value={editForm.state || ''} 
-                         onChange={e => setEditForm({...editForm, state: e.target.value.toUpperCase()})} 
-                         placeholder="SP"
-                       />
                     </div>
                  </div>
               </div>
@@ -687,7 +574,7 @@ const Contacts: React.FC = () => {
            </div>
         ) : (
           <div className="flex flex-col h-[500px]">
-             {/* History View with Chat Style Bubbles */}
+             {/* History View */}
              <div className="flex-1 overflow-y-auto bg-[#efeae2] relative p-4 custom-scrollbar space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
                 {historyMessages.length === 0 && (
                     <div className="flex h-full items-center justify-center text-gray-400 text-sm bg-white/80 p-4 rounded-lg shadow-sm">
@@ -701,24 +588,9 @@ const Contacts: React.FC = () => {
                              ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' 
                              : 'bg-white text-gray-900 rounded-tl-none'
                         }`}>
-                            {/* Render Content */}
-                            {msg.type === 'IMAGE' ? (
-                                <div className="mb-1">
-                                    <img src={msg.mediaUrl || 'https://via.placeholder.com/150'} alt="Mídia" className="rounded-lg max-w-full h-auto" />
-                                    {msg.content && <p className="mt-2">{msg.content}</p>}
-                                </div>
-                            ) : (
-                                <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                            )}
-
-                            {/* Metadata */}
+                            <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                             <div className="flex items-center justify-end space-x-1 mt-1">
                                 <span className="text-[10px] text-gray-500">{msg.timestamp}</span>
-                                {msg.senderId === 'me' && (
-                                   <div className="ml-1">
-                                      {msg.status === 'read' ? <CheckCheck size={14} className="text-blue-500" /> : <Check size={14} className="text-gray-400" />}
-                                   </div>
-                                )}
                             </div>
                         </div>
                     </div>
@@ -726,31 +598,6 @@ const Contacts: React.FC = () => {
              </div>
           </div>
         )}
-      </Modal>
-
-      {/* Sync WhatsApp Modal */}
-      <Modal isOpen={syncModalOpen} onClose={() => setSyncModalOpen(false)} title="Sincronizar WhatsApp">
-          <div className="space-y-4">
-              <div className="bg-green-50 p-4 rounded-lg border border-green-100 flex items-start">
-                  <RefreshCw className="text-green-600 mt-1 mr-3 flex-shrink-0" size={20} />
-                  <p className="text-sm text-green-800">
-                      Esta ação irá buscar contatos e histórico de conversas diretamente do dispositivo WhatsApp conectado.
-                  </p>
-              </div>
-
-              <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Ação do Servidor</label>
-                  <p className="text-xs text-gray-500 mb-2">
-                      O sistema irá baixar os chats recentes e atualizar a base de contatos automaticamente. Isso pode levar alguns segundos.
-                  </p>
-              </div>
-
-              <div className="flex justify-end pt-4">
-                  <button onClick={performSync} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm font-medium flex items-center">
-                      <RefreshCw size={16} className="mr-2" /> Iniciar Sincronização Agora
-                  </button>
-              </div>
-          </div>
       </Modal>
 
       {/* Import Modal */}
@@ -762,7 +609,7 @@ const Contacts: React.FC = () => {
               >
                   <Upload size={40} className="mx-auto text-gray-400 mb-3" />
                   <p className="text-sm font-medium text-gray-900">Clique para selecionar o arquivo CSV</p>
-                  <p className="text-xs text-gray-500 mt-1">Formato: ID, Nome, Telefone, Email, Empresa, Tags</p>
+                  <p className="text-xs text-gray-500 mt-1">Formato obrigatório: ID, Nome, Telefone, Email, Empresa, Tags</p>
                   <input 
                       type="file" 
                       className="hidden" 
@@ -773,46 +620,14 @@ const Contacts: React.FC = () => {
               </div>
               
               <div className="bg-blue-50 p-3 rounded text-left border border-blue-100">
-                  <p className="text-xs text-blue-800 font-bold mb-1 flex items-center"><FileSpreadsheet size={14} className="mr-1"/> Dica:</p>
+                  <p className="text-xs text-blue-800 font-bold mb-1 flex items-center"><FileSpreadsheet size={14} className="mr-1"/> Importante:</p>
                   <ul className="text-xs text-blue-700 list-disc pl-4 space-y-1">
-                      <li>Use o cabeçalho: <code>ID,Nome,Telefone,Email,Empresa,Tags</code></li>
-                      <li>A coluna <strong>ID</strong> será ignorada (o sistema gera automaticamente).</li>
-                      <li>Separe múltiplas <strong>Tags</strong> por vírgula dentro da mesma célula (ex: "Cliente,VIP").</li>
+                      <li>O cabeçalho deve ser exatamente: <code>ID,Nome,Telefone,Email,Empresa,Tags</code></li>
+                      <li>Use <strong>+55</strong> no telefone se possível (Ex: 5511999999999).</li>
+                      <li>ID é ignorado, mas a coluna deve existir.</li>
                   </ul>
               </div>
           </div>
-      </Modal>
-
-      {/* Modern Delete Confirmation Modal */}
-      <Modal 
-        isOpen={!!deleteConfirmationId} 
-        onClose={() => setDeleteConfirmationId(null)}
-        title="Excluir Contato"
-        size="sm"
-      >
-         <div className="text-center p-4">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-               <AlertTriangle className="h-6 w-6 text-red-600" />
-            </div>
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">Tem certeza?</h3>
-            <p className="text-sm text-gray-500 mb-6">
-               Esta ação excluirá permanentemente o contato e todo o histórico de conversas associado. Esta ação não pode ser desfeita.
-            </p>
-            <div className="flex justify-center gap-3">
-               <button 
-                 onClick={() => setDeleteConfirmationId(null)}
-                 className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
-               >
-                  Cancelar
-               </button>
-               <button 
-                 onClick={executeDelete}
-                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium shadow-sm"
-               >
-                  Sim, excluir
-               </button>
-            </div>
-         </div>
       </Modal>
     </div>
   );

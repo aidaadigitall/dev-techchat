@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { KanbanColumn, Pipeline, KanbanCard } from '../types';
+import { KanbanColumn, Pipeline, KanbanCard, Contact } from '../types';
 import { api } from '../services/api';
 import { Plus, MoreHorizontal, DollarSign, Filter, Search, RotateCw, Clock, Save, X, AlignLeft } from 'lucide-react';
 import Modal from '../components/Modal';
+import { useToast } from '../components/ToastContext';
 
 const Kanban: React.FC = () => {
+  const { addToast } = useToast();
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
@@ -22,6 +24,11 @@ const Kanban: React.FC = () => {
   const [editingCard, setEditingCard] = useState<KanbanCard | null>(null);
   const [editForm, setEditForm] = useState<{title: string, value: string, description: string}>({ title: '', value: '', description: '' });
 
+  // Create Card State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState<{title: string, value: string, contactId: string, priority: string}>({ title: '', value: '', contactId: '', priority: 'medium' });
+  const [contacts, setContacts] = useState<Contact[]>([]);
+
   // Scroll Drag State
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDraggingBoard, setIsDraggingBoard] = useState(false);
@@ -30,6 +37,7 @@ const Kanban: React.FC = () => {
 
   useEffect(() => {
     loadPipelines();
+    loadContacts();
   }, []);
 
   const loadPipelines = async () => {
@@ -41,6 +49,11 @@ const Kanban: React.FC = () => {
       setColumns(data[0].columns);
     }
     setLoading(false);
+  };
+
+  const loadContacts = async () => {
+      const data = await api.contacts.list();
+      setContacts(data);
   };
 
   const handlePipelineChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -130,6 +143,36 @@ const Kanban: React.FC = () => {
     scrollContainerRef.current.scrollLeft = scrollLeft - walk;
   };
 
+  // --- Create Handlers ---
+  const handleCreateCard = async () => {
+      if (!createForm.title) {
+          addToast('Informe o título', 'warning');
+          return;
+      }
+      
+      const firstColumn = columns[0];
+      if (!firstColumn) return;
+
+      try {
+          // Find contact to link
+          const contact = contacts.find(c => c.id === createForm.contactId);
+          
+          await api.crm.createCard(firstColumn.id, {
+              title: createForm.title,
+              value: parseFloat(createForm.value) || 0,
+              contactId: createForm.contactId || null,
+              priority: createForm.priority
+          });
+          
+          addToast('Card criado com sucesso!', 'success');
+          setShowCreateModal(false);
+          setCreateForm({ title: '', value: '', contactId: '', priority: 'medium' });
+          loadPipelines(); // Reload
+      } catch (error) {
+          addToast('Erro ao criar card', 'error');
+      }
+  };
+
   // --- Edit Handlers ---
   const handleCardDoubleClick = (card: KanbanCard, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -208,7 +251,11 @@ const Kanban: React.FC = () => {
            </div>
 
            <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-300 bg-white flex-shrink-0" onClick={loadPipelines}><RotateCw size={18} /></button>
-           <button className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm whitespace-nowrap flex-shrink-0">
+           
+           <button 
+             onClick={() => setShowCreateModal(true)}
+             className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm whitespace-nowrap flex-shrink-0"
+           >
              <Plus size={18} className="mr-2" /> Novo
            </button>
         </div>
@@ -269,7 +316,7 @@ const Kanban: React.FC = () => {
                            </div>
                         </div>
                         
-                        <h4 className="font-semibold text-gray-800 text-sm mb-0.5">{card.contactName}</h4>
+                        <h4 className="font-semibold text-gray-800 text-sm mb-0.5">{card.title}</h4>
                         <p className="text-xs text-gray-500 mb-2 truncate">{card.contactName}</p>
                         
                         <div className="flex justify-between items-center pt-2 border-t border-gray-50">
@@ -296,6 +343,69 @@ const Kanban: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Create Card Modal */}
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Novo Negócio"
+        footer={
+           <div className="flex justify-end gap-2 w-full">
+              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleCreateCard} className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 flex items-center">
+                <Plus size={16} className="mr-2" /> Criar
+              </button>
+           </div>
+        }
+      >
+         <div className="space-y-4">
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Título da Oportunidade</label>
+               <input 
+                 type="text" 
+                 className="w-full border border-gray-300 rounded-md p-2 bg-white" 
+                 placeholder="Ex: Venda de Software"
+                 value={createForm.title}
+                 onChange={e => setCreateForm({...createForm, title: e.target.value})}
+               />
+            </div>
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
+               <input 
+                 type="number" 
+                 className="w-full border border-gray-300 rounded-md p-2 bg-white" 
+                 placeholder="0,00"
+                 value={createForm.value}
+                 onChange={e => setCreateForm({...createForm, value: e.target.value})}
+               />
+            </div>
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Contato Vinculado</label>
+               <select 
+                 className="w-full border border-gray-300 rounded-md p-2 bg-white"
+                 value={createForm.contactId}
+                 onChange={e => setCreateForm({...createForm, contactId: e.target.value})}
+               >
+                  <option value="">Selecione um contato...</option>
+                  {contacts.map(c => (
+                     <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+               </select>
+            </div>
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Prioridade</label>
+               <select 
+                 className="w-full border border-gray-300 rounded-md p-2 bg-white"
+                 value={createForm.priority}
+                 onChange={e => setCreateForm({...createForm, priority: e.target.value})}
+               >
+                  <option value="high">Alta</option>
+                  <option value="medium">Média</option>
+                  <option value="low">Baixa</option>
+               </select>
+            </div>
+         </div>
+      </Modal>
 
       {/* Edit Card Modal */}
       <Modal 

@@ -69,8 +69,10 @@ const App: React.FC = () => {
     }
   });
   
-  // Simulation State for Role Switching
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  // Simulation State for Role Switching - Persistent
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => {
+      return localStorage.getItem('app_is_admin_mode') === 'true';
+  });
 
   // --- Auth & Session Management ---
   useEffect(() => {
@@ -122,9 +124,11 @@ const App: React.FC = () => {
     // Check if it's the Super Admin Credential
     const isSuperAdminEmail = authUser.email === 'admin@techchat.com' || authUser.email === 'escinformaticago@gmail.com';
     
-    if (isSuperAdminEmail) {
+    // Only force Admin Mode if user just logged in and we don't have preference
+    if (isSuperAdminEmail && localStorage.getItem('app_is_admin_mode') === null) {
       setIsAdminMode(true);
       setActiveRoute(AppRoute.ADMIN_DASHBOARD);
+      localStorage.setItem('app_is_admin_mode', 'true');
     }
 
     setCurrentUser(prev => {
@@ -152,6 +156,7 @@ const App: React.FC = () => {
     await supabase.auth.signOut();
     localStorage.removeItem('mock_session'); // Clear mock session
     localStorage.removeItem('app_current_user'); // Clear cached user
+    localStorage.removeItem('app_is_admin_mode'); // Reset admin preference
     setSession(null);
     setIsAdminMode(false); // Reset admin mode on logout
   };
@@ -198,6 +203,7 @@ const App: React.FC = () => {
   const handleToggleAdmin = () => {
     const newMode = !isAdminMode;
     setIsAdminMode(newMode);
+    localStorage.setItem('app_is_admin_mode', String(newMode));
     setActiveRoute(newMode ? AppRoute.ADMIN_DASHBOARD : AppRoute.DASHBOARD);
   };
 

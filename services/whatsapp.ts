@@ -26,6 +26,14 @@ class WhatsAppService {
     this.checkConnection();
   }
 
+  // --- Helper to get Company ID ---
+  private async getCompanyId(): Promise<string | null> {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      // Prefer metadata, fallback to query
+      return user.user_metadata?.company_id || null;
+  }
+
   // --- Public API ---
 
   public async updateConfig(newConfig: Partial<WhatsAppConfig>) {
@@ -149,8 +157,6 @@ class WhatsAppService {
       // 1. Simulate QR Code Arriving
       setTimeout(() => {
           this.updateStatus('qr_ready');
-          // Fake QR Code (Google Logo as placeholder or generic QR base64)
-          // A generic QR base64 for visual feedback
           this.qrCode = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=SimulacaoTechChat';
           this.emit('qr', this.qrCode);
           this.addLog('QR Code de Simulação Gerado.');
@@ -181,41 +187,44 @@ class WhatsAppService {
       }
 
       try {
+          this.addLog('Sincronizando chats...');
           // 1. Fetch Chats (Evolution V2 usually returns recent chats with last message)
           const chats = await this.fetchApi(`/chat/findChats/${this.config.instanceName}`);
           
           if (Array.isArray(chats)) {
-              let index = 0;
-              for (const chat of chats) {
-                  index++;
-                  // Extract preview logic
-                  let lastContent = '';
-                  // Attempt to find the last message content from the chat object structure (varies by version)
-                  // Structure might have 'messages' array or 'lastMessage' object
-                  const lastMsgObj = chat.lastMessage || (chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null);
-                  
-                  if (lastMsgObj) {
-                      lastContent = lastMsgObj.message?.conversation || 
-                                    lastMsgObj.message?.extendedTextMessage?.text || 
-                                    lastMsgObj.content || 
-                                    (lastMsgObj.message?.imageMessage ? '📷 Imagem' : '');
-                  }
+              this.addLog(`${chats.length} conversas encontradas.`);
+              
+              // Process chats in chunks to avoid overwhelming the DB
+              const processChunk = async (chunk: any[]) => {
+                  for (const chat of chunk) {
+                      // Extract preview logic
+                      let lastContent = '';
+                      // Attempt to find the last message content from the chat object structure (varies by version)
+                      const lastMsgObj = chat.lastMessage || (chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null);
+                      
+                      if (lastMsgObj) {
+                          lastContent = lastMsgObj.message?.conversation || 
+                                        lastMsgObj.message?.extendedTextMessage?.text || 
+                                        lastMsgObj.content || 
+                                        (lastMsgObj.message?.imageMessage ? '📷 Imagem' : '');
+                      }
 
-                  // Save Contact to Supabase
-                  await this.upsertContact(chat, lastContent);
-                  
-                  // For the active sync loop, we force fetch messages for the TOP 5 chats
-                  // This ensures that active conversations are updated even if 'unreadCount' is 0
-                  // (e.g. if the user read it on mobile or whatsapp web)
-                  const isRecent = index <= 5;
-                  
-                  if (chat.unreadCount > 0 || isRecent) {
-                      await this.fetchChatMessages(chat.id);
+                      // Save Contact to Supabase
+                      await this.upsertContact(chat, lastContent);
+                      
+                      // For active chats (unread > 0), sync messages immediately
+                      if (chat.unreadCount > 0) {
+                          await this.fetchChatMessages(chat.id);
+                      }
                   }
-              }
+              };
+
+              // Process top 20 chats immediately, others in background if needed
+              await processChunk(chats.slice(0, 20));
           }
       } catch (error: any) {
           console.warn(`Erro na sincronização silenciosa: ${error.message}`);
+          this.addLog(`Erro ao sincronizar chats: ${error.message}`);
       }
   }
 
@@ -224,13 +233,14 @@ class WhatsAppService {
       if (this.logs.some(l => l.includes('MODO SIMULAÇÃO'))) return;
 
       try {
-          // Fetch limit 10 to keep it light, assuming we poll frequently
-          const messages = await this.fetchApi(`/chat/findMessages/${this.config.instanceName}/${chatId}?count=10`);
+          // Fetch limit 20 messages
+          const messages = await this.fetchApi(`/chat/findMessages/${this.config.instanceName}/${chatId}?count=20`);
           if (Array.isArray(messages)) {
-              // Process in reverse order (oldest to newest) if the API returns newest first, 
-              // but upsert handles ID collisions anyway.
+              // Get company ID once
+              const companyId = await this.getCompanyId();
+              
               for (const msg of messages) {
-                  await this.upsertMessage(chatId, msg);
+                  await this.upsertMessage(chatId, msg, companyId);
               }
           }
       } catch (err) {
@@ -242,82 +252,114 @@ class WhatsAppService {
   private startMessagePolling() {
       if (this.pollInterval) clearInterval(this.pollInterval);
       
-      this.addLog('Iniciando verificação automática de novas mensagens (Polling 5s)...');
+      this.addLog('Iniciando verificação automática de novas mensagens (Polling 10s)...');
       
-      // Poll every 5 seconds to check for new messages (Improved responsiveness)
+      // Poll every 10 seconds to check for new messages
       this.pollInterval = setInterval(() => {
           if (this.status === 'connected') {
               this.syncHistory();
           } else {
               clearInterval(this.pollInterval);
           }
-      }, 5000); 
+      }, 10000); 
   }
 
   private async upsertContact(chatData: any, lastMessagePreview: string = '') {
-      // remoteJid is the ID in Evolution
-      const contactId = chatData.id; 
-      const name = chatData.name || chatData.pushName || chatData.id.split('@')[0];
-      const picture = chatData.profilePictureUrl || null;
-      
-      const payload: any = {
-          phone: contactId.split('@')[0], // Extract number
-          name: name,
-          avatar_url: picture,
-          last_message_at: new Date().toISOString(), // Update recency
-          status: 'open', 
-          source: 'WhatsApp Sync'
-      };
+      try {
+          const companyId = await this.getCompanyId();
+          if (!companyId) return; // Cannot save without company context
 
-      // Try to save last message preview to a custom field or column if schema allows
-      // We'll use 'custom_fields' jsonb to store it to avoid schema errors if column missing
-      payload.custom_fields = { last_message_preview: lastMessagePreview };
+          // remoteJid is the ID in Evolution (e.g., 551199999999@s.whatsapp.net)
+          const contactRemoteJid = chatData.id || chatData.remoteJid;
+          if (!contactRemoteJid) return;
 
-      // Upsert into Supabase
-      const { error } = await supabase.from('contacts').upsert(payload, { onConflict: 'phone', ignoreDuplicates: false });
+          const phone = contactRemoteJid.split('@')[0];
+          const name = chatData.name || chatData.pushName || chatData.pushname || phone;
+          const picture = chatData.profilePictureUrl || chatData.picture || null;
+          
+          const payload: any = {
+              company_id: companyId,
+              phone: phone, 
+              name: name,
+              avatar_url: picture,
+              last_message_at: new Date().toISOString(), // Update recency
+              status: 'open', 
+              source: 'WhatsApp Sync',
+              custom_fields: { last_message_preview: lastMessagePreview }
+          };
 
-      if (error && error.code !== '23505') { 
-          console.error('Error syncing contact:', error);
+          // Upsert into Supabase
+          const { error } = await supabase
+            .from('contacts')
+            .upsert(payload, { onConflict: 'phone', ignoreDuplicates: false });
+
+          if (error) { 
+              // console.error('Error syncing contact:', error);
+          }
+      } catch (e) {
+          console.error("Upsert Contact Exception:", e);
       }
   }
 
-  private async upsertMessage(contactId: string, msgData: any) {
-      // Map Evolution Message to Supabase Schema
-      const { data: contact } = await supabase.from('contacts').select('id').eq('phone', contactId.split('@')[0]).single();
-      
-      if (!contact) return; 
+  private async upsertMessage(chatId: string, msgData: any, companyId: string | null) {
+      if (!companyId) return;
 
-      const isFromMe = msgData.key?.fromMe || false;
-      // Handle different message structures in Evolution API versions
-      const content = msgData.message?.conversation || 
-                      msgData.message?.extendedTextMessage?.text || 
-                      msgData.content || 
-                      (msgData.message?.imageMessage ? 'Imagem' : '');
-                      
-      const msgType = msgData.messageType === 'imageMessage' ? MessageType.IMAGE : MessageType.TEXT;
-      
-      // Prevent duplicates based on timestamp + content hash approximation or specific ID if stored
-      const createdAt = new Date(msgData.messageTimestamp * 1000).toISOString();
+      try {
+          // Map Evolution Message to Supabase Schema
+          const phone = chatId.split('@')[0];
+          
+          // Get Contact ID (Internal UUID) from Supabase
+          const { data: contact } = await supabase.from('contacts').select('id').eq('phone', phone).single();
+          
+          if (!contact) {
+              // If contact doesn't exist yet, create basic one
+              await this.upsertContact({ id: chatId, name: phone }, "Nova mensagem");
+              // Retry getting contact
+              const { data: retryContact } = await supabase.from('contacts').select('id').eq('phone', phone).single();
+              if (!retryContact) return;
+              contact.id = retryContact.id;
+          }
 
-      // Check if message exists to avoid duplicates
-      // We try to match by content and timestamp roughly, but ideally we should store the external ID
-      const { data: existing } = await supabase.from('messages')
-        .select('id')
-        .eq('contact_id', contact.id)
-        .eq('content', content)
-        .eq('created_at', createdAt)
-        .single();
+          const isFromMe = msgData.key?.fromMe || false;
+          
+          // Handle different message structures in Evolution API versions
+          const content = msgData.message?.conversation || 
+                          msgData.message?.extendedTextMessage?.text || 
+                          msgData.content || 
+                          (msgData.message?.imageMessage ? 'Imagem' : 
+                           msgData.message?.audioMessage ? 'Áudio' : '');
+          
+          if (!content && !msgData.message?.imageMessage && !msgData.message?.audioMessage) return; // Skip empty/system messages
 
-      if (!existing) {
-          const payload = {
-              contact_id: contact.id,
-              content: content,
-              sender_id: isFromMe ? 'me' : contact.id,
-              type: msgType,
-              status: 'read',
-              created_at: createdAt
-          };
-          await supabase.from('messages').insert(payload);
+          let msgType = MessageType.TEXT;
+          if (msgData.messageType === 'imageMessage' || msgData.message?.imageMessage) msgType = MessageType.IMAGE;
+          if (msgData.messageType === 'audioMessage' || msgData.message?.audioMessage) msgType = MessageType.AUDIO;
+          
+          const messageTimestamp = msgData.messageTimestamp?.low || msgData.messageTimestamp;
+          const createdAt = new Date(messageTimestamp * 1000).toISOString();
+
+          // Check if message exists to avoid duplicates
+          const { data: existing } = await supabase.from('messages')
+            .select('id')
+            .eq('contact_id', contact.id)
+            .eq('content', content)
+            .eq('created_at', createdAt)
+            .single();
+
+          if (!existing) {
+              const payload = {
+                  company_id: companyId,
+                  contact_id: contact.id,
+                  content: content,
+                  sender_id: isFromMe ? 'me' : contact.id,
+                  type: msgType,
+                  status: 'read',
+                  created_at: createdAt
+              };
+              await supabase.from('messages').insert(payload);
+          }
+      } catch (e) {
+          console.error("Upsert Message Exception:", e);
       }
   }
 
@@ -409,7 +451,7 @@ class WhatsAppService {
     try {
         this.addLog('Removendo instância (Reset Completo)...');
         // Using DELETE to remove the instance ensures next connect generates a fresh QR code
-        await this.fetchApi(`/instance/delete/${this.config.instanceName}`, 'DELETE');
+        await this.fetchApi(`/instance/logout/${this.config.instanceName}`, 'DELETE');
         
         this.updateStatus('disconnected');
         this.qrCode = null;
@@ -430,7 +472,7 @@ class WhatsAppService {
       
       const headers: any = {
           'Content-Type': 'application/json',
-          'apikey': this.config.apiKey
+          'apikey': this.config.apiKey // Standard for Evolution V2
       };
 
       const res = await fetch(`${baseUrl}${endpoint}`, {

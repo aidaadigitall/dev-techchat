@@ -147,10 +147,14 @@ export const api = {
     },
     create: async (contact: Partial<Contact>): Promise<Contact> => {
       const company_id = await getCompanyId();
+      
+      // Ensure phone is clean only digits
+      const cleanPhone = contact.phone ? contact.phone.replace(/\D/g, '') : '';
+      
       const payload = {
         company_id, 
         name: contact.name,
-        phone: contact.phone,
+        phone: cleanPhone,
         email: contact.email,
         tags: contact.tags,
         source: contact.source,
@@ -164,20 +168,15 @@ export const api = {
         }
       };
       
-      try {
-          // Changed to UPSERT to handle duplicates gracefully during imports
-          const { data, error } = await supabase
-            .from('contacts')
-            .upsert(payload, { onConflict: 'phone' })
-            .select()
-            .single();
+      // Using UPSERT based on phone to prevent duplicates during import
+      const { data, error } = await supabase
+        .from('contacts')
+        .upsert(payload, { onConflict: 'phone' })
+        .select()
+        .single();
 
-          if (error) throw error;
-          return adaptContact(data);
-      } catch(e) {
-          // Mock successful creation for UI with VALID UUID
-          return { ...contact, id: generateUUID() } as Contact;
-      }
+      if (error) throw error; 
+      return adaptContact(data);
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
       try {
@@ -349,6 +348,24 @@ export const api = {
             columns: assembledColumns
           }];
       } catch(e) { return []; }
+    },
+    createCard: async (columnId: string, cardData: any) => {
+        try {
+            const company_id = await getCompanyId();
+            const { data, error } = await supabase.from('kanban_cards').insert({
+                company_id,
+                column_id: columnId,
+                title: cardData.title,
+                value: cardData.value,
+                contact_id: cardData.contactId,
+                priority: cardData.priority,
+                tags: cardData.tags || []
+            }).select().single();
+            if (error) throw error;
+            return data;
+        } catch (e) {
+            throw e;
+        }
     },
     moveCard: async (cardId: string, sourceColId: string, destColId: string) => {
         try {
