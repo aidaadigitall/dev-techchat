@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw, CheckSquare, AlertTriangle } from 'lucide-react';
@@ -50,6 +51,14 @@ const SuperAdminCompanies: React.FC = () => {
       case 'overdue': return <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">Atrasado</span>;
       default: return null;
     }
+  };
+
+  // Helper to safe parse date for input
+  const safeDate = (dateStr: string | undefined) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      // Check if valid date
+      return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
   };
 
   const handleOpenCreate = () => {
@@ -114,7 +123,7 @@ const SuperAdminCompanies: React.FC = () => {
         if (isEditing && selectedCompany.id) {
           const updated = await api.companies.update(selectedCompany.id, selectedCompany);
           setCompanies(prev => prev.map(c => c.id === updated.id ? updated : c));
-          addToast('Empresa atualizada.', 'success');
+          addToast('Empresa atualizada com sucesso.', 'success');
         } else {
           const created = await api.companies.create(selectedCompany);
           setCompanies(prev => [...prev, created]);
@@ -122,8 +131,8 @@ const SuperAdminCompanies: React.FC = () => {
         }
         setSelectedCompany(null);
     } catch(e: any) {
-        console.error(e);
-        addToast(`Erro ao salvar: ${e.message || e.details || 'Verifique o console'}`, 'error');
+        console.error("Erro no frontend save:", e);
+        addToast(`Erro ao salvar: ${e.message || 'Verifique o console'}`, 'error');
     }
   };
 
@@ -363,7 +372,7 @@ const SuperAdminCompanies: React.FC = () => {
               <input 
                 type="date" 
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-white" 
-                value={selectedCompany?.subscriptionEnd ? new Date(selectedCompany.subscriptionEnd).toISOString().split('T')[0] : ''} 
+                value={safeDate(selectedCompany?.subscriptionEnd)}
                 onChange={e => setSelectedCompany({...selectedCompany, subscriptionEnd: e.target.value})}
               />
            </div>

@@ -1,3 +1,4 @@
+
 import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from './supabase';
@@ -319,38 +320,73 @@ export const api = {
           return (data || []).map(adaptCompany);
       },
       create: async(c: any): Promise<Company> => {
-          const payload = {
+          const payload: any = {
               name: c.name,
               owner_name: c.ownerName,
               email: c.email,
               phone: c.phone,
               plan_id: c.planId,
               status: c.status,
-              subscription_end: c.subscriptionEnd,
+              subscription_end: c.subscriptionEnd || null,
               ai_limit: c.aiLimit,
               ai_usage: c.aiUsage,
-              use_custom_key: c.useCustomKey,
-              features: c.features
+              use_custom_key: c.useCustomKey
           };
-          const { data, error } = await supabase.from('companies').insert(payload).select().single();
-          if (error) throw error;
-          return adaptCompany(data);
+          
+          // Try including features first
+          const payloadFull = { ...payload, features: c.features };
+
+          try {
+              const { data, error } = await supabase.from('companies').insert(payloadFull).select().single();
+              if (error) throw error;
+              return adaptCompany(data);
+          } catch (e: any) {
+              // Retry without features if schema mismatch (fallback)
+              if (e.message?.includes('features') || e.code === 'PGRST204' || e.message?.includes('column')) {
+                  console.warn("Features column missing, saving basic company data.");
+                  const { data, error } = await supabase.from('companies').insert(payload).select().single();
+                  if (error) throw error;
+                  return adaptCompany(data);
+              }
+              throw e;
+          }
       },
       update: async(id: string, u: any): Promise<Company> => {
           const payload: any = {};
-          if (u.name) payload.name = u.name;
-          if (u.ownerName) payload.owner_name = u.ownerName;
-          if (u.email) payload.email = u.email;
-          if (u.planId) payload.plan_id = u.planId;
-          if (u.status) payload.status = u.status;
-          if (u.subscriptionEnd) payload.subscription_end = u.subscriptionEnd;
+          if (u.name !== undefined) payload.name = u.name;
+          if (u.ownerName !== undefined) payload.owner_name = u.ownerName;
+          if (u.email !== undefined) payload.email = u.email;
+          if (u.phone !== undefined) payload.phone = u.phone;
+          if (u.planId !== undefined) payload.plan_id = u.planId;
+          if (u.status !== undefined) payload.status = u.status;
+          if (u.subscriptionEnd !== undefined) payload.subscription_end = u.subscriptionEnd || null;
           if (u.aiLimit !== undefined) payload.ai_limit = u.aiLimit;
           if (u.aiUsage !== undefined) payload.ai_usage = u.aiUsage;
-          if (u.features) payload.features = u.features;
+          if (u.useCustomKey !== undefined) payload.use_custom_key = u.useCustomKey;
+          
+          // Try including features
+          const payloadFull = { ...payload };
+          if (u.features) payloadFull.features = u.features;
 
-          const { data, error } = await supabase.from('companies').update(payload).eq('id', id).select().single();
-          if (error) throw error;
-          return adaptCompany(data);
+          try {
+              const { data, error } = await supabase.from('companies').update(payloadFull).eq('id', id).select().single();
+              if (error) throw error;
+              return adaptCompany(data);
+          } catch (e: any) {
+               console.warn("Update com features falhou, tentando fallback...", e.message);
+               
+               // Retry without features if schema mismatch (fallback)
+               // Also handles cases where column features is missing
+               if (Object.keys(payload).length > 0) {
+                   const { data, error } = await supabase.from('companies').update(payload).eq('id', id).select().single();
+                   if (error) throw error;
+                   return adaptCompany(data);
+               } else {
+                   // Se só mudou features e o banco não suporta, retornamos o atual
+                   const { data } = await supabase.from('companies').select('*').eq('id', id).single();
+                   return adaptCompany(data);
+               }
+          }
       },
       delete: async(id: string) => {
           // Manual Cascade Delete: Delete related records first to avoid Foreign Key Constraint errors

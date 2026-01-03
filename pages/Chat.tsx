@@ -29,11 +29,6 @@ const DEPARTMENTS = [
   { id: 'retencao', name: 'Retenção' }
 ];
 
-const CONNECTIONS = [
-  { id: 'wa_default', name: 'WhatsApp Principal' },
-  { id: 'wa_support', name: 'WhatsApp Suporte' }
-];
-
 interface ChatProps {
   branding?: Branding;
 }
@@ -85,9 +80,10 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   
   // New Chat Modal States
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
+  const [availableConnections, setAvailableConnections] = useState<{id: string, name: string}[]>([]);
   const [newChatForm, setNewChatForm] = useState({
       contactId: '',
-      connectionId: 'wa_default',
+      connectionId: '',
       sectorId: '',
       initialMessage: ''
   });
@@ -96,6 +92,24 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Load Connections from LocalStorage
+    try {
+        const saved = localStorage.getItem('wa_saved_instances');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            const mapped = parsed.map((p: any) => ({ id: p.id, name: p.instanceName }));
+            setAvailableConnections(mapped);
+            if(mapped.length > 0) {
+                setNewChatForm(prev => ({...prev, connectionId: mapped[0].id}));
+            }
+        } else {
+            // Default Fallback
+            setAvailableConnections([{id: 'default', name: 'WhatsApp Padrão'}]);
+        }
+    } catch(e) {
+        setAvailableConnections([{id: 'default', name: 'WhatsApp Padrão'}]);
+    }
+
     const loadInit = async () => {
         const fetchedContacts = await api.contacts.list();
         setContacts(fetchedContacts);
@@ -221,7 +235,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
 
           addToast("Atendimento iniciado com sucesso!", "success");
           setNewChatModalOpen(false);
-          setNewChatForm({ contactId: '', connectionId: 'wa_default', sectorId: '', initialMessage: '' });
+          setNewChatForm(prev => ({ ...prev, contactId: '', sectorId: '', initialMessage: '' }));
           
           // Switch to new contact
           const selected = contacts.find(c => c.id === newChatForm.contactId);
@@ -456,7 +470,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                      value={newChatForm.connectionId}
                      onChange={e => setNewChatForm({...newChatForm, connectionId: e.target.value})}
                    >
-                      {CONNECTIONS.map(conn => (
+                      {availableConnections.length === 0 && <option value="">Nenhuma conexão ativa</option>}
+                      {availableConnections.map(conn => (
                          <option key={conn.id} value={conn.id}>{conn.name}</option>
                       ))}
                    </select>
