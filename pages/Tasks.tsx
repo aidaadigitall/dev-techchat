@@ -520,7 +520,7 @@ const Tasks: React.FC = () => {
                   </div>
                   
                   {!isQuickEditing && task.description && (
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{task.description}</p>
+                    <p className={`text-xs mt-0.5 line-clamp-1 transition-all duration-300 ${task.completed ? 'text-gray-300 line-through' : 'text-gray-500'}`}>{task.description}</p>
                   )}
 
                   {/* Metadata Row */}
@@ -623,11 +623,11 @@ const Tasks: React.FC = () => {
                     <div key={st.id} className="flex items-center py-1.5 border-l-2 border-gray-200 pl-3 hover:bg-gray-50 rounded-r transition-colors group/sub">
                       <button 
                         onClick={() => toggleTaskCompletion(st.id)}
-                        className={`mr-3 w-3.5 h-3.5 rounded-full border flex items-center justify-center hover:bg-gray-100 ${st.completed ? 'bg-gray-400 border-gray-400' : 'border-gray-300'}`}
+                        className={`mr-3 w-3.5 h-3.5 rounded-full border flex items-center justify-center hover:bg-gray-100 transition-all duration-300 ${st.completed ? 'bg-gray-400 border-gray-400 scale-90' : 'border-gray-300'}`}
                       >
                         {st.completed && <div className="w-2 h-2 bg-white rounded-full"></div>}
                       </button>
-                      <span className={`text-xs flex-1 ${st.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{st.title}</span>
+                      <span className={`text-xs flex-1 transition-all duration-300 ${st.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{st.title}</span>
                       <PriorityFlag p={st.priority} />
                     </div>
                   ))}
@@ -1027,7 +1027,7 @@ const Tasks: React.FC = () => {
                     <div key={st.id} className="flex items-center gap-2">
                        <button 
                          onClick={() => handleUpdateSubtaskInModal(st.id, 'completed', !st.completed)}
-                         className={`w-4 h-4 rounded border flex items-center justify-center ${st.completed ? 'bg-gray-400 border-gray-400' : 'bg-white border-gray-300'}`}
+                         className={`w-4 h-4 rounded border flex items-center justify-center transition-all duration-300 ${st.completed ? 'bg-gray-400 border-gray-400 scale-90' : 'bg-white border-gray-300'}`}
                        >
                           {st.completed && <div className="w-2 h-2 bg-white rounded-full"></div>}
                        </button>
@@ -1035,7 +1035,7 @@ const Tasks: React.FC = () => {
                          type="text" 
                          value={st.title} 
                          onChange={(e) => handleUpdateSubtaskInModal(st.id, 'title', e.target.value)}
-                         className={`flex-1 text-xs border-none bg-transparent focus:ring-0 ${st.completed ? 'line-through text-gray-400' : ''}`}
+                         className={`flex-1 text-xs border-none bg-transparent focus:ring-0 transition-all duration-300 ${st.completed ? 'line-through text-gray-400' : ''}`}
                        />
                        <select 
                           value={st.priority}

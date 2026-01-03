@@ -170,19 +170,28 @@ const Contacts: React.FC = () => {
   };
 
   const validateForm = (form: Partial<Contact>) => {
+    // 1. Validate Name
     if (!form.name || form.name.trim().length < 3) {
       addToast("O nome deve ter pelo menos 3 caracteres.", 'warning');
       return false;
     }
+
+    // 2. Validate Phone
     if (!form.phone) {
       addToast("O telefone é obrigatório.", 'warning');
       return false;
     }
-    const cleanPhone = form.phone.replace(/\D/g, ''); 
-    if (cleanPhone.length < 10 || cleanPhone.length > 13) {
-      addToast("Telefone inválido. Use formato com DDD (Ex: 11999999999).", 'warning');
+    
+    // Remove non-digits
+    const cleanPhone = form.phone.replace(/\D/g, '');
+    
+    // Check reasonable length for phones (Brazil: 10 or 11, International can be more)
+    // Assuming a lenient check for international support, but strict enough to be a phone number
+    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+      addToast("Telefone inválido. Insira o DDD + Número (Mínimo 10 dígitos).", 'warning');
       return false;
     }
+
     return true;
   };
 
