@@ -85,7 +85,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [newQuickReplyForm, setNewQuickReplyForm] = useState({ shortcut: '', content: '' });
 
   // Attachment State
-  const [attachment, setAttachment] = useState<{ file?: File, preview?: string, type: MessageType, text?: string, location?: {lat: number, lng: number} } | null>(null);
+  const [attachment, setAttachment] = useState<{ file?: File, preview?: string, type: MessageType, text?: string } | null>(null);
   
   // Right Panel Notes
   const [newNote, setNewNote] = useState('');
@@ -620,40 +620,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  // --- Location Logic ---
-  const handleSendLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setAttachment({
-            type: MessageType.LOCATION,
-            text: 'Localização Atual',
-            location: {
-              lat: position.coords.latitude,
-              lng: position.coords.longitude
-            }
-          });
-          setAttachmentMenuOpen(false);
-        }, 
-        (error) => {
-          console.error("Geolocation error:", error);
-          setAttachment({
-            type: MessageType.LOCATION,
-            text: 'Localização Atual (Simulada)',
-            location: {
-              lat: -23.550520, 
-              lng: -46.633308
-            }
-          });
-          setAttachmentMenuOpen(false);
-        }
-      );
-    } else {
-      addToast("Geolocalização não suportada neste navegador.", "error");
-    }
-  };
-
-  // --- Attachment Handlers ---
+  // --- Attachment Handlers (Refactored) ---
   const triggerFileSelect = (acceptType: string) => {
     if (fileInputRef.current) {
         fileInputRef.current.accept = acceptType;
@@ -674,7 +641,8 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       setAttachment({
         file,
         preview: objectUrl,
-        type
+        type,
+        text: ''
       });
       setAttachmentMenuOpen(false);
     }
@@ -692,6 +660,44 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     setMessageInput(prev => prev + emoji);
   };
 
+  // Fix: Implement handleSendLocation
+  const handleSendLocation = () => {
+    if (!selectedContact) return;
+    
+    if (navigator.geolocation) {
+       navigator.geolocation.getCurrentPosition((position) => {
+          const { latitude, longitude } = position.coords;
+          
+          const tempId = `temp_${Date.now()}`;
+          const locationMessage: Message = {
+              id: tempId,
+              content: `Location: ${latitude}, ${longitude}`,
+              senderId: 'me',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              type: MessageType.LOCATION,
+              status: 'sent',
+              channel: 'whatsapp',
+              location: { lat: latitude, lng: longitude }
+          };
+
+          setMessages(prev => [...prev, locationMessage]);
+          setAttachmentMenuOpen(false);
+          
+          // Send to API
+          api.chat.sendMessage(selectedContact.id, `Location: ${latitude}, ${longitude}`, MessageType.LOCATION)
+            .catch(err => {
+                console.error("Failed to send location", err);
+                addToast("Erro ao enviar localização.", "error");
+            });
+
+       }, (error) => {
+          addToast("Erro ao obter localização: " + error.message, "error");
+       });
+    } else {
+      addToast("Geolocalização não suportada.", "error");
+    }
+  };
+
   const handleSendMessage = async () => {
     if ((!messageInput.trim() && !attachment) || !selectedContact) return;
     
@@ -699,20 +705,44 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     setShowEmojiPicker(false);
 
     let contentToSend = messageInput;
-    
     if (signatureEnabled && !attachment) {
       contentToSend += `\n\n~ Admin User`;
     }
 
-    // Call API (will trigger subscription update)
-    await api.chat.sendMessage(selectedContact.id, contentToSend, attachment ? attachment.type : MessageType.TEXT);
+    // 1. OPTIMISTIC UPDATE: Add message to list immediately
+    const tempId = `temp_${Date.now()}`;
+    const optimisticMessage: Message = {
+        id: tempId,
+        content: contentToSend,
+        senderId: 'me',
+        timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+        type: attachment ? attachment.type : MessageType.TEXT,
+        status: 'sent',
+        channel: 'whatsapp',
+        mediaUrl: attachment?.preview,
+        fileName: attachment?.file?.name
+    };
 
+    setMessages(prev => [...prev, optimisticMessage]);
+
+    // Clear inputs immediately
     setMessageInput('');
     setAttachment(null); 
     setReplyingTo(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
 
-    setIsSending(false);
+    try {
+        // 2. Call API
+        await api.chat.sendMessage(selectedContact.id, contentToSend, optimisticMessage.type);
+    } catch (e: any) {
+        console.error("Send Error:", e);
+        // Remove optimistic message if failed
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        addToast(`Erro ao enviar: ${e.message}`, 'error');
+        // Restore input logic could go here if needed
+    } finally {
+        setIsSending(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -1035,7 +1065,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                </div>
                                <button className="ml-2 p-1 text-gray-500 hover:text-gray-700 bg-white rounded-full shadow-sm">
                                   <Download size={16} />
-                               </button>
+                                </button>
                             </div>
                          )}
 
