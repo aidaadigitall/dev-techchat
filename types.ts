@@ -178,6 +178,7 @@ export interface Proposal {
 
 // --- Tasks ---
 export type TaskPriority = 'p1' | 'p2' | 'p3' | 'p4';
+export type TaskRecurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
 export interface Task {
   id: string;
@@ -190,6 +191,10 @@ export interface Task {
   assigneeId?: string;
   tags?: string[];
   subtasks?: Task[];
+  
+  // New Fields
+  recurrence?: TaskRecurrence;
+  reminderTime?: string; // '09:00', '14:30' etc.
 }
 
 // --- Automations & AI ---

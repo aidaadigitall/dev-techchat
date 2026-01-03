@@ -7,10 +7,11 @@ import {
   Trash2, X, Search, Filter, Eye, EyeOff, Edit, Save,
   Clock, Upload, Users, AlertCircle, CornerDownRight, Tag as TagIcon,
   Check, Maximize2, LayoutGrid, List as ListIcon, Share2, MessageSquare,
-  Sun, Moon, FolderPlus, GripVertical, GripHorizontal, Sparkles, BrainCircuit, BarChart3
+  Sun, Moon, FolderPlus, GripVertical, GripHorizontal, Sparkles, BrainCircuit, BarChart3,
+  CalendarRange, Repeat, Bell, BellRing
 } from 'lucide-react';
 import { MOCK_USERS } from '../constants';
-import { Task, TaskPriority } from '../types';
+import { Task, TaskPriority, TaskRecurrence } from '../types';
 import { api } from '../services/api';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
@@ -29,6 +30,9 @@ interface Section {
   title: string;
   order: number;
 }
+
+// --- Sound Effect ---
+const completionSound = new Audio('https://cdn.freesound.org/previews/270/270404_5123851-lq.mp3'); // Sound "Pop/Check"
 
 // --- Componente Principal ---
 
@@ -65,6 +69,10 @@ const Tasks: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'board'>('board');
   const [loading, setLoading] = useState(false);
   
+  // Filtros Avançados
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<string>('all');
+
   // Inputs e Edição
   const [quickAddValue, setQuickAddValue] = useState('');
   const [showQuickAdd, setShowQuickAdd] = useState<{sectionId?: string, visible: boolean}>({ visible: false });
@@ -102,6 +110,15 @@ const Tasks: React.FC = () => {
     loadTasks();
   }, []);
 
+  // Check Overdue Tasks on Load
+  useEffect(() => {
+      const today = new Date().toISOString().split('T')[0];
+      const overdueCount = tasks.filter(t => t.dueDate && t.dueDate < today && !t.completed).length;
+      if (overdueCount > 0) {
+          addToast(`Você tem ${overdueCount} tarefas atrasadas!`, 'warning');
+      }
+  }, [tasks]);
+
   useEffect(() => { localStorage.setItem('tasks_projects', JSON.stringify(projects)); }, [projects]);
   useEffect(() => { localStorage.setItem('tasks_sections', JSON.stringify(sections)); }, [sections]);
 
@@ -123,26 +140,73 @@ const Tasks: React.FC = () => {
       input: isDark ? 'bg-[#2a2a2a] text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300',
       card: isDark ? 'bg-[#252526] border-[#333] hover:border-[#444]' : 'bg-white border-gray-200 hover:border-gray-300 shadow-sm',
       header: isDark ? 'bg-[#1e1e1e] border-[#333]' : 'bg-white border-gray-200',
-      modal: isDark ? 'bg-[#252526] text-white' : 'bg-white text-gray-900'
+      modal: isDark ? 'bg-[#252526] text-white' : 'bg-white text-gray-900',
+      select: isDark ? 'bg-[#2a2a2a] border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-700'
   };
 
   // --- Lógica de Filtros ---
 
   const getFilteredTasks = () => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayTime = today.getTime();
+      const todayStr = today.toISOString().split('T')[0];
       
-      switch (activeView) {
-          case 'inbox':
-              return tasks.filter(t => t.projectId === 'inbox' && !t.completed);
-          case 'today':
-              return tasks.filter(t => t.dueDate && t.dueDate.startsWith(todayStr) && !t.completed);
-          case 'upcoming':
-              // Simple logic: tasks with due date > today
-              return tasks.filter(t => t.dueDate && t.dueDate > todayStr && !t.completed);
-          default:
-              // Project View
-              return tasks.filter(t => t.projectId === activeView && !t.completed);
+      // 1. Filtragem Base por Contexto (Sidebar)
+      let filtered = tasks.filter(t => !t.completed);
+
+      if (activeView === 'inbox') {
+          filtered = filtered.filter(t => t.projectId === 'inbox');
+      } else if (activeView === 'today') {
+          filtered = filtered.filter(t => t.dueDate && t.dueDate.startsWith(todayStr));
+      } else if (activeView === 'upcoming') {
+          filtered = filtered.filter(t => t.dueDate && t.dueDate > todayStr);
+      } else {
+          // Project View
+          filtered = filtered.filter(t => t.projectId === activeView);
       }
+
+      // 2. Filtragem por Prioridade (Barra Superior)
+      if (filterPriority !== 'all') {
+          filtered = filtered.filter(t => t.priority === filterPriority);
+      }
+
+      // 3. Filtragem por Data (Barra Superior)
+      if (filterDate !== 'all') {
+          filtered = filtered.filter(t => {
+              if (!t.dueDate) return false;
+              const taskDate = new Date(t.dueDate);
+              taskDate.setHours(0, 0, 0, 0); // Normalizar para meia-noite
+              const taskTime = taskDate.getTime();
+              
+              // Diferença em dias
+              const diffTime = taskTime - todayTime;
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+              switch (filterDate) {
+                  case 'overdue':
+                      return taskTime < todayTime;
+                  case 'today':
+                      return taskTime === todayTime;
+                  case '7':
+                      return diffDays >= 0 && diffDays <= 7;
+                  case '15':
+                      return diffDays >= 0 && diffDays <= 15;
+                  case '30':
+                      return diffDays >= 0 && diffDays <= 30;
+                  case '90': // 3 meses
+                      return diffDays >= 0 && diffDays <= 90;
+                  case '180': // 6 meses
+                      return diffDays >= 0 && diffDays <= 180;
+                  case '365': // 1 ano
+                      return diffDays >= 0 && diffDays <= 365;
+                  default:
+                      return true;
+              }
+          });
+      }
+
+      return filtered;
   };
 
   const getSectionsForView = () => {
@@ -164,9 +228,9 @@ const Tasks: React.FC = () => {
   // --- Drag and Drop Logic (HTML5 Native) ---
 
   const handleDragStartTask = (e: React.DragEvent, taskId: string) => {
+      e.stopPropagation(); // IMPORTANTE: Impede que o evento suba para a seção
       setDraggedTask(taskId);
       e.dataTransfer.effectAllowed = "move";
-      // Hide ghost image slightly or style it
       e.dataTransfer.setData("text/plain", taskId);
   };
 
@@ -196,12 +260,23 @@ const Tasks: React.FC = () => {
   };
 
   const handleDragStartSection = (e: React.DragEvent, sectionId: string) => {
-      setDraggedSection(sectionId);
-      e.dataTransfer.effectAllowed = "move";
+      // Only set dragged section if not already dragging a task
+      if (!draggedTask) {
+          setDraggedSection(sectionId);
+          e.dataTransfer.effectAllowed = "move";
+      }
   };
 
   const handleDropSection = (e: React.DragEvent, targetSectionId: string) => {
       e.preventDefault();
+      e.stopPropagation();
+      
+      // If dropping a task, handle as task drop
+      if (draggedTask) {
+          handleDropTask(e, targetSectionId);
+          return;
+      }
+
       if (!draggedSection || draggedSection === targetSectionId) return;
 
       const items = [...sections.filter(s => s.projectId === activeView)];
@@ -282,6 +357,15 @@ const Tasks: React.FC = () => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     const newStatus = !task.completed;
+    
+    // Play Sound
+    if (newStatus) {
+        try {
+            completionSound.currentTime = 0;
+            completionSound.play();
+        } catch(e) {}
+    }
+
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: newStatus } : t));
     await api.tasks.update(taskId, { completed: newStatus });
     if (newStatus) addToast('Tarefa concluída', 'success');
@@ -328,6 +412,7 @@ const Tasks: React.FC = () => {
   // --- Render Helpers ---
   const activeSections = getSectionsForView();
   const showBoard = viewMode === 'board' && !['inbox', 'today', 'upcoming'].includes(activeView);
+  const finalFilteredTasks = getFilteredTasks();
 
   return (
     <div className={`flex h-full ${theme.bg} ${theme.text} overflow-hidden font-sans transition-colors duration-300`}>
@@ -439,20 +524,63 @@ const Tasks: React.FC = () => {
       {/* 2. Main Content */}
       <main className={`flex-1 flex flex-col h-full overflow-hidden ${theme.bg}`}>
          {/* Header */}
-         <header className={`h-16 border-b flex items-center justify-between px-6 shrink-0 ${theme.header}`}>
-            <div className="flex items-center gap-4">
-               <h1 className={`text-xl font-bold flex items-center gap-2 ${theme.text}`}>
+         <header className={`h-16 border-b flex items-center justify-between px-6 shrink-0 ${theme.header} gap-4`}>
+            <div className="flex items-center gap-4 flex-1 min-w-0">
+               <h1 className={`text-xl font-bold flex items-center gap-2 ${theme.text} whitespace-nowrap`}>
                    {currentProjectName()}
                    <span className="text-xs font-normal opacity-50 border px-1.5 py-0.5 rounded-md border-gray-400">
-                       {getFilteredTasks().length}
+                       {finalFilteredTasks.length}
                    </span>
                </h1>
+
+               <div className={`h-6 w-px mx-1 hidden md:block ${isDark ? 'bg-gray-700' : 'bg-gray-300'}`}></div>
+
+               {/* Advanced Filters */}
+               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                  <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-gray-400">
+                          <CalendarRange size={14} />
+                      </div>
+                      <select 
+                        value={filterDate}
+                        onChange={(e) => setFilterDate(e.target.value)}
+                        className={`pl-8 pr-3 py-1.5 text-xs font-medium rounded-lg border outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer ${theme.select}`}
+                      >
+                          <option value="all">Todas as Datas</option>
+                          <option value="overdue">🔴 Atrasadas</option>
+                          <option value="today">📅 Hoje</option>
+                          <option value="7">Próx. 7 dias</option>
+                          <option value="15">Próx. 15 dias</option>
+                          <option value="30">Próx. 30 dias</option>
+                          <option value="90">Próx. 3 meses</option>
+                          <option value="180">Próx. 6 meses</option>
+                          <option value="365">Próx. 1 ano</option>
+                      </select>
+                  </div>
+
+                  <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-gray-400">
+                          <Flag size={14} />
+                      </div>
+                      <select 
+                        value={filterPriority}
+                        onChange={(e) => setFilterPriority(e.target.value)}
+                        className={`pl-8 pr-3 py-1.5 text-xs font-medium rounded-lg border outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer ${theme.select}`}
+                      >
+                          <option value="all">Todas Prioridades</option>
+                          <option value="p1">🔴 P1 - Urgente</option>
+                          <option value="p2">🟠 P2 - Alta</option>
+                          <option value="p3">🔵 P3 - Média</option>
+                          <option value="p4">⚪ P4 - Baixa</option>
+                      </select>
+                  </div>
+               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
                <button 
                  onClick={handleRunAI}
-                 className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium shadow hover:opacity-90 transition-opacity"
+                 className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium shadow hover:opacity-90 transition-opacity"
                >
                   <Sparkles size={16} /> IA Analista
                </button>
@@ -464,7 +592,7 @@ const Tasks: React.FC = () => {
                  className={`flex items-center gap-1 ${theme.textSec} hover:${theme.text} px-3 py-1.5 rounded transition-colors text-sm`}
                >
                   {viewMode === 'board' ? <ListIcon size={16} /> : <LayoutGrid size={16} />} 
-                  {viewMode === 'board' ? 'Visualizar Lista' : 'Visualizar Board'}
+                  {viewMode === 'board' ? 'Lista' : 'Board'}
                </button>
             </div>
          </header>
@@ -476,8 +604,8 @@ const Tasks: React.FC = () => {
                <div className="flex h-full space-x-6 items-start">
                   
                   {activeSections.map(section => {
-                     // Filter Tasks for Section based on Tags
-                     const sectionTasks = tasks.filter(t => t.projectId === activeView && !t.completed && t.tags?.includes(`section:${section.id}`));
+                     // Filter Tasks for Section based on Tags AND global filters
+                     const sectionTasks = finalFilteredTasks.filter(t => t.tags?.includes(`section:${section.id}`));
                      
                      return (
                         <div 
@@ -537,11 +665,22 @@ const Tasks: React.FC = () => {
                                        <div className="flex-1 min-w-0">
                                           <p className={`text-sm font-medium ${theme.text} leading-snug truncate`}>{task.title}</p>
                                           <div className="flex items-center gap-2 mt-2">
+                                             {task.priority && task.priority !== 'p4' && (
+                                                 <span className={`text-[10px] font-bold uppercase px-1.5 rounded ${
+                                                     task.priority === 'p1' ? 'text-red-600 bg-red-100' :
+                                                     task.priority === 'p2' ? 'text-orange-600 bg-orange-100' : 'text-blue-600 bg-blue-100'
+                                                 }`}>
+                                                     {task.priority}
+                                                 </span>
+                                             )}
                                              {task.dueDate && (
-                                                <div className="flex items-center text-[10px] text-red-500 font-medium">
+                                                <div className={`flex items-center text-[10px] font-medium ${task.dueDate < new Date().toISOString().split('T')[0] ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
                                                    <Calendar size={10} className="mr-1" />
                                                    {new Date(task.dueDate).toLocaleDateString('pt-BR', {day: 'numeric', month: 'short'})}
                                                 </div>
+                                             )}
+                                             {task.recurrence && task.recurrence !== 'none' && (
+                                                 <div className="text-gray-400"><Repeat size={10} /></div>
                                              )}
                                           </div>
                                        </div>
@@ -616,9 +755,12 @@ const Tasks: React.FC = () => {
                           <h3 className={`font-bold text-sm ${theme.text}`}>Sem Seção</h3>
                       </div>
                       <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pb-10">
-                          {tasks.filter(t => t.projectId === activeView && !t.completed && (!t.tags || !t.tags.some(tag => tag.startsWith('section:')))).map(task => (
+                          {finalFilteredTasks.filter(t => t.projectId === activeView && (!t.tags || !t.tags.some(tag => tag.startsWith('section:')))).map(task => (
                               <div key={task.id} draggable onDragStart={(e) => handleDragStartTask(e, task.id)} className={`${theme.card} border rounded-xl p-3 cursor-grab`}>
-                                  <p className={`text-sm ${theme.text}`}>{task.title}</p>
+                                  <div className="flex justify-between items-start">
+                                      <p className={`text-sm ${theme.text}`}>{task.title}</p>
+                                      {task.priority && task.priority !== 'p4' && <span className="w-2 h-2 rounded-full bg-red-500"></span>}
+                                  </div>
                               </div>
                           ))}
                           <div className="h-20 border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center text-xs text-gray-400">
@@ -640,7 +782,7 @@ const Tasks: React.FC = () => {
                </div>
             ) : (
                <div className="max-w-3xl mx-auto space-y-4">
-                  {/* List View Implementation (Smart Views use this) */}
+                  {/* List View Implementation */}
                   
                   {/* Quick Add Top */}
                   <div 
@@ -671,7 +813,7 @@ const Tasks: React.FC = () => {
                      </div>
                   )}
 
-                  {getFilteredTasks().map(task => (
+                  {finalFilteredTasks.map(task => (
                      <div key={task.id} className={`flex items-start py-3 border-b ${isDark ? 'border-[#333]' : 'border-gray-100'} group ${theme.hover} px-2 rounded -mx-2 cursor-pointer transition-all`} onClick={() => { setCurrentTask(task); setActiveModal(true); }}>
                         <button 
                            onClick={(e) => { e.stopPropagation(); toggleTaskCompletion(task.id); }}
@@ -680,20 +822,29 @@ const Tasks: React.FC = () => {
                            <Check size={12} className={`opacity-0 group-hover:opacity-50 text-gray-600`} />
                         </button>
                         <div className="flex-1">
-                           <p className={`text-sm ${theme.text}`}>{task.title}</p>
+                           <div className="flex items-center gap-2">
+                               <p className={`text-sm ${theme.text}`}>{task.title}</p>
+                               {task.priority && task.priority !== 'p4' && <Flag size={12} className={task.priority === 'p1' ? 'text-red-500' : task.priority === 'p2' ? 'text-orange-500' : 'text-blue-500'} />}
+                           </div>
                            <div className="flex items-center gap-2 mt-1">
                                {task.description && <FileText size={10} className="text-gray-400"/>}
-                               {task.dueDate && <span className="text-[10px] text-red-500 flex items-center"><Calendar size={10} className="mr-1"/> {new Date(task.dueDate).toLocaleDateString()}</span>}
+                               {task.dueDate && (
+                                   <span className={`text-[10px] flex items-center ${task.dueDate < new Date().toISOString().split('T')[0] ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
+                                       <Calendar size={10} className="mr-1"/> {new Date(task.dueDate).toLocaleDateString()}
+                                   </span>
+                               )}
                                <span className="text-[10px] text-gray-400">{projects.find(p=>p.id===task.projectId)?.name}</span>
                            </div>
                         </div>
                      </div>
                   ))}
                   
-                  {getFilteredTasks().length === 0 && (
+                  {finalFilteredTasks.length === 0 && (
                       <div className="text-center py-20">
                           <img src="https://todoist.b-cdn.net/assets/images/44245c5165ed8dae89d66dfb44c9797e.png" className="w-48 mx-auto mb-4 opacity-50" />
-                          <p className={`text-sm ${theme.textSec}`}>Tudo limpo! Aproveite o descanso.</p>
+                          <p className={`text-sm ${theme.textSec}`}>
+                              {filterDate !== 'all' || filterPriority !== 'all' ? 'Nenhuma tarefa com estes filtros.' : 'Tudo limpo! Aproveite o descanso.'}
+                          </p>
                       </div>
                   )}
                </div>
@@ -705,24 +856,81 @@ const Tasks: React.FC = () => {
       <Modal isOpen={activeModal} onClose={() => setActiveModal(false)} title="" size="lg">
          <div className={`space-y-4 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
             <div className="flex gap-2 mb-2">
-                <span className="text-xs border px-2 py-0.5 rounded bg-gray-100 text-gray-500">{projects.find(p=>p.id===currentTask.projectId)?.name || 'Entrada'}</span>
+                <span className="text-xs border px-2 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">
+                    {projects.find(p=>p.id===currentTask.projectId)?.name || 'Entrada'}
+                </span>
             </div>
+            
             <input 
                type="text" 
-               className="w-full text-xl font-bold border-none focus:ring-0 p-0 placeholder-gray-400 bg-transparent outline-none"
+               className={`w-full text-xl font-bold border-b border-transparent focus:border-purple-500 p-2 placeholder-gray-400 outline-none ${isDark ? 'bg-[#2a2a2a] text-white' : 'bg-white text-gray-900'}`}
                placeholder="Nome da Tarefa"
                value={currentTask.title || ''}
                onChange={e => setCurrentTask({...currentTask, title: e.target.value})}
             />
+            
+            {/* New Features: Date, Recurrence, Reminder */}
+            <div className="flex flex-wrap gap-4 border-b border-gray-100 pb-4">
+                <div>
+                    <label className="text-xs text-gray-500 block mb-1 flex items-center"><Calendar size={12} className="mr-1"/> Vencimento</label>
+                    <input 
+                      type="date" 
+                      className={`text-sm border rounded p-2 ${isDark ? 'bg-[#333] text-white border-gray-600' : 'bg-white text-gray-800 border-gray-300'}`}
+                      value={currentTask.dueDate || ''} 
+                      onChange={e => setCurrentTask({...currentTask, dueDate: e.target.value})} 
+                    />
+                </div>
+                
+                <div>
+                    <label className="text-xs text-gray-500 block mb-1 flex items-center"><Flag size={12} className="mr-1"/> Prioridade</label>
+                    <select 
+                      className={`text-sm border rounded p-2 ${isDark ? 'bg-[#333] text-white border-gray-600' : 'bg-white text-gray-800 border-gray-300'}`}
+                      value={currentTask.priority || 'p4'} 
+                      onChange={e => setCurrentTask({...currentTask, priority: e.target.value as any})}
+                    >
+                        <option value="p1">P1 - Urgente</option>
+                        <option value="p2">P2 - Alta</option>
+                        <option value="p3">P3 - Média</option>
+                        <option value="p4">P4 - Baixa</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label className="text-xs text-gray-500 block mb-1 flex items-center"><Repeat size={12} className="mr-1"/> Repetir</label>
+                    <select 
+                      className={`text-sm border rounded p-2 ${isDark ? 'bg-[#333] text-white border-gray-600' : 'bg-white text-gray-800 border-gray-300'}`}
+                      value={currentTask.recurrence || 'none'} 
+                      onChange={e => setCurrentTask({...currentTask, recurrence: e.target.value as any})}
+                    >
+                        <option value="none">Não repetir</option>
+                        <option value="daily">Diariamente</option>
+                        <option value="weekly">Semanalmente</option>
+                        <option value="monthly">Mensalmente</option>
+                        <option value="quarterly">A cada 3 meses</option>
+                        <option value="yearly">Anualmente</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label className="text-xs text-gray-500 block mb-1 flex items-center"><BellRing size={12} className="mr-1"/> Lembrete</label>
+                    <input 
+                      type="time" 
+                      className={`text-sm border rounded p-2 ${isDark ? 'bg-[#333] text-white border-gray-600' : 'bg-white text-gray-800 border-gray-300'}`}
+                      value={currentTask.reminderTime || ''} 
+                      onChange={e => setCurrentTask({...currentTask, reminderTime: e.target.value})} 
+                    />
+                </div>
+            </div>
+
             <textarea 
-               className="w-full text-sm text-gray-500 border-none focus:ring-0 p-0 resize-none h-32 placeholder-gray-400 bg-transparent outline-none leading-relaxed"
+               className={`w-full text-sm border rounded-lg p-3 resize-none h-32 outline-none leading-relaxed ${isDark ? 'bg-[#2a2a2a] text-white border-gray-600' : 'bg-gray-50 text-gray-800 border-gray-200'}`}
                placeholder="Descrição / Notas..."
                value={currentTask.description || ''}
                onChange={e => setCurrentTask({...currentTask, description: e.target.value})}
             />
             
             <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-               <button onClick={() => setActiveModal(false)} className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-50 rounded font-medium">Cancelar</button>
+               <button onClick={() => setActiveModal(false)} className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded font-medium">Cancelar</button>
                <button className={`px-6 py-2 text-sm text-white rounded font-bold bg-[#de4c4a] hover:bg-[#c53b39]`}>Salvar</button>
             </div>
          </div>
