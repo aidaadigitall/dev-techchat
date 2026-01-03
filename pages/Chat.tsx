@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { api, adaptMessage } from '../services/api';
 import { supabase } from '../services/supabase'; 
@@ -28,15 +29,6 @@ const DEPARTMENTS = [
   { id: 'retencao', name: 'Retenção' }
 ];
 
-const RECURRENCE_LABELS: Record<string, string> = {
-  none: 'Não repetir',
-  daily: 'Diariamente',
-  weekly: 'Semanalmente',
-  biweekly: 'Quinzenalmente',
-  monthly: 'Mensalmente',
-  yearly: 'Anualmente'
-};
-
 interface ChatProps {
   branding?: Branding;
 }
@@ -52,8 +44,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // Right Panel States
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelView, setRightPanelView] = useState<'info' | 'media'>('info'); 
-  const [mediaFilter, setMediaFilter] = useState<'images' | 'videos' | 'docs'>('images');
-
+  
   const [aiPanelOpen, setAiPanelOpen] = useState(false); 
   
   // Chat States
@@ -62,7 +53,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [isSending, setIsSending] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [messageMenuOpenId, setMessageMenuOpenId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   
@@ -70,13 +60,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
   const [messageSearchQuery, setMessageSearchQuery] = useState('');
 
-  // Call State
-  const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'connected'>('idle');
-  const [callType, setCallType] = useState<'audio' | 'video'>('audio');
-  
   // Advanced Features States
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
   const [signatureEnabled, setSignatureEnabled] = useState(true); 
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
@@ -86,32 +70,15 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   // Attachment State
   const [attachment, setAttachment] = useState<{ file?: File, preview?: string, type: MessageType, text?: string } | null>(null);
   
-  // Right Panel Notes
-  const [newNote, setNewNote] = useState('');
-  const [internalNotes, setInternalNotes] = useState<{id: string, text: string, date: string}[]>([]);
-  
   const [activeModal, setActiveModal] = useState<'transfer' | 'export' | 'schedule' | 'forward' | 'resolve' | 'delete' | 'block' | 'createTask' | 'tags' | 'deleteMessage' | null>(null);
   const [modalData, setModalData] = useState<any>(null); 
-  const [transferData, setTransferData] = useState({ userId: '', sector: '' });
   
-  const [scheduleData, setScheduleData] = useState({ date: '', time: '', recurrence: 'none' });
-  const [scheduledMessages, setScheduledMessages] = useState<{id: string, date: string, message: string, recurrence: string}[]>([]);
-  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
-
   const [newTaskForm, setNewTaskForm] = useState({ title: '', dueDate: '', priority: 'p2' as TaskPriority });
-  const [tagInput, setTagInput] = useState('');
-  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
-  const [editContactForm, setEditContactForm] = useState<Partial<Contact>>({});
   const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recordingIntervalRef = useRef<number | null>(null);
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); 
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
-  const dateInputRef = useRef<HTMLInputElement>(null);
-  const timeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const loadInit = async () => {
@@ -182,9 +149,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     addToast('Resposta rápida salva com sucesso!', 'success');
   };
 
-  // ... (Other handlers like handleAddNote, handleSendMessage etc. remain the same, just keeping them concise for this patch) ...
-  const handleAddNote = () => { if (!newNote.trim()) return; setInternalNotes(prev => [{ id: Date.now().toString(), text: newNote, date: new Date().toLocaleDateString() }, ...prev]); setNewNote(''); };
-  const downloadFile = (url: string, filename: string) => { const a = document.createElement('a'); a.href = url; a.download = filename || 'download'; a.target = '_blank'; document.body.appendChild(a); a.click(); document.body.removeChild(a); };
   const handleReplyMessage = (message: Message) => { setReplyingTo(message); setMessageMenuOpenId(null); const input = document.querySelector('input[type="text"]') as HTMLInputElement; if (input) input.focus(); };
   
   const handleSendMessage = async () => {
@@ -222,6 +186,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   const confirmCreateTask = async () => { if(newTaskForm.title) { await api.tasks.create(newTaskForm); setActiveModal(null); addToast('Tarefa criada', 'success'); } };
   const handleAnalyzeChat = async () => { if(selectedContact) { setAiLoading(true); setAiPanelOpen(true); const insights = await api.ai.generateInsight('chat', {}); setAiInsights(insights); setAiLoading(false); } };
   
+  // New Message Actions
   const handleStarMessage = (message: Message) => {
       setMessages(prev => prev.map(m => m.id === message.id ? { ...m, starred: !m.starred } : m));
       setMessageMenuOpenId(null);
@@ -234,7 +199,6 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       addToast('Copiado para a área de transferência', 'info');
   };
 
-  const getMediaMessages = (type: string) => messages.filter(m => (type === 'images' && m.type === MessageType.IMAGE) || (type === 'videos' && m.type === MessageType.VIDEO) || (type === 'docs' && m.type === MessageType.DOCUMENT));
   const filteredMessages = messages.filter(m => m.content.toLowerCase().includes(messageSearchQuery.toLowerCase()));
 
   // Render Helpers

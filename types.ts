@@ -1,3 +1,4 @@
+
 import { ReactNode } from 'react';
 
 // --- Shared / Core ---
@@ -71,7 +72,7 @@ export interface Message {
   mediaUrl?: string; // URL for images/videos/docs
   fileName?: string; // Name for documents
   location?: { lat: number, lng: number };
-  starred?: boolean; // New field for favorite messages
+  starred?: boolean; // Campo para mensagens favoritas
 }
 
 export interface QuickReply {
