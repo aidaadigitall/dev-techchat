@@ -207,7 +207,7 @@ const Contacts: React.FC = () => {
                 phone: rawContact.phone,
                 email: rawContact.email,
                 source: 'Importação CSV',
-                status: 'pending' // IMPORTANT: Import as pending so they don't clog up the chat inbox
+                status: 'resolved' // FIXED: Import as resolved so they don't clog up the chat pending queue
              });
              currentJob.successCount++;
           } else {
