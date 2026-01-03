@@ -11,7 +11,7 @@ import {
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
   Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
-  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle
+  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
@@ -52,8 +52,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
   
   // Right Panel States
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightPanelView, setRightPanelView] = useState<'info' | 'starred'>('info'); 
-  const [infoTab, setInfoTab] = useState<'crm' | 'media'>('crm');
+  const [rightPanelView, setRightPanelView] = useState<'info' | 'media'>('info'); 
   const [mediaFilter, setMediaFilter] = useState<'images' | 'videos' | 'docs'>('images');
 
   const [aiPanelOpen, setAiPanelOpen] = useState(false); // AI Copilot
@@ -268,6 +267,16 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
       if (!newNote.trim()) return;
       setInternalNotes(prev => [{ id: Date.now().toString(), text: newNote, date: new Date().toLocaleDateString() }, ...prev]);
       setNewNote('');
+  };
+
+  const downloadFile = (url: string, filename: string) => {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'download';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
   };
 
   // --- Call Handlers ---
@@ -808,6 +817,7 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     <div className="flex h-full bg-white overflow-hidden relative">
       {/* 1. Sidebar - Contact List */}
       <div className={`w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50 h-full absolute md:relative z-20 md:z-auto transition-transform duration-300 ${selectedContact ? '-translate-x-full md:translate-x-0' : 'translate-x-0'}`}>
+         {/* ... Sidebar content ... */}
          <div className="p-4 bg-white border-b border-gray-100">
            <div className="relative mb-3">
               <input 
@@ -1277,8 +1287,164 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
          )}
       </div>
 
-      {/* 3. Right Panel */}
-      {/* ... existing right panel logic ... */}
+      {/* 3. Right Panel Implementation */}
+      <div className={`w-80 bg-white border-l border-gray-200 flex flex-col h-full absolute right-0 z-20 transition-transform duration-300 ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'} shadow-xl md:shadow-none`}>
+       {/* Header */}
+       <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200 bg-white">
+          <h3 className="font-bold text-gray-800">Dados do Contato</h3>
+          <button onClick={() => setRightPanelOpen(false)} className="text-gray-500 hover:bg-gray-100 p-2 rounded-full"><X size={20}/></button>
+       </div>
+
+       {/* Tabs: Info vs Media */}
+       <div className="flex border-b border-gray-200">
+          <button onClick={() => setRightPanelView('info')} className={`flex-1 py-3 text-sm font-medium transition-colors ${rightPanelView === 'info' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-purple-600'}`}>Informações</button>
+          <button onClick={() => setRightPanelView('media')} className={`flex-1 py-3 text-sm font-medium transition-colors ${rightPanelView === 'media' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-purple-600'}`}>Mídia & Docs</button>
+       </div>
+
+       {/* Content */}
+       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-gray-50/50">
+          {rightPanelView === 'info' && selectedContact && (
+             <div className="space-y-6">
+                <div className="flex flex-col items-center">
+                   <img src={selectedContact.avatar} className="w-24 h-24 rounded-full mb-3 object-cover shadow-sm border-2 border-white" />
+                   <h3 className="font-bold text-lg text-gray-900">{selectedContact.name}</h3>
+                   <p className="text-sm text-gray-500">{selectedContact.phone}</p>
+                </div>
+
+                {/* Notes Section */}
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                   <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-bold text-gray-800 flex items-center"><StickyNote size={14} className="mr-2 text-purple-500"/> Notas Internas</h4>
+                   </div>
+                   <div className="space-y-2 mb-3">
+                      {internalNotes.map(note => (
+                         <div key={note.id} className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-gray-700">
+                            <p>{note.text}</p>
+                            <span className="text-[10px] text-gray-400 mt-1 block">{note.date}</span>
+                         </div>
+                      ))}
+                      {internalNotes.length === 0 && <p className="text-xs text-gray-400 italic">Nenhuma nota adicionada.</p>}
+                   </div>
+                   <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        className="flex-1 border border-gray-300 rounded p-1.5 text-xs bg-white"
+                        placeholder="Adicionar nota..."
+                        value={newNote}
+                        onChange={e => setNewNote(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAddNote()}
+                      />
+                      <button onClick={handleAddNote} className="bg-gray-100 hover:bg-gray-200 p-1.5 rounded"><Plus size={14}/></button>
+                   </div>
+                </div>
+
+                {/* CRM Data */}
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-3">
+                   <h4 className="text-sm font-bold text-gray-800 flex items-center"><User size={14} className="mr-2 text-blue-500"/> Detalhes CRM</h4>
+                   <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                      <div>
+                         <span className="text-gray-400 block mb-0.5">Email</span>
+                         <span className="font-medium text-gray-800 break-all">{selectedContact.email || '-'}</span>
+                      </div>
+                      <div>
+                         <span className="text-gray-400 block mb-0.5">Empresa</span>
+                         <span className="font-medium text-gray-800">{selectedContact.company || '-'}</span>
+                      </div>
+                      <div>
+                         <span className="text-gray-400 block mb-0.5">CPF/CNPJ</span>
+                         <span className="font-medium text-gray-800">{selectedContact.cpfCnpj || '-'}</span>
+                      </div>
+                      <div>
+                         <span className="text-gray-400 block mb-0.5">Funil</span>
+                         <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">Vendas</span>
+                      </div>
+                   </div>
+                   <button 
+                     onClick={() => { setRightPanelOpen(false); setHeaderMenuOpen(true); }}
+                     className="w-full mt-2 py-2 text-xs font-medium text-purple-600 border border-purple-200 rounded-lg hover:bg-purple-50 flex items-center justify-center"
+                   >
+                      <Edit size={12} className="mr-1"/> Editar Contato
+                   </button>
+                </div>
+                
+                {/* Actions */}
+                <button onClick={handleCreateTask} className="w-full bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center justify-center shadow-sm">
+                   <CheckSquare size={16} className="mr-2 text-green-600"/> Criar Tarefa
+                </button>
+             </div>
+          )}
+
+          {rightPanelView === 'media' && (
+             <div className="animate-fadeIn">
+                {/* Media Filters */}
+                <div className="flex bg-gray-200 rounded-lg p-1 mb-4 overflow-x-auto">
+                   {['images', 'videos', 'docs'].map(t => (
+                      <button 
+                        key={t} 
+                        onClick={() => setMediaFilter(t as any)} 
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${mediaFilter === t ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        {t === 'images' ? 'Fotos' : t === 'videos' ? 'Vídeos' : 'Docs'}
+                      </button>
+                   ))}
+                </div>
+
+                {/* Grid */}
+                {getMediaMessages(mediaFilter).length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+                        {mediaFilter === 'images' && <ImageIcon size={32} className="mb-2 opacity-50"/>}
+                        {mediaFilter === 'videos' && <Film size={32} className="mb-2 opacity-50"/>}
+                        {mediaFilter === 'docs' && <FileText size={32} className="mb-2 opacity-50"/>}
+                        <p className="text-xs">Nenhum arquivo encontrado.</p>
+                    </div>
+                ) : (
+                    <div className={mediaFilter === 'docs' ? 'space-y-2' : 'grid grid-cols-2 gap-2'}>
+                       {getMediaMessages(mediaFilter).map(msg => (
+                          <div key={msg.id} className="relative group">
+                             {mediaFilter === 'images' && (
+                                <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
+                                   <img src={msg.mediaUrl || 'https://via.placeholder.com/150'} className="w-full h-full object-cover" />
+                                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                       <button onClick={() => downloadFile(msg.mediaUrl || '', `image_${msg.timestamp}.jpg`)} className="text-white bg-black/50 p-2 rounded-full hover:bg-black/70">
+                                          <Download size={16} />
+                                       </button>
+                                   </div>
+                                </div>
+                             )}
+                             
+                             {mediaFilter === 'videos' && (
+                                <div className="aspect-square bg-black rounded-lg overflow-hidden flex items-center justify-center relative border border-gray-800">
+                                   <PlayCircle size={32} className="text-white opacity-80" />
+                                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                       <button onClick={() => downloadFile(msg.mediaUrl || '', `video_${msg.timestamp}.mp4`)} className="text-white bg-black/50 p-2 rounded-full hover:bg-black/70">
+                                          <Download size={16} />
+                                       </button>
+                                   </div>
+                                </div>
+                             )}
+
+                             {mediaFilter === 'docs' && (
+                                <div className="flex items-center p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                                   <div className="bg-blue-50 text-blue-600 p-2 rounded-lg mr-3">
+                                      <FileText size={20} />
+                                   </div>
+                                   <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-bold text-gray-800 truncate">{msg.fileName || 'Documento'}</p>
+                                      <p className="text-[10px] text-gray-500">{msg.timestamp}</p>
+                                   </div>
+                                   <button onClick={() => downloadFile(msg.mediaUrl || '', msg.fileName || 'document.pdf')} className="text-gray-400 hover:text-gray-700 p-1">
+                                      <Download size={16} />
+                                   </button>
+                                </div>
+                             )}
+                          </div>
+                       ))}
+                    </div>
+                )}
+             </div>
+          )}
+       </div>
+    </div>
 
       {/* --- MODALS SECTION (Replacements for Alerts) --- */}
 
