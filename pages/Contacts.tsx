@@ -3,8 +3,22 @@ import { api } from '../services/api';
 import { whatsappService } from '../services/whatsapp'; // Import WhatsApp Service
 import { Contact, Message, MessageType } from '../types';
 import { useToast } from '../components/ToastContext';
-import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle, Clock, Map, UserCheck, AlertCircle } from 'lucide-react';
+import { Search, Filter, Download, Plus, MoreVertical, X, CheckCheck, Check, Edit, Trash2, Upload, FileText, Calendar, PlayCircle, Sparkles, Building, Briefcase, MapPin, User, Target, Save, RefreshCw, FileSpreadsheet, AlertTriangle, Clock, Map, UserCheck, AlertCircle, MessageSquarePlus, Send } from 'lucide-react';
 import Modal from '../components/Modal';
+
+// Mock Departments for selection
+const DEPARTMENTS = [
+  { id: 'comercial', name: 'Comercial' },
+  { id: 'suporte', name: 'Suporte Técnico' },
+  { id: 'financeiro', name: 'Financeiro' },
+  { id: 'retencao', name: 'Retenção' }
+];
+
+// Mock Connections
+const CONNECTIONS = [
+  { id: 'wa_default', name: 'WhatsApp Principal' },
+  { id: 'wa_support', name: 'WhatsApp Suporte' }
+];
 
 const Contacts: React.FC = () => {
   const { addToast } = useToast();
@@ -37,10 +51,16 @@ const Contacts: React.FC = () => {
   // New Modals State
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [newChatModalOpen, setNewChatModalOpen] = useState(false); // New State
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null); 
 
-  // Import Feedback State
-  const [importFeedback, setImportFeedback] = useState<{success: number, skipped: number, errors: string[]} | null>(null);
+  // New Chat Form State
+  const [newChatForm, setNewChatForm] = useState({
+      contactId: '',
+      connectionId: 'wa_default',
+      sectorId: '',
+      initialMessage: ''
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -189,6 +209,41 @@ const Contacts: React.FC = () => {
     }
   };
 
+  // --- Start Chat Logic ---
+  const handleStartChat = async () => {
+      if (!newChatForm.contactId) {
+          addToast("Selecione um contato para iniciar.", "warning");
+          return;
+      }
+      if (!newChatForm.sectorId) {
+          addToast("Selecione o setor responsável.", "warning");
+          return;
+      }
+
+      setLoading(true);
+      try {
+          // 1. If there's an initial message, send it
+          if (newChatForm.initialMessage.trim()) {
+              await api.chat.sendMessage(newChatForm.contactId, newChatForm.initialMessage);
+          }
+
+          // 2. Update contact sector/connection info (Simulated via update)
+          await api.contacts.update(newChatForm.contactId, {
+              status: 'open',
+              // In a real app, you would pass sector/connection to backend here
+              // sector: newChatForm.sectorId 
+          });
+
+          addToast("Atendimento iniciado com sucesso! Vá para a aba de Atendimento.", "success");
+          setNewChatModalOpen(false);
+          setNewChatForm({ contactId: '', connectionId: 'wa_default', sectorId: '', initialMessage: '' });
+      } catch (error) {
+          addToast("Erro ao iniciar atendimento.", "error");
+      } finally {
+          setLoading(false);
+      }
+  };
+
   // --- Sync & Import/Export Logic ---
   const handleSyncWhatsapp = () => setSyncModalOpen(true);
   
@@ -222,7 +277,7 @@ const Contacts: React.FC = () => {
       addToast('Exportação iniciada.', 'success');
   };
 
-  // CSV Import Logic
+  // CSV Import Logic (Improved)
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -234,27 +289,33 @@ const Contacts: React.FC = () => {
         
         let successCount = 0;
         let skippedCount = 0;
-        const errors: string[] = [];
-
+        
         setLoading(true);
-        setImportModalOpen(false); // Close modal to show loading or feedback later
+        setImportModalOpen(false);
 
-        // Skip header if likely present (checking for "nome" or "phone" or "telefone")
-        const startIdx = lines[0].toLowerCase().includes('nome') || lines[0].toLowerCase().includes('telefone') ? 1 : 0;
+        // Detect separator (comma or semicolon) based on first line
+        const headerLine = lines[0] || '';
+        const separator = headerLine.includes(';') ? ';' : ',';
+
+        // Skip header if likely present
+        const hasHeader = headerLine.toLowerCase().includes('nome') || headerLine.toLowerCase().includes('name');
+        const startIdx = hasHeader ? 1 : 0;
 
         for(let i = startIdx; i < lines.length; i++) {
             const line = lines[i].trim();
             if(!line) continue;
             
-            // Simple CSV Split (Does not handle commas inside quotes perfectly, good enough for simple contact lists)
-            const parts = line.split(','); 
-            if (parts.length >= 2) { // Need at least Name and Phone
-                const name = parts[0]?.trim();
-                const phone = parts[1]?.trim().replace(/\D/g, '');
-                const email = parts[2]?.trim();
+            try {
+                // Regex to split by separator but ignore separator inside quotes
+                // Simplified split for typical simple CSVs
+                const parts = line.split(separator).map(p => p.trim().replace(/^"|"$/g, ''));
                 
-                if (name && phone && phone.length >= 10) {
-                    try {
+                if (parts.length >= 2) { 
+                    const name = parts[0];
+                    const phone = parts[1].replace(/\D/g, ''); // Extract only numbers
+                    const email = parts[2] || '';
+                    
+                    if (name && phone && phone.length >= 10) {
                         await api.contacts.create({
                             name,
                             phone,
@@ -262,14 +323,14 @@ const Contacts: React.FC = () => {
                             source: 'Importação CSV'
                         });
                         successCount++;
-                    } catch (err) {
-                        // Likely duplicate
+                    } else {
                         skippedCount++;
                     }
                 } else {
                     skippedCount++;
                 }
-            } else {
+            } catch (err) {
+                console.error("Error importing line", i, err);
                 skippedCount++;
             }
         }
@@ -291,6 +352,10 @@ const Contacts: React.FC = () => {
            <p className="text-gray-500">Gerencie sua base de clientes ({contacts.length}).</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={() => setNewChatModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center shadow-sm text-sm font-medium transition-colors">
+             <MessageSquarePlus size={18} className="mr-2" /> Novo Atendimento
+          </button>
+          <div className="h-8 w-px bg-gray-300 mx-1 hidden sm:block"></div>
           <button onClick={() => setImportModalOpen(true)} className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium transition-colors"><Upload size={16} className="mr-2" /> Importar</button>
           <button onClick={handleExportContacts} className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium transition-colors"><Download size={16} className="mr-2" /> Exportar</button>
           <button onClick={handleSyncWhatsapp} className="px-3 py-2 bg-green-50 border border-green-200 text-green-700 rounded-lg hover:bg-green-100 flex items-center text-sm font-medium transition-colors"><RefreshCw size={16} className="mr-2" /> Sincronizar</button>
@@ -359,6 +424,85 @@ const Contacts: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Start Chat Modal */}
+      <Modal
+        isOpen={newChatModalOpen}
+        onClose={() => setNewChatModalOpen(false)}
+        title="Iniciar Novo Atendimento"
+        size="md"
+      >
+         <div className="space-y-4">
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Selecionar Contato</label>
+               <select 
+                 className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                 value={newChatForm.contactId}
+                 onChange={e => setNewChatForm({...newChatForm, contactId: e.target.value})}
+               >
+                  <option value="">Selecione um contato...</option>
+                  {contacts.map(c => (
+                     <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
+                  ))}
+               </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Conexão (WhatsApp)</label>
+                   <select 
+                     className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm"
+                     value={newChatForm.connectionId}
+                     onChange={e => setNewChatForm({...newChatForm, connectionId: e.target.value})}
+                   >
+                      {CONNECTIONS.map(conn => (
+                         <option key={conn.id} value={conn.id}>{conn.name}</option>
+                      ))}
+                   </select>
+                </div>
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Setor / Departamento</label>
+                   <select 
+                     className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm"
+                     value={newChatForm.sectorId}
+                     onChange={e => setNewChatForm({...newChatForm, sectorId: e.target.value})}
+                   >
+                      <option value="">Selecione...</option>
+                      {DEPARTMENTS.map(dept => (
+                         <option key={dept.id} value={dept.id}>{dept.name}</option>
+                      ))}
+                   </select>
+                </div>
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Mensagem Inicial (Opcional)</label>
+               <textarea 
+                 className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm h-24 resize-none focus:ring-2 focus:ring-blue-500 outline-none"
+                 placeholder="Olá, como podemos ajudar hoje?"
+                 value={newChatForm.initialMessage}
+                 onChange={e => setNewChatForm({...newChatForm, initialMessage: e.target.value})}
+               ></textarea>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-gray-100 mt-2">
+                <button 
+                  onClick={() => setNewChatModalOpen(false)} 
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg mr-2"
+                >
+                   Cancelar
+                </button>
+                <button 
+                  onClick={handleStartChat} 
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center shadow-sm font-medium"
+                >
+                   {loading ? <RefreshCw size={16} className="animate-spin mr-2"/> : <Send size={16} className="mr-2" />} 
+                   Iniciar Conversa
+                </button>
+            </div>
+         </div>
+      </Modal>
 
       {/* Edit/Create Modal (Strategic V2) */}
       <Modal
