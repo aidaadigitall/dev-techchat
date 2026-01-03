@@ -6,7 +6,8 @@ import {
   Download, RefreshCw, ChevronRight, ChevronDown, 
   Trash2, X, Search, Filter, Eye, EyeOff, Edit, Save,
   Clock, Upload, Users, AlertCircle, CornerDownRight, Tag as TagIcon,
-  Check, Maximize2, LayoutGrid, List as ListIcon, Share2, MessageSquare, MoreHorizontal as MoreDots
+  Check, Maximize2, LayoutGrid, List as ListIcon, Share2, MessageSquare, MoreHorizontal as MoreDots,
+  Sun, Moon, FolderPlus, GripVertical
 } from 'lucide-react';
 import { MOCK_USERS } from '../constants';
 import { Task, TaskPriority } from '../types';
@@ -22,74 +23,163 @@ interface Project {
   color: string;
 }
 
-// --- Dados Mockados ---
-
-const MOCK_PROJECTS: Project[] = [
-  { id: 'esc_informatica', name: 'Esc Informática', color: 'text-red-500' },
-  { id: 'marketing', name: 'Marketing', color: 'text-orange-500' },
-  { id: 'financeiro', name: 'Financeiro', color: 'text-green-500' }
-];
-
-// Seções simuladas para o modo Board (baseadas na imagem)
-const BOARD_SECTIONS = [
-  { id: 'pop', title: "P.O.P.'s (Procedimento Operacional)", tagTrigger: 'POP' },
-  { id: 'experience', title: "EXPERIÊNCIA DO CLIENTE", tagTrigger: 'Experiência' },
-  { id: 'contracts', title: "Contratos e Renovações", tagTrigger: 'Contratos' },
-  { id: 'ideas', title: "Ideias", tagTrigger: 'Ideias' },
-  { id: 'backlog', title: "A Fazer (Sem Seção)", tagTrigger: null } // Fallback
-];
-
-// --- Helpers de UI ---
-
-const PriorityFlag: React.FC<{ p: TaskPriority }> = ({ p }) => {
-  const colors = {
-    p1: 'text-red-600 fill-red-100',
-    p2: 'text-orange-500 fill-orange-50',
-    p3: 'text-blue-500 fill-blue-50',
-    p4: 'text-gray-400'
-  };
-  return <Flag size={14} className={colors[p]} />;
-};
-
-const UserAvatar: React.FC<{ userId?: string }> = ({ userId }) => {
-  if (!userId) return null;
-  const user = MOCK_USERS.find(u => u.id === userId);
-  if (!user) return null;
-  
-  return (
-    <div className="w-5 h-5 rounded-full bg-gray-200 border border-white flex items-center justify-center text-[8px] font-bold text-gray-700 shadow-sm overflow-hidden" title={user.name}>
-      {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user.name.charAt(0)}
-    </div>
-  );
-};
+interface Section {
+  id: string;
+  projectId: string;
+  title: string;
+  order: number;
+}
 
 // --- Componente Principal ---
 
 const Tasks: React.FC = () => {
   const { addToast } = useToast();
+  
+  // --- Estados de Dados ---
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activeFilter, setActiveFilter] = useState<string>('esc_informatica'); // Default to main project
+  
+  // Projetos (Inicializa com Inbox padrão + Projetos salvos)
+  const [projects, setProjects] = useState<Project[]>(() => {
+      const saved = localStorage.getItem('tasks_projects');
+      return saved ? JSON.parse(saved) : [
+          { id: 'inbox', name: 'Entrada', color: 'text-gray-500' }
+      ];
+  });
+
+  // Seções do Board (Inicializa com salvos ou vazios)
+  const [sections, setSections] = useState<Section[]>(() => {
+      const saved = localStorage.getItem('tasks_sections');
+      return saved ? JSON.parse(saved) : [];
+  });
+
+  const [activeProjectId, setActiveProjectId] = useState<string>('inbox');
+  
+  // --- Estados de UI ---
+  const [isDark, setIsDark] = useState(true); // Default Dark como pedido, mas alterável
   const [viewMode, setViewMode] = useState<'list' | 'board'>('board');
   const [loading, setLoading] = useState(false);
   
   // Quick Add State
   const [quickAddValue, setQuickAddValue] = useState('');
-  const [showQuickAdd, setShowQuickAdd] = useState<{columnId?: string, visible: boolean}>({ visible: false });
+  const [showQuickAdd, setShowQuickAdd] = useState<{sectionId?: string, visible: boolean}>({ visible: false });
   
+  // Project/Section Creation State
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [isCreatingSection, setIsCreatingSection] = useState(false);
+  const [newSectionName, setNewSectionName] = useState('');
+
   // Modals & Edits
   const [activeModal, setActiveModal] = useState<boolean>(false);
   const [currentTask, setCurrentTask] = useState<Partial<Task>>({});
-  const [tagInput, setTagInput] = useState(''); 
+
+  // --- Effects ---
 
   useEffect(() => {
     loadTasks();
   }, []);
+
+  // Persistência local para Projetos e Seções (Simulação de Backend para essas entidades)
+  useEffect(() => {
+      localStorage.setItem('tasks_projects', JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+      localStorage.setItem('tasks_sections', JSON.stringify(sections));
+  }, [sections]);
 
   const loadTasks = async () => {
     setLoading(true);
     const data = await api.tasks.list();
     setTasks(data);
     setLoading(false);
+  };
+
+  // --- Helpers de Cores (Tema Dinâmico) ---
+  const theme = {
+      bg: isDark ? 'bg-[#1e1e1e]' : 'bg-gray-50',
+      sidebar: isDark ? 'bg-[#1e1e1e] border-[#333]' : 'bg-gray-100 border-gray-200',
+      text: isDark ? 'text-gray-200' : 'text-gray-800',
+      textSec: isDark ? 'text-gray-500' : 'text-gray-500',
+      hover: isDark ? 'hover:bg-[#2a2a2a]' : 'hover:bg-white',
+      input: isDark ? 'bg-transparent text-white placeholder-gray-500' : 'bg-white text-gray-900 placeholder-gray-400 border-gray-200',
+      card: isDark ? 'bg-[#2a2a2a] border-transparent hover:border-gray-600' : 'bg-white border-gray-200 hover:border-purple-300 shadow-sm',
+      header: isDark ? 'bg-[#1e1e1e] border-[#333]' : 'bg-white border-gray-200',
+      modal: isDark ? 'bg-[#2a2a2a] text-white' : 'bg-white text-gray-900'
+  };
+
+  // --- Lógica de Negócio ---
+
+  const handleAddProject = () => {
+      if (!newProjectName.trim()) return;
+      const newProj: Project = {
+          id: `proj_${Date.now()}`,
+          name: newProjectName,
+          color: 'text-purple-500'
+      };
+      setProjects([...projects, newProj]);
+      setNewProjectName('');
+      setIsCreatingProject(false);
+      setActiveProjectId(newProj.id);
+      addToast('Projeto criado!', 'success');
+  };
+
+  const handleDeleteProject = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      if (id === 'inbox') return; // Cannot delete inbox
+      if (confirm('Excluir projeto e suas tarefas?')) {
+          setProjects(prev => prev.filter(p => p.id !== id));
+          if (activeProjectId === id) setActiveProjectId('inbox');
+          // Clean up sections
+          setSections(prev => prev.filter(s => s.projectId !== id));
+      }
+  };
+
+  const handleAddSection = () => {
+      if (!newSectionName.trim()) return;
+      const newSec: Section = {
+          id: `sec_${Date.now()}`,
+          projectId: activeProjectId,
+          title: newSectionName,
+          order: sections.filter(s => s.projectId === activeProjectId).length
+      };
+      setSections([...sections, newSec]);
+      setNewSectionName('');
+      setIsCreatingSection(false);
+  };
+
+  const handleDeleteSection = (id: string) => {
+      if (confirm('Excluir seção?')) {
+          setSections(prev => prev.filter(s => s.id !== id));
+      }
+  };
+
+  const handleQuickAdd = async (sectionId?: string) => {
+    if (!quickAddValue.trim()) return;
+
+    const newTaskData: Partial<Task> = {
+      title: quickAddValue,
+      projectId: activeProjectId,
+      priority: 'p4',
+      // Store section info in tags for persistence simulation since API creates generic Tasks
+      tags: sectionId ? [`section:${sectionId}`] : [], 
+      subtasks: []
+    };
+
+    // Optimistic UI
+    const tempTask = { ...newTaskData, id: Date.now().toString(), completed: false } as Task;
+    setTasks([...tasks, tempTask]);
+    
+    setQuickAddValue('');
+    setShowQuickAdd({ visible: false });
+
+    try {
+        const created = await api.tasks.create(newTaskData);
+        // Replace temp task with real one
+        setTasks(prev => prev.map(t => t.id === tempTask.id ? created : t));
+    } catch (e) {
+        addToast('Erro ao salvar tarefa', 'error');
+    }
   };
 
   const toggleTaskCompletion = async (taskId: string) => {
@@ -104,242 +194,202 @@ const Tasks: React.FC = () => {
     if (newStatus) addToast('Tarefa concluída', 'success');
   };
 
-  const handleQuickAdd = async (columnId?: string) => {
-    if (!quickAddValue.trim()) return;
-
-    // Determina tags baseada na coluna (seção)
-    const section = BOARD_SECTIONS.find(s => s.id === columnId);
-    const tags = section && section.tagTrigger ? [section.tagTrigger] : [];
-
-    const newTaskData: Partial<Task> = {
-      title: quickAddValue,
-      projectId: activeFilter,
-      priority: 'p4',
-      tags: tags,
-      subtasks: []
-    };
-
-    const tempTask = { ...newTaskData, id: Date.now().toString(), completed: false } as Task;
-    setTasks([...tasks, tempTask]);
-    setQuickAddValue('');
-    setShowQuickAdd({ visible: false });
-
-    await api.tasks.create(newTaskData);
-    loadTasks();
+  const getTasksForSection = (sectionId: string) => {
+      return tasks.filter(t => {
+          if (t.projectId !== activeProjectId) return false;
+          if (t.completed) return false;
+          
+          // Check if task belongs to this section via tag hack
+          const sectionTag = t.tags?.find(tag => tag.startsWith('section:'));
+          if (sectionTag) {
+              return sectionTag === `section:${sectionId}`;
+          }
+          return false; // If it has a section tag but not this one
+      });
   };
 
-  // --- Renderização de Seções (Board) ---
-  const getTasksForSection = (section: typeof BOARD_SECTIONS[0]) => {
-    return tasks.filter(t => {
-      // Se a task está completada, geralmente não mostramos no board principal ou mostramos no final
-      if (t.completed) return false; 
-
-      if (section.tagTrigger) {
-        return t.tags?.some(tag => tag.toLowerCase().includes(section.tagTrigger!.toLowerCase()));
-      }
-      // Backlog: Tasks sem tags das outras seções
-      const otherTags = BOARD_SECTIONS.filter(s => s.tagTrigger).map(s => s.tagTrigger!.toLowerCase());
-      const hasOtherTag = t.tags?.some(tag => otherTags.some(ot => tag.toLowerCase().includes(ot)));
-      return !hasOtherTag;
-    });
+  const getBacklogTasks = () => {
+      // Tasks in this project that have NO section tag
+      return tasks.filter(t => {
+          if (t.projectId !== activeProjectId) return false;
+          if (t.completed) return false;
+          const hasSection = t.tags?.some(tag => tag.startsWith('section:'));
+          return !hasSection;
+      });
   };
 
-  const openEditModal = (task: Task) => {
-    setCurrentTask(task);
-    setActiveModal(true);
+  // --- Render Helpers ---
+
+  const UserAvatar: React.FC<{ userId?: string }> = ({ userId }) => {
+    if (!userId) return null;
+    const user = MOCK_USERS.find(u => u.id === userId);
+    if (!user) return null;
+    
+    return (
+      <div className="w-5 h-5 rounded-full bg-gray-200 border border-white flex items-center justify-center text-[8px] font-bold text-gray-700 shadow-sm overflow-hidden" title={user.name}>
+        {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user.name.charAt(0)}
+      </div>
+    );
   };
 
-  const handleSaveTask = async () => {
-    if (!currentTask.title) return;
-    if (currentTask.id) {
-       const updated = await api.tasks.update(currentTask.id, currentTask);
-       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
-    } else {
-       const created = await api.tasks.create(currentTask);
-       setTasks(prev => [...prev, created]);
-    }
-    setActiveModal(false);
-    setCurrentTask({});
-  };
-
-  const handleDeleteTask = async () => {
-    if (currentTask.id) {
-      if (confirm('Excluir esta tarefa?')) {
-        await api.tasks.delete(currentTask.id);
-        setTasks(prev => prev.filter(t => t.id !== currentTask.id));
-        setActiveModal(false);
-      }
-    }
-  };
+  const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
+  const activeSections = sections.filter(s => s.projectId === activeProjectId).sort((a,b) => a.order - b.order);
 
   return (
-    <div className="flex h-full bg-[#1e1e1e] text-gray-200 overflow-hidden font-sans">
-      {/* 1. Sidebar (Todoist Style - Dark Theme for contrast) */}
-      <aside className="w-64 bg-[#1e1e1e] border-r border-[#333] flex-col pt-4 hidden md:flex">
+    <div className={`flex h-full ${theme.bg} ${theme.text} overflow-hidden font-sans transition-colors duration-300`}>
+      
+      {/* 1. Sidebar */}
+      <aside className={`w-64 border-r flex-col pt-4 hidden md:flex ${theme.sidebar}`}>
         <div className="px-4 mb-4">
-           <div className="flex items-center gap-2 mb-6 cursor-pointer hover:bg-[#2a2a2a] p-2 rounded transition-colors">
-              <div className="w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center text-white font-bold">E</div>
-              <div className="flex-1">
-                 <p className="text-sm font-bold text-gray-200">Elton</p>
-                 <p className="text-xs text-gray-500">Online</p>
+           {/* Header User/Toggle */}
+           <div className={`flex items-center justify-between mb-6 p-2 rounded ${theme.hover} transition-colors`}>
+              <div className="flex items-center gap-2 cursor-pointer">
+                  <div className="w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center text-white font-bold">E</div>
+                  <div className="flex-1">
+                    <p className={`text-sm font-bold ${theme.text}`}>Elton</p>
+                    <p className="text-xs text-gray-500">Online</p>
+                  </div>
               </div>
-              <ChevronDown size={14} className="text-gray-500" />
+              <button onClick={() => setIsDark(!isDark)} className={`p-1.5 rounded-full ${isDark ? 'bg-gray-800 text-yellow-400' : 'bg-gray-200 text-gray-600'}`}>
+                  {isDark ? <Sun size={14} /> : <Moon size={14} />}
+              </button>
            </div>
 
            <button 
              onClick={() => { setShowQuickAdd({ visible: true }); }}
-             className="w-full flex items-center gap-2 text-[#de4c4a] hover:bg-[#2a2a2a] p-2 rounded transition-colors font-semibold text-sm mb-4"
+             className={`w-full flex items-center gap-2 ${isDark ? 'text-[#de4c4a]' : 'text-purple-600'} ${theme.hover} p-2 rounded transition-colors font-semibold text-sm mb-4`}
            >
-             <div className="w-6 h-6 rounded-full bg-[#de4c4a] flex items-center justify-center text-white"><Plus size={16} /></div>
+             <div className={`w-6 h-6 rounded-full ${isDark ? 'bg-[#de4c4a]' : 'bg-purple-600'} flex items-center justify-center text-white`}><Plus size={16} /></div>
              Adicionar tarefa
            </button>
 
            <div className="space-y-1">
-              <div className="flex items-center gap-3 p-2 hover:bg-[#2a2a2a] rounded cursor-pointer text-gray-300">
-                 <Search size={18} /> <span className="text-sm">Buscar</span>
-              </div>
-              <div className="flex items-center gap-3 p-2 hover:bg-[#2a2a2a] rounded cursor-pointer text-gray-300">
+              <div className={`flex items-center gap-3 p-2 ${theme.hover} rounded cursor-pointer ${theme.textSec}`}>
                  <Inbox size={18} /> <span className="text-sm">Entrada</span>
               </div>
-              <div className="flex items-center justify-between p-2 hover:bg-[#2a2a2a] rounded cursor-pointer text-gray-300">
+              <div className={`flex items-center justify-between p-2 ${theme.hover} rounded cursor-pointer ${theme.textSec}`}>
                  <div className="flex items-center gap-3"><CalendarDays size={18} /> <span className="text-sm">Hoje</span></div>
-                 <span className="text-xs text-gray-500">{tasks.filter(t => t.dueDate?.startsWith(new Date().toISOString().slice(0,10))).length || ''}</span>
+                 <span className="text-xs opacity-60">{tasks.filter(t => t.dueDate?.startsWith(new Date().toISOString().slice(0,10))).length || ''}</span>
               </div>
-              <div className="flex items-center gap-3 p-2 hover:bg-[#2a2a2a] rounded cursor-pointer text-gray-300">
+              <div className={`flex items-center gap-3 p-2 ${theme.hover} rounded cursor-pointer ${theme.textSec}`}>
                  <Calendar size={18} /> <span className="text-sm">Em breve</span>
               </div>
-              <div className="flex items-center gap-3 p-2 hover:bg-[#2a2a2a] rounded cursor-pointer text-gray-300">
-                 <LayoutGrid size={18} /> <span className="text-sm">Filtros e Etiquetas</span>
-              </div>
            </div>
         </div>
 
-        <div className="mt-4 px-4">
-           <div className="flex justify-between items-center text-gray-500 mb-2 hover:text-gray-300 cursor-pointer">
-              <span className="text-xs font-bold uppercase">Favoritos</span>
-              <Plus size={14} />
+        <div className="mt-6 px-4 flex-1 overflow-y-auto">
+           <div className="flex justify-between items-center text-gray-500 mb-2 group cursor-pointer" onClick={() => setIsCreatingProject(true)}>
+              <span className="text-xs font-bold uppercase hover:text-gray-400">Meus Projetos</span>
+              <Plus size={14} className="opacity-0 group-hover:opacity-100" />
            </div>
-           <div className="space-y-1">
-              {['Suporte', 'DOCUMENTAÇÃO', 'ESC ESTRUTURA'].map(fav => (
-                 <div key={fav} className="flex items-center justify-between p-1.5 hover:bg-[#2a2a2a] rounded cursor-pointer group">
-                    <div className="flex items-center gap-2 text-sm text-gray-400">
-                       <span className="text-gray-500 text-xs">#</span> {fav}
-                    </div>
-                    <span className="text-xs text-gray-600 group-hover:text-gray-400">{Math.floor(Math.random() * 200)}</span>
-                 </div>
-              ))}
-           </div>
-        </div>
+           
+           {isCreatingProject && (
+               <div className="mb-2 px-1 animate-fadeIn">
+                   <input 
+                     autoFocus
+                     type="text" 
+                     className={`w-full text-sm p-1.5 rounded border ${isDark ? 'bg-[#333] border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+                     placeholder="Nome do projeto..."
+                     value={newProjectName}
+                     onChange={e => setNewProjectName(e.target.value)}
+                     onKeyDown={e => e.key === 'Enter' && handleAddProject()}
+                     onBlur={() => setIsCreatingProject(false)}
+                   />
+               </div>
+           )}
 
-        <div className="mt-6 px-4 flex-1">
-           <div className="flex justify-between items-center text-gray-500 mb-2 hover:text-gray-300 cursor-pointer">
-              <span className="text-xs font-bold uppercase">Meus Projetos</span>
-              <Plus size={14} />
-           </div>
            <div className="space-y-1">
-              {MOCK_PROJECTS.map(proj => (
+              {projects.map(proj => (
                  <div 
                    key={proj.id} 
-                   onClick={() => setActiveFilter(proj.id)}
-                   className={`flex items-center justify-between p-1.5 rounded cursor-pointer group ${activeFilter === proj.id ? 'bg-[#2a2a2a] text-white' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}
+                   onClick={() => setActiveProjectId(proj.id)}
+                   className={`flex items-center justify-between p-1.5 rounded cursor-pointer group ${activeProjectId === proj.id ? (isDark ? 'bg-[#2a2a2a] text-white' : 'bg-purple-50 text-purple-700 font-medium') : `${theme.textSec} ${theme.hover}`}`}
                  >
-                    <div className="flex items-center gap-2 text-sm">
+                    <div className="flex items-center gap-2 text-sm truncate">
                        <span className={`${proj.color}`}>#</span> {proj.name}
                     </div>
-                    {activeFilter === proj.id && <MoreHorizontal size={14} className="text-gray-500" />}
+                    {proj.id !== 'inbox' && activeProjectId === proj.id && (
+                        <button onClick={(e) => handleDeleteProject(e, proj.id)} className="text-gray-500 hover:text-red-500">
+                            <Trash2 size={12} />
+                        </button>
+                    )}
                  </div>
               ))}
            </div>
         </div>
       </aside>
 
-      {/* 2. Main Board Content */}
-      <main className="flex-1 flex flex-col h-full bg-[#1e1e1e] overflow-hidden">
+      {/* 2. Main Content */}
+      <main className={`flex-1 flex flex-col h-full overflow-hidden ${theme.bg}`}>
          {/* Header */}
-         <header className="h-16 border-b border-[#333] flex items-center justify-between px-6 bg-[#1e1e1e]">
+         <header className={`h-16 border-b flex items-center justify-between px-6 ${theme.header}`}>
             <div className="flex flex-col">
                <div className="flex items-center text-xs text-gray-500 mb-1">
-                  <span>Meus projetos</span> <ChevronRight size={12} className="mx-1"/>
+                  <span>Projetos</span> <ChevronRight size={12} className="mx-1"/>
                </div>
                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-white">Esc Informática</h1>
-                  <span className="text-2xl">🎯</span>
+                  <h1 className={`text-xl font-bold ${theme.text}`}>{activeProject.name}</h1>
                </div>
             </div>
 
             <div className="flex items-center gap-3">
-               <button className="flex items-center gap-1 text-gray-400 hover:text-white px-3 py-1.5 hover:bg-[#2a2a2a] rounded transition-colors text-sm">
+               <button className={`flex items-center gap-1 text-gray-400 ${isDark ? 'hover:text-white' : 'hover:text-gray-900'} px-3 py-1.5 ${theme.hover} rounded transition-colors text-sm`}>
                   <Users size={16} /> Compartilhar
                </button>
                <button 
                  onClick={() => setViewMode(viewMode === 'board' ? 'list' : 'board')}
-                 className="flex items-center gap-1 text-gray-400 hover:text-white px-3 py-1.5 hover:bg-[#2a2a2a] rounded transition-colors text-sm"
+                 className={`flex items-center gap-1 text-gray-400 ${isDark ? 'hover:text-white' : 'hover:text-gray-900'} px-3 py-1.5 ${theme.hover} rounded transition-colors text-sm`}
                >
                   {viewMode === 'board' ? <ListIcon size={16} /> : <LayoutGrid size={16} />} 
                   {viewMode === 'board' ? 'Visualizar' : 'Board'}
                </button>
-               <button className="text-gray-400 hover:text-white p-2 hover:bg-[#2a2a2a] rounded"><MoreHorizontal size={18}/></button>
             </div>
          </header>
 
          {/* Board Area */}
          <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
             {viewMode === 'board' ? (
-               <div className="flex h-full space-x-6">
-                  {BOARD_SECTIONS.map(section => {
-                     const sectionTasks = getTasksForSection(section);
+               <div className="flex h-full space-x-6 items-start">
+                  
+                  {/* Render Dynamic Sections */}
+                  {activeSections.map(section => {
+                     const sectionTasks = getTasksForSection(section.id);
                      return (
-                        <div key={section.id} className="w-80 flex flex-col h-full">
+                        <div key={section.id} className="w-80 flex flex-col h-full max-h-full">
                            {/* Section Header */}
-                           <div className="flex items-center justify-between mb-3 px-1 group">
+                           <div className="flex items-center justify-between mb-3 px-1 group flex-shrink-0">
                               <div className="flex items-center gap-2">
-                                 <h3 className="font-bold text-sm text-gray-300">{section.title}</h3>
-                                 <span className="text-xs text-gray-600">{sectionTasks.length}</span>
+                                 <h3 className={`font-bold text-sm ${theme.text}`}>{section.title}</h3>
+                                 <span className="text-xs text-gray-500">{sectionTasks.length}</span>
                               </div>
                               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                 <button className="text-gray-500 hover:text-white"><Plus size={16}/></button>
-                                 <button className="text-gray-500 hover:text-white"><MoreHorizontal size={16}/></button>
+                                 <button onClick={() => setShowQuickAdd({sectionId: section.id, visible: true})} className="text-gray-500 hover:text-gray-300"><Plus size={16}/></button>
+                                 <button onClick={() => handleDeleteSection(section.id)} className="text-gray-500 hover:text-red-500"><Trash2 size={16}/></button>
                               </div>
                            </div>
 
                            {/* Tasks Container */}
-                           <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pb-10">
+                           <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pb-10 min-h-0">
                               {sectionTasks.map(task => (
                                  <div 
                                    key={task.id} 
-                                   onClick={() => openEditModal(task)}
-                                   className="bg-[#2a2a2a] rounded-lg p-3 group border border-transparent hover:border-gray-600 shadow-sm cursor-pointer relative"
+                                   onClick={() => { setCurrentTask(task); setActiveModal(true); }}
+                                   className={`${theme.card} border rounded-lg p-3 group cursor-pointer relative transition-colors`}
                                  >
                                     <div className="flex items-start gap-3">
                                        <button 
                                          onClick={(e) => { e.stopPropagation(); toggleTaskCompletion(task.id); }}
                                          className={`mt-0.5 w-5 h-5 rounded-full border border-gray-500 flex items-center justify-center hover:bg-gray-600 transition-colors group/check`}
                                        >
-                                          <Check size={12} className="opacity-0 group-hover/check:opacity-100 text-white" />
+                                          <Check size={12} className={`opacity-0 group-hover/check:opacity-100 ${isDark ? 'text-white' : 'text-gray-600'}`} />
                                        </button>
                                        <div className="flex-1">
-                                          <p className="text-sm text-gray-200 leading-snug">{task.title}</p>
-                                          
-                                          {task.description && <p className="text-xs text-gray-500 mt-1 line-clamp-1">{task.description}</p>}
-                                          
+                                          <p className={`text-sm ${theme.text} leading-snug`}>{task.title}</p>
                                           <div className="flex items-center gap-3 mt-2">
                                              {task.dueDate && (
                                                 <div className="flex items-center text-[11px] text-gray-400 group-hover:text-red-400 transition-colors">
                                                    <Calendar size={12} className="mr-1" />
                                                    {new Date(task.dueDate).toLocaleDateString('pt-BR', {day: 'numeric', month: 'short'})}
-                                                </div>
-                                             )}
-                                             {task.subtasks && task.subtasks.length > 0 && (
-                                                <div className="flex items-center text-[11px] text-gray-500">
-                                                   <CornerDownRight size={12} className="mr-1" />
-                                                   {task.subtasks.filter(s => s.completed).length}/{task.subtasks.length}
-                                                </div>
-                                             )}
-                                             {task.tags && task.tags.length > 0 && (
-                                                <div className="flex gap-1">
-                                                   {task.tags.map(t => (
-                                                      <span key={t} className="text-[9px] text-gray-500 bg-[#333] px-1 rounded">{t}</span>
-                                                   ))}
                                                 </div>
                                              )}
                                              <div className="ml-auto">
@@ -351,122 +401,144 @@ const Tasks: React.FC = () => {
                                  </div>
                               ))}
 
-                              {/* Add Task Button (Bottom of column) */}
-                              {showQuickAdd.columnId === section.id && showQuickAdd.visible ? (
-                                 <div className="bg-[#2a2a2a] p-3 rounded-lg border border-gray-600 animate-fadeIn">
+                              {/* Add Task Input (Inside Column) */}
+                              {showQuickAdd.sectionId === section.id && showQuickAdd.visible ? (
+                                 <div className={`${isDark ? 'bg-[#2a2a2a]' : 'bg-white'} p-3 rounded-lg border ${isDark ? 'border-gray-600' : 'border-purple-200 shadow-md'} animate-fadeIn`}>
                                     <input 
                                       autoFocus
                                       type="text" 
-                                      className="w-full bg-transparent border-none text-sm text-white placeholder-gray-500 focus:ring-0 mb-2"
-                                      placeholder="Escreva o nome da tarefa"
+                                      className={`w-full border-none text-sm focus:ring-0 mb-2 ${theme.input}`}
+                                      placeholder="Nome da tarefa..."
                                       value={quickAddValue}
                                       onChange={e => setQuickAddValue(e.target.value)}
                                       onKeyDown={e => e.key === 'Enter' && handleQuickAdd(section.id)}
                                     />
-                                    <div className="flex justify-between items-center">
-                                       <div className="flex gap-2">
-                                          <button className="p-1 rounded border border-gray-600 text-gray-400 text-xs px-2 hover:bg-[#333]">📅 Data</button>
-                                          <button className="p-1 rounded border border-gray-600 text-gray-400 text-xs px-2 hover:bg-[#333]">👤 Prioridade</button>
-                                       </div>
-                                       <div className="flex gap-2">
-                                          <button onClick={() => setShowQuickAdd({visible: false})} className="px-3 py-1.5 text-xs text-gray-400 font-bold hover:bg-[#333] rounded">Cancelar</button>
-                                          <button onClick={() => handleQuickAdd(section.id)} className="px-3 py-1.5 text-xs bg-[#de4c4a] text-white font-bold rounded hover:bg-[#c53b39]">Adicionar</button>
-                                       </div>
+                                    <div className="flex justify-end gap-2">
+                                       <button onClick={() => setShowQuickAdd({visible: false})} className="px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded">Cancelar</button>
+                                       <button onClick={() => handleQuickAdd(section.id)} className={`px-3 py-1.5 text-xs font-bold rounded ${isDark ? 'bg-[#de4c4a] hover:bg-[#c53b39]' : 'bg-purple-600 hover:bg-purple-700'} text-white`}>Adicionar</button>
                                     </div>
                                  </div>
                               ) : (
                                  <button 
-                                   onClick={() => setShowQuickAdd({columnId: section.id, visible: true})}
-                                   className="flex items-center text-gray-500 hover:text-[#de4c4a] text-sm group py-1"
+                                   onClick={() => setShowQuickAdd({sectionId: section.id, visible: true})}
+                                   className={`flex items-center text-gray-500 hover:${isDark ? 'text-[#de4c4a]' : 'text-purple-600'} text-sm group py-1 w-full`}
                                  >
-                                    <div className="w-5 h-5 rounded-full flex items-center justify-center mr-2 text-[#de4c4a] group-hover:bg-[#de4c4a] group-hover:text-white transition-colors">
-                                       <Plus size={14} />
-                                    </div>
-                                    Adicionar tarefa
+                                    <Plus size={14} className="mr-2"/> Adicionar tarefa
                                  </button>
                               )}
                            </div>
                         </div>
                      );
                   })}
+
+                  {/* Generic "Backlog" or "No Section" Column */}
+                  <div className="w-80 flex flex-col h-full max-h-full opacity-80">
+                      <div className="flex items-center justify-between mb-3 px-1">
+                          <h3 className={`font-bold text-sm ${theme.text}`}>Sem Seção</h3>
+                      </div>
+                      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pb-10 min-h-0">
+                          {getBacklogTasks().map(task => (
+                              <div key={task.id} className={`${theme.card} border rounded-lg p-3 cursor-pointer`} onClick={() => { setCurrentTask(task); setActiveModal(true); }}>
+                                  <p className={`text-sm ${theme.text}`}>{task.title}</p>
+                              </div>
+                          ))}
+                          <button onClick={() => setShowQuickAdd({sectionId: undefined, visible: true})} className="flex items-center text-gray-500 text-sm py-1 w-full hover:underline"><Plus size={14} className="mr-2"/> Adicionar aqui</button>
+                          
+                          {/* Global Quick Add for Backlog */}
+                          {showQuickAdd.visible && !showQuickAdd.sectionId && (
+                             <div className={`mt-2 ${isDark ? 'bg-[#2a2a2a]' : 'bg-white'} p-3 rounded border animate-fadeIn`}>
+                                <input 
+                                  autoFocus 
+                                  className={`w-full text-sm ${theme.input}`} 
+                                  placeholder="Tarefa..." 
+                                  value={quickAddValue} 
+                                  onChange={e => setQuickAddValue(e.target.value)} 
+                                  onKeyDown={e => e.key === 'Enter' && handleQuickAdd()} 
+                                />
+                                <div className="flex justify-end gap-2 mt-2">
+                                   <button onClick={() => setShowQuickAdd({visible: false})} className="text-xs text-gray-500">Cancelar</button>
+                                   <button onClick={() => handleQuickAdd()} className="text-xs bg-purple-600 text-white px-2 py-1 rounded">Add</button>
+                                </div>
+                             </div>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* Add Section Button */}
+                  <div className="w-80 flex-shrink-0">
+                      {isCreatingSection ? (
+                          <div className={`p-3 rounded-lg ${isDark ? 'bg-[#2a2a2a]' : 'bg-white'} border border-gray-300`}>
+                              <input 
+                                autoFocus
+                                type="text" 
+                                className={`w-full mb-2 p-1.5 text-sm rounded ${isDark ? 'bg-[#333] text-white border-gray-600' : 'bg-gray-50 text-gray-900 border-gray-200'}`}
+                                placeholder="Nome da seção"
+                                value={newSectionName}
+                                onChange={e => setNewSectionName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleAddSection()}
+                              />
+                              <div className="flex justify-end gap-2">
+                                  <button onClick={() => setIsCreatingSection(false)} className="text-xs text-gray-500">Cancelar</button>
+                                  <button onClick={handleAddSection} className={`text-xs px-3 py-1.5 rounded text-white ${isDark ? 'bg-[#de4c4a]' : 'bg-purple-600'}`}>Adicionar Seção</button>
+                              </div>
+                          </div>
+                      ) : (
+                          <button 
+                            onClick={() => setIsCreatingSection(true)}
+                            className={`flex items-center gap-2 w-full p-2 rounded-lg transition-colors text-sm font-medium ${isDark ? 'text-gray-400 hover:bg-[#2a2a2a] hover:text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+                          >
+                              <Plus size={18} /> Adicionar Seção
+                          </button>
+                      )}
+                  </div>
+
                </div>
             ) : (
                <div className="max-w-3xl mx-auto space-y-1">
-                  {tasks.filter(t => !t.completed).map(task => (
-                     <div key={task.id} className="flex items-start py-3 border-b border-[#333] group hover:bg-[#2a2a2a] px-2 rounded -mx-2 cursor-pointer" onClick={() => openEditModal(task)}>
+                  {/* List View Implementation */}
+                  <h2 className={`font-bold mb-4 ${theme.text}`}>Tarefas do Projeto</h2>
+                  {tasks.filter(t => t.projectId === activeProjectId && !t.completed).map(task => (
+                     <div key={task.id} className={`flex items-start py-3 border-b ${isDark ? 'border-[#333]' : 'border-gray-100'} group ${theme.hover} px-2 rounded -mx-2 cursor-pointer`} onClick={() => { setCurrentTask(task); setActiveModal(true); }}>
                         <button 
                            onClick={(e) => { e.stopPropagation(); toggleTaskCompletion(task.id); }}
-                           className="mt-1 mr-3 w-5 h-5 rounded-full border border-gray-500 flex items-center justify-center hover:bg-gray-600"
+                           className={`mt-1 mr-3 w-5 h-5 rounded-full border border-gray-500 flex items-center justify-center hover:bg-gray-600`}
                         >
-                           <Check size={12} className="opacity-0 group-hover:opacity-50 text-white" />
+                           <Check size={12} className={`opacity-0 group-hover:opacity-50 ${isDark ? 'text-white' : 'text-gray-600'}`} />
                         </button>
                         <div className="flex-1">
-                           <p className="text-sm text-gray-200">{task.title}</p>
-                           <p className="text-xs text-gray-500">{task.description}</p>
+                           <p className={`text-sm ${theme.text}`}>{task.title}</p>
+                           {task.description && <p className="text-xs text-gray-500">{task.description}</p>}
                         </div>
                      </div>
                   ))}
+                  <button onClick={() => setShowQuickAdd({visible: true})} className="flex items-center gap-2 text-gray-500 mt-4 hover:text-purple-600">
+                      <Plus size={16} /> Adicionar tarefa
+                  </button>
                </div>
             )}
          </div>
       </main>
 
-      {/* Edit Modal (Light Theme inside for standard form usage) */}
+      {/* Edit Modal (Adapts to Theme) */}
       <Modal isOpen={activeModal} onClose={() => setActiveModal(false)} title="Detalhes da Tarefa">
-         <div className="space-y-4">
+         <div className={`space-y-4 ${isDark ? '' : 'text-gray-800'}`}>
             <input 
                type="text" 
-               className="w-full text-lg font-bold border-none focus:ring-0 p-0 text-gray-800 placeholder-gray-400"
+               className="w-full text-lg font-bold border-none focus:ring-0 p-0 placeholder-gray-400 bg-transparent outline-none"
                placeholder="Nome da Tarefa"
                value={currentTask.title || ''}
                onChange={e => setCurrentTask({...currentTask, title: e.target.value})}
             />
             <textarea 
-               className="w-full text-sm text-gray-600 border-none focus:ring-0 p-0 resize-none h-20 placeholder-gray-400"
+               className="w-full text-sm text-gray-500 border-none focus:ring-0 p-0 resize-none h-20 placeholder-gray-400 bg-transparent outline-none"
                placeholder="Descrição..."
                value={currentTask.description || ''}
                onChange={e => setCurrentTask({...currentTask, description: e.target.value})}
             />
-            <div className="flex gap-4 border-t pt-4 border-gray-100">
-               <div className="flex-1">
-                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Data de Vencimento</label>
-                  <input type="date" className="w-full border rounded p-2 text-sm bg-white" value={currentTask.dueDate?.slice(0,10) || ''} onChange={e => setCurrentTask({...currentTask, dueDate: e.target.value})} />
-               </div>
-               <div className="flex-1">
-                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Prioridade</label>
-                  <select className="w-full border rounded p-2 text-sm bg-white" value={currentTask.priority} onChange={e => setCurrentTask({...currentTask, priority: e.target.value as any})}>
-                     <option value="p1">Alta 🔴</option>
-                     <option value="p2">Média 🟠</option>
-                     <option value="p3">Baixa 🔵</option>
-                     <option value="p4">Normal ⚪</option>
-                  </select>
-               </div>
-            </div>
             
-            {/* Tags Edit */}
-            <div>
-               <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Etiquetas</label>
-               <div className="flex flex-wrap gap-2 mb-2">
-                  {currentTask.tags?.map(t => (
-                     <span key={t} className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs flex items-center">
-                        {t} <button onClick={() => setCurrentTask({...currentTask, tags: currentTask.tags?.filter(tag => tag !== t)})} className="ml-1 hover:text-red-500"><X size={10}/></button>
-                     </span>
-                  ))}
-               </div>
-               <input 
-                  type="text" 
-                  placeholder="+ Adicionar etiqueta" 
-                  className="text-xs border border-dashed border-gray-300 rounded p-1"
-                  onKeyDown={e => { if(e.key === 'Enter') { const val = e.currentTarget.value; if(val) setCurrentTask({...currentTask, tags: [...(currentTask.tags||[]), val]}); e.currentTarget.value = ''; } }}
-               />
-            </div>
-
-            <div className="flex justify-between items-center pt-4 mt-2 border-t border-gray-100">
-               <button onClick={handleDeleteTask} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={18}/></button>
-               <div className="flex gap-2">
-                  <button onClick={() => setActiveModal(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-50 rounded text-sm font-bold">Cancelar</button>
-                  <button onClick={handleSaveTask} className="px-4 py-2 bg-[#de4c4a] text-white rounded text-sm font-bold hover:bg-[#c53b39]">Salvar</button>
-               </div>
+            <div className="flex justify-end gap-2 pt-4 border-t border-gray-200/20">
+               <button onClick={() => setActiveModal(false)} className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100/10 rounded">Fechar</button>
+               <button className={`px-4 py-2 text-sm text-white rounded ${isDark ? 'bg-[#de4c4a]' : 'bg-purple-600'}`}>Salvar</button>
             </div>
          </div>
       </Modal>
