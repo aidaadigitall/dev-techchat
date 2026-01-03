@@ -1,56 +1,56 @@
+
 import { createClient } from '@supabase/supabase-js';
 
-// Robust environment variable accessor
+// 1. DADOS REAIS DO SEU PROJETO (Hardcoded para garantir funcionamento)
+const REAL_URL = 'https://uzrflpyexjxaztmqwifa.supabase.co';
+const REAL_KEY = 'sb_publishable_gVgH65ce4ky8v2acrg5tSQ_h79S6YiH';
+
+// 2. Leitura robusta de variáveis de ambiente
 const getEnv = (key: string) => {
   let value = '';
   try {
-    // Vite / Modern Browsers
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env) {
       // @ts-ignore
       value = import.meta.env[key] || import.meta.env[`VITE_${key}`];
     }
-  } catch (e) {
-    // Ignore error
-  }
+  } catch (e) {}
 
   if (!value) {
     try {
-      // Node.js / CRA / Webpack
       if (typeof process !== 'undefined' && process.env) {
         value = process.env[key] || process.env[`REACT_APP_${key}`] || process.env[`NEXT_PUBLIC_${key}`];
       }
-    } catch (e) {
-      // Ignore error
-    }
+    } catch (e) {}
   }
   return value || '';
 };
 
-// Try multiple naming conventions keys directly to be safe
-const supabaseUrl = getEnv('SUPABASE_URL');
-const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
+// 3. Definição das credenciais (Prioriza ENV, usa REAL como fallback)
+const supabaseUrl = getEnv('SUPABASE_URL') || REAL_URL;
+const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY') || REAL_KEY;
 
-// Ensure valid URL format to prevent crash during initialization if env vars are missing
-const validUrl = supabaseUrl && supabaseUrl.startsWith('http') ? supabaseUrl : '';
-const validKey = supabaseAnonKey || '';
-
+// 4. Inicialização do Cliente
 let client;
 
-if (validUrl && validKey) {
+// Validação básica para evitar erro de inicialização
+if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')) {
     try {
-        client = createClient(validUrl, validKey);
+        client = createClient(supabaseUrl, supabaseAnonKey);
+        console.log("Supabase conectado com sucesso em:", supabaseUrl);
     } catch (error) {
-        console.error("Supabase Client Init Error:", error);
+        console.error("Erro fatal ao iniciar Supabase:", error);
     }
 }
 
-// Export client (might be undefined if config is missing, handled in App)
-// We export a dummy client if config is missing to prevent immediate crash on import, 
-// but auth calls will fail gracefully handled by Login.tsx checks
+// Exporta o cliente (ou um placeholder seguro para não quebrar a app)
 export const supabase = client || createClient('https://placeholder.supabase.co', 'placeholder');
 
-// Helper to check if we are running with real config or placeholders
+// 5. Função de Verificação de Configuração
 export const isSupabaseConfigured = () => {
-    return validUrl !== '' && validKey !== '';
+    // Se temos as chaves reais hardcoded ou via env, retornamos TRUE
+    if (supabaseUrl === REAL_URL && supabaseAnonKey === REAL_KEY) return true;
+    
+    // Verificação padrão
+    return supabaseUrl !== '' && supabaseAnonKey !== '' && !supabaseUrl.includes('placeholder');
 };

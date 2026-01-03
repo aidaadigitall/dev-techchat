@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { Branding } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, User, Phone, Building, AlertCircle, WifiOff, Database, ShieldCheck, Terminal, ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, Phone, Building, AlertCircle, Database, ShieldCheck, Terminal, Eye, EyeOff } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
@@ -32,18 +33,22 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
   const [dbErrorHelp, setDbErrorHelp] = useState(false);
   const [signupDisabledHelp, setSignupDisabledHelp] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // Estado de configuração do DB
   const [dbConfigured, setDbConfigured] = useState(true);
 
   // Clear stale sessions on mount and check config
   useEffect(() => {
     localStorage.removeItem('mock_session');
+    // Verifica a configuração ao montar
     setDbConfigured(isSupabaseConfigured());
   }, []);
 
   // --- SPECIAL ADMIN HANDLER ---
   const handleFirstTimeAdmin = async () => {
-    if (!dbConfigured) {
-        setError('Erro: Banco de dados não configurado (.env).');
+    // Force check before action
+    if (!isSupabaseConfigured()) {
+        setError('Erro: Banco de dados não conectado. Verifique services/supabase.ts');
         return;
     }
     
@@ -53,12 +58,10 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     setSignupDisabledHelp(false);
     setSuccessMsg(null);
     
-    // Credenciais solicitadas
     const adminEmail = 'escinformaticago@gmail.com';
     const adminPass = 'Esc@20200#';
 
     try {
-      // 1. Tenta logar primeiro (caso a conta já tenha sido criada antes e esteja OK)
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: adminEmail,
         password: adminPass,
@@ -69,12 +72,10 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
         return;
       }
 
-      // Se der erro de email não confirmado no login direto
       if (signInError && signInError.message.includes('Email not confirmed')) {
           throw new Error("Conta existe mas está pendente. Vá no painel Supabase > Authentication > Users, delete este usuário e clique neste botão novamente.");
       }
 
-      // 2. Se falhar o login (usuário não existe ou senha errada), tenta registrar
       console.log("Tentando criar conta admin...", signInError?.message);
       
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
@@ -85,22 +86,19 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
             full_name: 'Super Admin',
             company_name: 'SaaS HQ',
             phone: '5562999999999',
-            role: 'super_admin' // Importante para o App.tsx detectar
+            role: 'super_admin'
           }
         }
       });
 
       if (signUpError) {
-         // Se erro for "User already registered", significa que o login falhou mas o registro diz que existe.
          if (signUpError.message.includes('already registered')) {
-             throw new Error("O usuário já existe. Tente logar normalmente. Se a senha estiver errada, delete o usuário no Supabase.");
+             throw new Error("O usuário já existe. Tente logar normalmente.");
          }
-         // DETECT SIGNUP DISABLED ERROR
          if (signUpError.message.includes('Signups not allowed for this instance')) {
              setSignupDisabledHelp(true);
              throw new Error("Bloqueio de Segurança: Cadastros desativados no Supabase.");
          }
-         // DETECT MISSING TABLES ERROR
          if (signUpError.message.includes('Database error saving new user')) {
              setDbErrorHelp(true);
              throw new Error("Erro de Banco de Dados: As tabelas não foram criadas. Execute o script SQL no Supabase.");
@@ -109,7 +107,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       }
 
       if (signUpData.session) {
-         // Sucesso total (Login automático pós-registro)
          onLoginSuccess(signUpData.session);
       } else if (signUpData.user) {
          setError("Conta criada! Tente fazer login agora. Se não funcionar, verifique se 'Confirm Email' está desativado no Supabase.");
@@ -125,11 +122,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dbConfigured) {
-        setError('O sistema não está conectado ao banco de dados (Variáveis de ambiente ausentes).');
-        return;
-    }
-
+    
     setLoading(true);
     setError(null);
     setDbErrorHelp(false);
@@ -154,7 +147,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       } else if (err.message.includes('Invalid login credentials')) {
           msg = 'Email ou senha incorretos.';
       } else if (err.message.includes('Email not confirmed')) {
-          msg = 'Email pendente. Se já desativou a confirmação no Supabase, delete este usuário no painel (Auth > Users) e crie novamente.';
+          msg = 'Email pendente. Delete o usuário no painel Supabase e tente novamente.';
       }
       setError(msg);
       setLoading(false);
@@ -163,10 +156,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dbConfigured) {
-        setError('Configuração de banco de dados ausente. Não é possível registrar.');
-        return;
-    }
 
     setLoading(true);
     setError(null);
@@ -182,7 +171,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
             full_name: `${firstName} ${lastName}`,
             company_name: companyName,
             phone: phone,
-            role: 'admin' // Default role for new signups
+            role: 'admin'
           }
         }
       });
@@ -284,8 +273,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
              <div className="mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800 flex items-start animate-fadeIn">
                 <Database size={18} className="mr-2 flex-shrink-0 mt-0.5 text-yellow-600" />
                 <span>
-                   <strong>Configuração Necessária:</strong> Variáveis do Supabase ausentes.
-                   Verifique o arquivo <code>.env</code> na raiz do projeto.
+                   <strong>Aviso:</strong> Conexão com banco de dados instável ou em modo fallback.
                 </span>
              </div>
            )}
