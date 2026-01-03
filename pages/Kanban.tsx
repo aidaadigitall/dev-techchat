@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { KanbanColumn, Pipeline, KanbanCard, Contact } from '../types';
 import { api } from '../services/api';
-import { Plus, MoreHorizontal, DollarSign, Filter, Search, RotateCw, Clock, Save, X, AlignLeft, AlertCircle } from 'lucide-react';
+import { Plus, MoreHorizontal, DollarSign, Filter, Search, RotateCw, Clock, Save, X, AlignLeft, AlertCircle, Settings, Trash2, Edit } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
 
@@ -28,6 +28,11 @@ const Kanban: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState<{title: string, value: string, contactId: string, priority: string}>({ title: '', value: '', contactId: '', priority: 'medium' });
   const [contacts, setContacts] = useState<Contact[]>([]);
+
+  // Column Management State
+  const [showColumnModal, setShowColumnModal] = useState(false);
+  const [editingColumn, setEditingColumn] = useState<KanbanColumn | null>(null);
+  const [columnForm, setColumnForm] = useState({ title: '', color: 'border-purple-500' });
 
   // Scroll Drag State
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -77,6 +82,50 @@ const Kanban: React.FC = () => {
       const matchesPriority = activeFilter === 'all' || card.priority === activeFilter;
       return matchesSearch && matchesPriority;
     });
+  };
+
+  // --- Column Management Handlers ---
+  const handleAddColumn = () => {
+      setEditingColumn(null);
+      setColumnForm({ title: '', color: 'border-gray-300' });
+      setShowColumnModal(true);
+  };
+
+  const handleEditColumn = (col: KanbanColumn) => {
+      setEditingColumn(col);
+      setColumnForm({ title: col.title, color: col.color });
+      setShowColumnModal(true);
+  };
+
+  const handleDeleteColumn = async (colId: string) => {
+      if(!confirm('Tem certeza? Todas as oportunidades nesta coluna serão perdidas se não movidas.')) return;
+      
+      await api.crm.deleteColumn(colId);
+      setColumns(prev => prev.filter(c => c.id !== colId));
+      addToast('Coluna excluída.', 'success');
+  };
+
+  const handleSaveColumn = async () => {
+      if (!columnForm.title) return;
+      
+      if (editingColumn) {
+          // Update
+          await api.crm.updateColumn(editingColumn.id, { title: columnForm.title, color: columnForm.color });
+          setColumns(prev => prev.map(c => c.id === editingColumn.id ? { ...c, title: columnForm.title, color: columnForm.color } : c));
+      } else {
+          // Create
+          const newOrder = columns.length;
+          const newCol = await api.crm.createColumn(selectedPipelineId, columnForm.title, newOrder, columnForm.color);
+          if (newCol) {
+              setColumns(prev => [...prev, { 
+                  id: newCol.id, 
+                  title: newCol.title, 
+                  color: newCol.color, 
+                  cards: [] 
+              }]);
+          }
+      }
+      setShowColumnModal(false);
   };
 
   // --- Drag & Drop Handlers (Card) ---
@@ -157,8 +206,6 @@ const Kanban: React.FC = () => {
       }
 
       try {
-          // Sanitização de valor monetário (PT-BR)
-          // Ex: "1.800,00" -> "1800.00"
           let rawValue = createForm.value;
           if (typeof rawValue === 'string') {
               rawValue = rawValue.replace(/\./g, '').replace(',', '.');
@@ -175,7 +222,7 @@ const Kanban: React.FC = () => {
           addToast('Negócio criado com sucesso!', 'success');
           setShowCreateModal(false);
           setCreateForm({ title: '', value: '', contactId: '', priority: 'medium' });
-          loadPipelines(); // Reload
+          loadPipelines(); 
       } catch (error: any) {
           console.error("Erro criação card:", error);
           const msg = error.message || 'Erro desconhecido ao criar card.';
@@ -190,7 +237,7 @@ const Kanban: React.FC = () => {
     setEditForm({ 
         title: card.contactName, 
         value: card.value.toString(),
-        description: '' // Assuming description might be loaded or added here
+        description: '' 
     });
   };
 
@@ -261,6 +308,7 @@ const Kanban: React.FC = () => {
            </div>
 
            <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-300 bg-white flex-shrink-0" onClick={loadPipelines}><RotateCw size={18} /></button>
+           <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-300 bg-white flex-shrink-0" onClick={handleAddColumn} title="Adicionar Coluna"><Settings size={18} /></button>
            
            <button 
              onClick={() => setShowCreateModal(true)}
@@ -286,6 +334,7 @@ const Kanban: React.FC = () => {
             <div className="flex h-full items-center justify-center flex-col text-gray-400">
                 <AlertCircle size={32} className="mb-2"/>
                 <p>Nenhuma coluna encontrada neste funil.</p>
+                <button onClick={handleAddColumn} className="mt-4 text-purple-600 hover:underline">Criar primeira coluna</button>
             </div>
         ) : (
           <div className="flex h-full space-x-4 pointer-events-none">
@@ -299,11 +348,12 @@ const Kanban: React.FC = () => {
                   onDrop={(e) => handleDrop(e, column.id)}
                 >
                   {/* Column Header */}
-                  <div className={`p-3 border-t-[3px] ${column.color} bg-white rounded-t-xl shadow-sm border-b border-gray-100`}>
+                  <div className={`p-3 border-t-[3px] ${column.color} bg-white rounded-t-xl shadow-sm border-b border-gray-100 group/col relative`}>
                     <div className="flex justify-between items-center mb-1">
-                      <h3 className="font-bold text-gray-800 text-sm">{column.title}</h3>
+                      <h3 className="font-bold text-gray-800 text-sm cursor-pointer hover:text-purple-600" onClick={() => handleEditColumn(column)}>{column.title}</h3>
                       <div className="flex items-center gap-1">
                         <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium">{filteredCards.length}</span>
+                        <button onClick={() => handleEditColumn(column)} className="opacity-0 group-hover/col:opacity-100 text-gray-400 hover:text-gray-600"><MoreHorizontal size={14}/></button>
                       </div>
                     </div>
                     <div className="text-right">
@@ -324,10 +374,6 @@ const Kanban: React.FC = () => {
                         <div className="flex justify-between items-start mb-2">
                            <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs">
                              {card.contactName.charAt(0)}
-                           </div>
-                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                             <button className="text-gray-300 hover:text-green-500"><div className="w-4 h-4 border rounded hover:bg-green-50">👍</div></button>
-                             <button className="text-gray-300 hover:text-red-500"><div className="w-4 h-4 border rounded hover:bg-red-50">👎</div></button>
                            </div>
                         </div>
                         
@@ -355,6 +401,13 @@ const Kanban: React.FC = () => {
                 </div>
               );
             })}
+            
+            {/* Add Column Placeholder */}
+            <div className="w-12 flex items-center justify-center pointer-events-auto">
+                <button onClick={handleAddColumn} className="p-3 bg-white rounded-full shadow-md text-gray-400 hover:text-purple-600 hover:scale-110 transition-all">
+                    <Plus size={24} />
+                </button>
+            </div>
           </div>
         )}
       </div>
@@ -393,7 +446,6 @@ const Kanban: React.FC = () => {
                  value={createForm.value}
                  onChange={e => setCreateForm({...createForm, value: e.target.value})}
                />
-               <p className="text-xs text-gray-500 mt-1">Use vírgula para centavos (ex: 1200,50)</p>
             </div>
             <div>
                <label className="block text-sm font-medium text-gray-700 mb-1">Contato Vinculado</label>
@@ -408,22 +460,40 @@ const Kanban: React.FC = () => {
                   ))}
                </select>
             </div>
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Prioridade</label>
-               <select 
-                 className="w-full border border-gray-300 rounded-md p-2 bg-white"
-                 value={createForm.priority}
-                 onChange={e => setCreateForm({...createForm, priority: e.target.value})}
-               >
-                  <option value="high">Alta</option>
-                  <option value="medium">Média</option>
-                  <option value="low">Baixa</option>
-               </select>
-            </div>
          </div>
       </Modal>
 
-      {/* Edit Card Modal - Same as before ... */}
+      {/* Edit Column Modal */}
+      <Modal isOpen={showColumnModal} onClose={() => setShowColumnModal(false)} title={editingColumn ? "Editar Coluna" : "Nova Coluna"}>
+          <div className="space-y-4">
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Etapa</label>
+                  <input type="text" className="w-full border rounded p-2 bg-white" value={columnForm.title} onChange={e => setColumnForm({...columnForm, title: e.target.value})} />
+              </div>
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cor do Topo</label>
+                  <select className="w-full border rounded p-2 bg-white" value={columnForm.color} onChange={e => setColumnForm({...columnForm, color: e.target.value})}>
+                      <option value="border-gray-300">Cinza</option>
+                      <option value="border-blue-500">Azul</option>
+                      <option value="border-green-500">Verde</option>
+                      <option value="border-yellow-500">Amarelo</option>
+                      <option value="border-red-500">Vermelho</option>
+                      <option value="border-purple-500">Roxo</option>
+                  </select>
+              </div>
+              <div className="flex justify-between pt-2">
+                  {editingColumn ? (
+                      <button onClick={() => handleDeleteColumn(editingColumn.id)} className="text-red-500 hover:bg-red-50 px-3 py-2 rounded flex items-center text-sm"><Trash2 size={16} className="mr-2"/> Excluir</button>
+                  ) : <div></div>}
+                  <div className="flex gap-2">
+                      <button onClick={() => setShowColumnModal(false)} className="px-4 py-2 border rounded text-gray-600">Cancelar</button>
+                      <button onClick={handleSaveColumn} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">Salvar</button>
+                  </div>
+              </div>
+          </div>
+      </Modal>
+
+      {/* Edit Card Modal */}
       <Modal 
         isOpen={!!editingCard} 
         onClose={() => setEditingCard(null)} 
@@ -475,10 +545,6 @@ const Kanban: React.FC = () => {
                 <AlignLeft size={16} className="absolute right-3 bottom-3 text-gray-400" />
              </div>
            </div>
-
-           <p className="text-xs text-gray-500 bg-blue-50 p-2 rounded border border-blue-100">
-             Dica: Você pode arrastar este card para outras colunas para mudar o status da negociação.
-           </p>
         </div>
       </Modal>
     </div>

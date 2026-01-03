@@ -17,7 +17,6 @@ const getCompanyId = async () => {
       if (user.user_metadata?.company_id) return user.user_metadata.company_id;
 
       // 3. Last Resort: Check if there's ONLY ONE company in the DB (for single-tenant setups or dev)
-      // This prevents "null constraint" errors if setup isn't perfect yet
       const { data: firstCompany } = await supabase.from('companies').select('id').limit(1).maybeSingle();
       if (firstCompany) return firstCompany.id;
 
@@ -29,7 +28,6 @@ const getCompanyId = async () => {
 };
 
 const getEnv = (key: string) => { 
-    // Implementation abstracted in supabase.ts usually, but kept here if needed or removed if unused
     return ''; 
 };
 const generateUUID = () => crypto.randomUUID();
@@ -82,7 +80,7 @@ const adaptTask = (data: any): Task => ({
   description: data.description,
   assigneeId: data.assignee_id,
   tags: data.tags,
-  subtasks: [] // Mock subtasks for now or load if available
+  subtasks: [] 
 });
 
 const adaptProposal = (data: any): Proposal => ({
@@ -150,13 +148,7 @@ export const api = {
         if(updates.status) payload.status = updates.status;
         if(updates.blocked !== undefined) payload.blocked = updates.blocked; 
         
-        // Update custom fields merging with existing
         if (updates.company || updates.role || updates.city || updates.strategicNotes || updates.cpfCnpj || updates.birthday) {
-             // We need to fetch existing custom_fields first to merge properly in a real scenario, 
-             // but here we might overwrite if we are not careful. 
-             // Ideally, Supabase JSONB update should merge, but simple update replaces.
-             // For safety in this architectural mock, we assume the frontend sends the full object or we just patch specific keys if using a function.
-             // Here we just map what we have:
              payload.custom_fields = {
                  company: updates.company,
                  role: updates.role,
@@ -186,7 +178,16 @@ export const api = {
           await supabase.from('contacts').update({ last_message_at: new Date() }).eq('id', cid);
           return adaptMessage(data);
       },
-      getQuickReplies: async () => [] as QuickReply[]
+      // Updated Quick Reply Methods
+      getQuickReplies: async (): Promise<QuickReply[]> => {
+          const { data } = await supabase.from('quick_replies').select('*');
+          return (data || []).map((q: any) => ({ id: q.id, shortcut: q.shortcut, content: q.content }));
+      },
+      createQuickReply: async (shortcut: string, content: string): Promise<QuickReply> => {
+          const company_id = await getCompanyId();
+          const { data } = await supabase.from('quick_replies').insert({ company_id, shortcut, content }).select().single();
+          return { id: data.id, shortcut: data.shortcut, content: data.content };
+      }
   },
   tasks: {
       list: async () => { const {data} = await supabase.from('tasks').select('*'); return (data||[]).map(adaptTask); },
@@ -242,7 +243,7 @@ export const api = {
                  title: card.title || 'Sem título',
                  value: card.value || 0,
                  contactId: card.contact_id,
-                 contactName: card.contacts?.name || 'Desconhecido', // Ensure this maps correctly
+                 contactName: card.contacts?.name || 'Desconhecido', 
                  priority: card.priority || 'medium',
                  tags: card.tags || []
               }))
@@ -252,33 +253,34 @@ export const api = {
     },
     createCard: async (columnId: string, cardData: any) => {
         try {
-            // NOTE: We do NOT send company_id explicitly here to avoid schema cache errors
-            // The database trigger or RLS should handle company assignment if configured.
-            // If strictly needed, ensure the column exists in Supabase table definition.
-            
             const payload = {
-                // company_id, <--- Removed to fix "column not found" error
                 column_id: columnId,
                 title: cardData.title,
                 value: cardData.value, 
-                contact_id: cardData.contactId || null, // Ensure explicitly null if empty string
+                contact_id: cardData.contactId || null, 
                 priority: cardData.priority,
                 tags: cardData.tags || []
             };
 
             const { data, error } = await supabase.from('kanban_cards').insert(payload).select().single();
-            if (error) {
-                console.error("Create Card DB Error:", error);
-                throw error;
-            }
+            if (error) throw error;
             return data;
-        } catch (e) {
-            throw e;
-        }
+        } catch (e) { throw e; }
     },
     moveCard: async (cardId: string, s: string, d: string) => {
         await supabase.from('kanban_cards').update({ column_id: d }).eq('id', cardId);
         return true;
+    },
+    // New Column Management Methods
+    createColumn: async (pipelineId: string, title: string, order: number, color: string) => {
+        const { data } = await supabase.from('kanban_columns').insert({ pipeline_id: pipelineId, title, order, color }).select().single();
+        return data;
+    },
+    updateColumn: async (id: string, updates: any) => {
+        await supabase.from('kanban_columns').update(updates).eq('id', id);
+    },
+    deleteColumn: async (id: string) => {
+        await supabase.from('kanban_columns').delete().eq('id', id);
     }
   },
   proposals: { 
