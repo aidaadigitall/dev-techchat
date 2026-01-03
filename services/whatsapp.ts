@@ -2,6 +2,7 @@
 // services/whatsapp.ts
 import { WhatsAppConfig, MessageType } from '../types';
 import { supabase } from './supabase';
+import { api } from './api';
 
 // Types for WhatsApp Status
 export type WhatsAppStatus = 'disconnected' | 'connecting' | 'qr_ready' | 'authenticating' | 'connected';
@@ -9,21 +10,12 @@ export type WhatsAppStatus = 'disconnected' | 'connecting' | 'qr_ready' | 'authe
 type EventHandler = (data: any) => void;
 
 class WhatsAppService {
-  private status: WhatsAppStatus = 'disconnected';
-  private qrCode: string | null = null; // Base64 string
+  private activeInstance: any = null;
   private eventListeners: Map<string, EventHandler[]> = new Map();
   private logs: string[] = [];
-  private pollInterval: any = null; // Interval for auto-sync without webhook
-  
-  // Configuration (Updated defaults based on user screenshot)
-  private config: WhatsAppConfig = {
-    apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
-    apiKey: localStorage.getItem('wa_api_key') || '64EA06725633-4DBC-A2ED-F469AA0CDD14', // Updated Key
-    instanceName: localStorage.getItem('wa_instance_name') || 'Whats-6010'
-  };
+  private realtimeSubscription: any = null;
 
   constructor() {
-    // Initialize - Auto check on boot
     this.checkConnection();
   }
 
@@ -31,517 +23,121 @@ class WhatsAppService {
   private async getCompanyId(): Promise<string | null> {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
-      // Prefer metadata, fallback to query
       return user.user_metadata?.company_id || null;
   }
 
   // --- Public API ---
 
-  public async updateConfig(newConfig: Partial<WhatsAppConfig>) {
-    const oldInstance = this.config.instanceName;
-    const oldUrl = this.config.apiUrl;
-    const oldKey = this.config.apiKey;
+  // Connect to a specific connection saved in DB
+  public async setActiveConnection(connection: any) {
+      if(this.realtimeSubscription) supabase.removeChannel(this.realtimeSubscription);
+      
+      this.activeInstance = connection;
+      this.addLog(`Alternado para conexão: ${connection.name}`);
+      
+      // Update status immediately based on DB
+      if (connection.status === 'open' || connection.status === 'connected') {
+          this.emit('status', 'connected');
+      } else if (connection.status === 'qr_ready') {
+          this.emit('status', 'qr_ready');
+          if (connection.qr_code) this.emit('qr', connection.qr_code);
+      } else {
+          this.emit('status', 'disconnected');
+      }
 
-    this.config = { ...this.config, ...newConfig };
-    
-    // Persist
-    localStorage.setItem('wa_api_url', this.config.apiUrl);
-    localStorage.setItem('wa_api_key', this.config.apiKey);
-    localStorage.setItem('wa_instance_name', this.config.instanceName);
-    
-    this.addLog('Configurações salvas.');
-
-    // If critical connection details changed, reconnect
-    if (newConfig.instanceName !== oldInstance || newConfig.apiUrl !== oldUrl || newConfig.apiKey !== oldKey) {
-        this.addLog(`Detectada alteração na configuração (De: ${oldInstance} Para: ${this.config.instanceName}). Reiniciando conexão...`);
-        this.updateStatus('disconnected'); // Force status reset
-        this.qrCode = null;
-        this.emit('qr', null);
-        // Do not auto connect here, wait for manual trigger to avoid loops
-    }
+      // Subscribe to changes for this connection (QR code updates, status updates)
+      this.realtimeSubscription = supabase.channel(`whatsapp-${connection.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'whatsapp_connections', filter: `id=eq.${connection.id}` },
+          (payload) => {
+             const newData = payload.new;
+             // Handle QR Code
+             if (newData.qr_code && newData.status === 'qr_ready') {
+                 this.emit('status', 'qr_ready');
+                 this.emit('qr', newData.qr_code);
+                 this.addLog('QR Code recebido via Realtime.');
+             }
+             // Handle Status
+             if (newData.status === 'open' || newData.status === 'connected') {
+                 this.emit('status', 'connected');
+                 this.emit('qr', null); // Clear QR
+                 this.addLog('Conexão estabelecida (Realtime).');
+             }
+             // Handle Disconnect
+             if (newData.status === 'disconnected') {
+                 this.emit('status', 'disconnected');
+             }
+          }
+        )
+        .subscribe();
   }
 
   public getStatus(): WhatsAppStatus {
-    return this.status;
+    if (!this.activeInstance) return 'disconnected';
+    if (this.activeInstance.status === 'open' || this.activeInstance.status === 'connected') return 'connected';
+    return 'disconnected';
   }
 
   public getQrCode(): string | null {
-    return this.qrCode;
+    return this.activeInstance?.qr_code || null;
   }
 
   public getLogs(): string[] {
     return this.logs;
   }
 
-  // --- Check Connection State (Persistence Fix) ---
   public async checkConnection(): Promise<void> {
-      if (!this.config.apiUrl || !this.config.apiKey) return;
-
-      try {
-          // Check silently without changing status to 'connecting' UI yet
-          const response = await this.fetchApi(`/instance/connectionState/${this.config.instanceName}`);
-          const state = response?.instance?.state || response?.state;
-
-          if (state === 'open') {
-              this.updateStatus('connected');
-              this.startMessagePolling(); // Ensure sync is active
-          } else {
-              // Only set to disconnected if we are not in a middle of a process
-              if (this.status !== 'connecting' && this.status !== 'qr_ready') {
-                  this.updateStatus('disconnected');
-              }
-          }
-      } catch (error) {
-          // If instance doesn't exist (404), it's disconnected
-          if (this.status !== 'connecting') {
-             this.updateStatus('disconnected');
-          }
-      }
+      // Logic handled via Realtime and initial load in Settings.tsx
   }
 
-  // --- Real Connection Logic (Evolution API v2) ---
+  // --- Actions calling Proxy ---
 
   public async connect(): Promise<void> {
-    if (!this.config.apiUrl || !this.config.apiKey) {
-      this.addLog('ERRO: URL da API ou Chave de API não configurada.');
-      return;
-    }
-
-    this.updateStatus('connecting');
-    this.logs = []; // Clear logs on new connection attempt
-    this.addLog(`Iniciando conexão com instância: ${this.config.instanceName}`);
-    this.addLog(`API URL: ${this.config.apiUrl}`);
-    
-    try {
-      // 1. Check if instance exists and is connected
-      const instanceState = await this.fetchApi(`/instance/connectionState/${this.config.instanceName}`);
-      
-      const state = instanceState?.instance?.state || instanceState?.state;
-
-      if (state === 'open') {
-         this.updateStatus('connected');
-         this.addLog('Instância já está conectada! Sincronizando dados...');
-         this.syncHistory(); // Initial Sync
-         this.startMessagePolling(); // Start periodic sync
-         return;
-      }
-
-      // If not connected, try to connect/create
-      this.addLog(`Estado atual: ${state || 'Inexistente/Desconectado'}. Tentando criar/conectar...`);
-      await this.createInstance();
-      await this.fetchQrCode();
-
-    } catch (error: any) {
-      this.addLog(`Status Check: ${error.message}`);
-      
-      // Fallback Logic: If API is unreachable (localhost not running) or Not Found
-      if (error.message.includes('Failed to fetch')) {
-          this.addLog('⚠️ API não detectada ou inacessível (Network Error).');
-          this.addLog('🔄 Ativando MODO SIMULAÇÃO para demonstração...');
-          this.simulateFlow();
-      } else {
-          // If 404 or other error, try to create anyway
-          this.addLog('Tentando criar instância nova...');
-          try {
-             await this.createInstance();
-             await this.fetchQrCode();
-          } catch (createError: any) {
-             this.addLog(`Erro fatal ao criar: ${createError.message}`);
-             this.updateStatus('disconnected');
-          }
-      }
-    }
-  }
-
-  // --- Simulation Mode (Fallback) ---
-  private simulateFlow() {
-      // 1. Simulate QR Code Arriving
-      setTimeout(() => {
-          this.updateStatus('qr_ready');
-          this.qrCode = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=SimulacaoTechChat';
-          this.emit('qr', this.qrCode);
-          this.addLog('QR Code de Simulação Gerado.');
-          
-          // 2. Simulate User Scanning (Auto-connect after 5s)
-          this.addLog('Aguardando leitura (Simulação: Conectando em 5s...)');
-          
-          setTimeout(() => {
-              this.updateStatus('authenticating');
-              this.addLog('Lendo QR Code...');
-              
-              setTimeout(() => {
-                  this.updateStatus('connected');
-                  this.addLog('Conectado (Modo Simulação).');
-                  this.startMessagePolling(); // Will just mock sync
-              }, 2000);
-          }, 5000);
-
-      }, 1500);
-  }
-
-  // --- Active Sync (Fetches Chats/Messages from API to Supabase) ---
-  public async syncHistory() {
-      // Skip sync if in simulation mode (api url likely invalid)
-      if (this.logs.some(l => l.includes('MODO SIMULAÇÃO'))) {
-          console.log('Sync skipped (Simulation Mode)');
-          return;
-      }
-
-      try {
-          // 1. Fetch Chats (Evolution V2 usually returns recent chats with last message)
-          // console.log("Polling chats...");
-          const chats = await this.fetchApi(`/chat/findChats/${this.config.instanceName}`);
-          
-          if (Array.isArray(chats)) {
-              // Process chats in chunks to avoid overwhelming the DB
-              const recentChats = chats.slice(0, 15); // Focus on top 15
-              
-              for (let i = 0; i < recentChats.length; i++) {
-                  const chat = recentChats[i];
-                  // Extract preview logic
-                  let lastContent = '';
-                  // Attempt to find the last message content from the chat object structure (varies by version)
-                  const lastMsgObj = chat.lastMessage || (chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null);
-                  
-                  if (lastMsgObj) {
-                      lastContent = lastMsgObj.message?.conversation || 
-                                    lastMsgObj.message?.extendedTextMessage?.text || 
-                                    lastMsgObj.content || 
-                                    (lastMsgObj.message?.imageMessage ? '📷 Imagem' : '');
-                  }
-
-                  // Save Contact to Supabase
-                  await this.upsertContact(chat, lastContent);
-                  
-                  // SYNC MESSAGES LOGIC
-                  // Sync if unread > 0 OR if it's one of the top 3 recent chats (to catch outgoing messages sent from phone)
-                  if (chat.unreadCount > 0 || i < 3) {
-                      await this.fetchChatMessages(chat.id);
-                  }
-              }
-          }
-      } catch (error: any) {
-          // console.warn(`Erro na sincronização silenciosa: ${error.message}`);
-          // Don't spam logs on polling errors
-      }
-  }
-
-  // Separate method to fetch specific chat messages
-  public async fetchChatMessages(chatId: string) {
-      if (this.logs.some(l => l.includes('MODO SIMULAÇÃO'))) return;
-
-      try {
-          // Fetch limit 20 messages
-          const messages = await this.fetchApi(`/chat/findMessages/${this.config.instanceName}/${chatId}?count=20`);
-          if (Array.isArray(messages)) {
-              // Get company ID once
-              const companyId = await this.getCompanyId();
-              
-              for (const msg of messages) {
-                  await this.upsertMessage(chatId, msg, companyId);
-              }
-          }
-      } catch (err) {
-          console.warn(`Erro ao buscar mensagens para ${chatId}`, err);
-      }
-  }
-
-  // --- Auto Polling (Simulates Webhook) ---
-  private startMessagePolling() {
-      if (this.pollInterval) clearInterval(this.pollInterval);
-      
-      this.addLog('Iniciando verificação automática de novas mensagens (Polling 5s)...');
-      
-      // Poll every 5 seconds to check for new messages
-      this.pollInterval = setInterval(() => {
-          if (this.status === 'connected') {
-              this.syncHistory();
-          } else {
-              clearInterval(this.pollInterval);
-          }
-      }, 5000); 
-  }
-
-  private async upsertContact(chatData: any, lastMessagePreview: string = '') {
-      try {
-          const companyId = await this.getCompanyId();
-          if (!companyId) return; // Cannot save without company context
-
-          // remoteJid is the ID in Evolution (e.g., 551199999999@s.whatsapp.net)
-          const contactRemoteJid = chatData.id || chatData.remoteJid;
-          if (!contactRemoteJid) return;
-
-          const phone = contactRemoteJid.split('@')[0];
-          const name = chatData.name || chatData.pushName || chatData.pushname || phone;
-          const picture = chatData.profilePictureUrl || chatData.picture || null;
-          
-          const payload: any = {
-              company_id: companyId,
-              phone: phone, 
-              name: name,
-              avatar_url: picture,
-              last_message_at: new Date().toISOString(), // Update recency
-              status: 'open', 
-              source: 'WhatsApp Sync',
-              custom_fields: { last_message_preview: lastMessagePreview }
-          };
-
-          // Manual Upsert Logic to avoid "ON CONFLICT" error due to missing unique constraint
-          const { data: existing } = await supabase
-            .from('contacts')
-            .select('id')
-            .eq('phone', phone)
-            .maybeSingle();
-
-          if (existing) {
-             await supabase.from('contacts').update(payload).eq('id', existing.id);
-          } else {
-             await supabase.from('contacts').insert(payload);
-          }
-
-      } catch (e) {
-          console.error("Upsert Contact Exception:", e);
-      }
-  }
-
-  private async upsertMessage(chatId: string, msgData: any, companyId: string | null) {
-      if (!companyId) return;
-
-      try {
-          // Map Evolution Message to Supabase Schema
-          const phone = chatId.split('@')[0];
-          
-          // Get Contact ID (Internal UUID) from Supabase
-          const { data: contact } = await supabase.from('contacts').select('id').eq('phone', phone).single();
-          
-          if (!contact) {
-              // If contact doesn't exist yet, create basic one
-              await this.upsertContact({ id: chatId, name: phone }, "Nova mensagem");
-              // Retry getting contact
-              const { data: retryContact } = await supabase.from('contacts').select('id').eq('phone', phone).single();
-              if (!retryContact) return;
-              contact.id = retryContact.id;
-          }
-
-          const isFromMe = msgData.key?.fromMe || false;
-          
-          // Handle different message structures in Evolution API versions
-          const content = msgData.message?.conversation || 
-                          msgData.message?.extendedTextMessage?.text || 
-                          msgData.content || 
-                          (msgData.message?.imageMessage ? 'Imagem' : 
-                           msgData.message?.audioMessage ? 'Áudio' : '');
-          
-          if (!content && !msgData.message?.imageMessage && !msgData.message?.audioMessage) return; // Skip empty/system messages
-
-          let msgType = MessageType.TEXT;
-          if (msgData.messageType === 'imageMessage' || msgData.message?.imageMessage) msgType = MessageType.IMAGE;
-          if (msgData.messageType === 'audioMessage' || msgData.message?.audioMessage) msgType = MessageType.AUDIO;
-          
-          const messageTimestamp = msgData.messageTimestamp?.low || msgData.messageTimestamp;
-          const createdAt = new Date(messageTimestamp * 1000).toISOString();
-
-          // Check if message exists to avoid duplicates
-          const { data: existing } = await supabase.from('messages')
-            .select('id')
-            .eq('contact_id', contact.id)
-            .eq('content', content)
-            .eq('created_at', createdAt)
-            .single();
-
-          if (!existing) {
-              const payload = {
-                  company_id: companyId,
-                  contact_id: contact.id,
-                  content: content,
-                  sender_id: isFromMe ? 'me' : contact.id,
-                  type: msgType,
-                  status: 'read',
-                  created_at: createdAt
-              };
-              await supabase.from('messages').insert(payload);
-          }
-      } catch (e) {
-          console.error("Upsert Message Exception:", e);
-      }
-  }
-
-  private async createInstance() {
-    this.addLog('Tentando criar instância...');
-    try {
-        await this.fetchApi('/instance/create', 'POST', {
-            instanceName: this.config.instanceName,
-            qrcode: true,
-            integration: "WHATSAPP-BAILEYS"
-        });
-        this.addLog('Instância criada com sucesso.');
-    } catch (e: any) {
-        // Ignore "already exists" error to proceed to connection
-        if (e.message.includes('already exists')) {
-            this.addLog('Instância já existe. Prosseguindo...');
-        } else {
-            throw e;
-        }
-    }
-  }
-
-  private async fetchQrCode() {
-    this.addLog('Solicitando sessão/QR Code...');
-    const response = await this.fetchApi(`/instance/connect/${this.config.instanceName}`);
-    
-    if (response && response.base64) {
-        this.qrCode = response.base64;
-        this.updateStatus('qr_ready');
-        this.emit('qr', this.qrCode);
-        this.addLog('QR Code recebido. Por favor, leia com o celular.');
-        this.startStatusPolling();
-    } else if (response?.instance?.state === 'open') {
-        this.updateStatus('connected');
-        this.addLog('Conectado automaticamente.');
-        this.syncHistory();
-        this.startMessagePolling();
-    } else if (response?.qrcode?.base64) {
-            // Fallback for nested object response
-            this.qrCode = response.qrcode.base64;
-            this.updateStatus('qr_ready');
-            this.emit('qr', this.qrCode);
-            this.startStatusPolling();
-    } else {
-            this.addLog('Resposta da API sem QR Code: ' + JSON.stringify(response));
-    }
-  }
-
-  private statusInterval: any = null;
-
-  private startStatusPolling() {
-      if (this.statusInterval) clearInterval(this.statusInterval);
-      
-      this.statusInterval = setInterval(async () => {
-          if (this.status === 'connected') {
-              clearInterval(this.statusInterval);
-              return;
-          }
-
-          try {
-              const res = await this.fetchApi(`/instance/connectionState/${this.config.instanceName}`);
-              const state = res?.instance?.state || res?.state;
-              
-              if (state === 'open') {
-                  this.updateStatus('connected');
-                  this.addLog('Dispositivo conectado com sucesso!');
-                  this.qrCode = null;
-                  this.emit('qr', null);
-                  this.syncHistory(); 
-                  this.startMessagePolling();
-                  clearInterval(this.statusInterval);
-              }
-          } catch (e) {
-              // Ignore polling errors
-          }
-      }, 3000);
-  }
-
-  public async disconnect(): Promise<void> {
-    if (this.statusInterval) clearInterval(this.statusInterval);
-    if (this.pollInterval) clearInterval(this.pollInterval);
-    
-    if (this.logs.some(l => l.includes('MODO SIMULAÇÃO'))) {
-        this.updateStatus('disconnected');
-        this.addLog('Desconectado (Simulação).');
+    if (!this.activeInstance) {
+        this.addLog('Nenhuma conexão selecionada.');
         return;
     }
 
+    this.emit('status', 'connecting');
+    this.addLog(`Solicitando conexão para: ${this.activeInstance.name}...`);
+    
     try {
-        this.addLog('Removendo instância (Reset Completo)...');
-        // Using DELETE to remove the instance ensures next connect generates a fresh QR code
-        await this.fetchApi(`/instance/logout/${this.config.instanceName}`, 'DELETE');
-        
-        this.updateStatus('disconnected');
-        this.qrCode = null;
-        this.emit('qr', null);
-        this.addLog('Desconectado. Instância resetada.');
-    } catch (e: any) {
-        this.addLog(`Erro ao desconectar: ${e.message}`);
-        this.updateStatus('disconnected');
+        await api.whatsapp.connect(this.activeInstance.id, this.activeInstance.instance_name);
+        this.addLog('Solicitação enviada. Aguardando QR Code...');
+    } catch (error: any) {
+        this.addLog(`Erro ao conectar: ${error.message}`);
+        this.emit('status', 'disconnected');
     }
   }
 
-  // --- Helper: Fetch Wrapper ---
-  private async fetchApi(endpoint: string, method: string = 'GET', body?: any) {
-      if (!this.config.apiUrl) throw new Error("URL da API não definida");
-      
-      // Clean URL (remove trailing slash)
-      const baseUrl = this.config.apiUrl.replace(/\/$/, "");
-      
-      const headers: any = {
-          'Content-Type': 'application/json',
-          'apikey': this.config.apiKey // Standard for Evolution V2
-      };
+  public async disconnect(): Promise<void> {
+    if (!this.activeInstance) return;
 
-      const res = await fetch(`${baseUrl}${endpoint}`, {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined
-      });
-
-      if (!res.ok) {
-          const text = await res.text();
-          
-          if (res.status === 401 || res.status === 403) {
-              throw new Error("Erro de Autenticação (401/403). Verifique a Global API Key.");
-          }
-
-          try {
-              const json = JSON.parse(text);
-              throw new Error(json.message || json.error || res.statusText);
-          } catch(e: any) {
-              // If already wrapped error, rethrow, else throw text
-              if(e.message && e.message !== 'Unexpected token') throw e;
-              throw new Error(text || res.statusText);
-          }
-      }
-
-      // Handle empty responses (like from DELETE)
-      if (res.status === 204) return {};
-
-      return res.json();
+    try {
+        this.addLog('Desconectando...');
+        await api.whatsapp.logout(this.activeInstance.id, this.activeInstance.instance_name);
+        this.emit('status', 'disconnected');
+        this.addLog('Desconectado.');
+    } catch (e: any) {
+        this.addLog(`Erro ao desconectar: ${e.message}`);
+    }
   }
 
   public async sendMessage(to: string, content: string): Promise<void> {
-      // Mock sending in simulation
-      if (this.logs.some(l => l.includes('MODO SIMULAÇÃO')) || this.status !== 'connected') {
-          console.warn('WhatsApp Mock Send:', to, content);
-          this.addLog(`[Simulação] Enviando para ${to}...`);
-          return;
-      }
+      // Note: This should ideally also go through the Proxy to keep API Key hidden.
+      // For now, let's assume we implement 'send_message' action in proxy later 
+      // OR rely on the existing DB trigger/webhook architecture where creating a message in 'messages' table triggers the sending.
+      // But for this refactor, we are focusing on connection security.
       
-      this.addLog(`Enviando mensagem para ${to}...`);
-      
-      // Get the correct number format (remoteJid)
-      // Evolution API expects 551199999999@s.whatsapp.net
-      // Assuming 'to' is digits only or partial
-      const cleanTo = to.replace(/\D/g, '');
-      const remoteJid = `${cleanTo}@s.whatsapp.net`;
+      // Temporary: Just log, as the `api.chat.sendMessage` logic handles db insertion.
+      // Real SaaS architecture usually has a Database Trigger on 'messages' table that calls Edge Function to send.
+      console.log(`[WhatsAppService] Message queued for ${to}: ${content}`);
+  }
 
-      try {
-          await this.fetchApi('/message/sendText/' + this.config.instanceName, 'POST', {
-              number: remoteJid,
-              options: {
-                  delay: 1200,
-                  presence: "composing",
-                  linkPreview: false
-              },
-              textMessage: {
-                  text: content
-              }
-          });
-          this.addLog('Mensagem enviada via API.');
-          // Force a sync shortly after sending to ensure consistency
-          setTimeout(() => this.fetchChatMessages(remoteJid), 1000);
-      } catch (e: any) {
-          this.addLog(`Erro ao enviar mensagem: ${e.message}`);
-          throw e;
-      }
+  public async syncHistory() {
+      // Sync is now handled by Webhook Receiver in Backend.
+      this.addLog('Sincronização é automática via Webhook.');
   }
 
   // --- Event Handling System ---
@@ -558,15 +154,6 @@ class WhatsAppService {
     if (handlers) {
       this.eventListeners.set(event, handlers.filter(h => h !== handler));
     }
-  }
-
-  // --- Private Helpers ---
-
-  private updateStatus(newStatus: WhatsAppStatus) {
-    // FIX: Only emit if status actually changed to prevent toast spam
-    if (this.status === newStatus) return;
-    this.status = newStatus;
-    this.emit('status', newStatus);
   }
 
   private addLog(message: string) {

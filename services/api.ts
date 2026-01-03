@@ -193,6 +193,39 @@ export const api = {
     },
     delete: async (id: string) => { await supabase.from('contacts').delete().eq('id', id); }
   },
+  whatsapp: {
+      list: async () => {
+          const { data, error } = await supabase.from('whatsapp_connections').select('*').order('created_at');
+          if (error) throw error;
+          return data;
+      },
+      create: async (name: string) => {
+          const { data, error } = await supabase.functions.invoke('whatsapp-proxy', {
+              body: { action: 'create_instance', payload: { name } }
+          });
+          if (error) throw error;
+          if (data.error) throw new Error(data.error);
+          return data;
+      },
+      delete: async (dbId: string, instanceName: string) => {
+          const { data, error } = await supabase.functions.invoke('whatsapp-proxy', {
+              body: { action: 'delete', payload: { dbId, instanceName } }
+          });
+          if (error) throw error;
+      },
+      connect: async (dbId: string, instanceName: string) => {
+          const { data, error } = await supabase.functions.invoke('whatsapp-proxy', {
+              body: { action: 'connect', payload: { dbId, instanceName } }
+          });
+          if (error) throw error;
+      },
+      logout: async (dbId: string, instanceName: string) => {
+          const { data, error } = await supabase.functions.invoke('whatsapp-proxy', {
+              body: { action: 'logout', payload: { dbId, instanceName } }
+          });
+          if (error) throw error;
+      }
+  },
   chat: {
       getMessages: async (cid: string) => { 
           const { data } = await supabase.from('messages').select('*').eq('contact_id', cid).order('created_at');
