@@ -4,8 +4,10 @@ import { api } from '../services/api';
 import { Search, Filter, MoreHorizontal, Shield, Lock, Power, CreditCard, Plus, Save, Trash2, Edit, BrainCircuit, RotateCcw, CheckSquare, AlertTriangle } from 'lucide-react';
 import Modal from '../components/Modal';
 import { Company } from '../types';
+import { useToast } from '../components/ToastContext';
 
 const SuperAdminCompanies: React.FC = () => {
+  const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,9 +82,18 @@ const SuperAdminCompanies: React.FC = () => {
 
   const handleDelete = async () => {
     if (deleteConfirmationId) {
-      await api.companies.delete(deleteConfirmationId);
-      setCompanies(prev => prev.filter(c => c.id !== deleteConfirmationId));
-      setDeleteConfirmationId(null);
+      try {
+          await api.companies.delete(deleteConfirmationId);
+          setCompanies(prev => prev.filter(c => c.id !== deleteConfirmationId));
+          addToast('Empresa excluída com sucesso e dados limpos.', 'success');
+      } catch (e: any) {
+          console.error(e);
+          addToast('Erro ao excluir: Possíveis dependências no banco de dados não puderam ser removidas.', 'error');
+      } finally {
+          setDeleteConfirmationId(null);
+          // Opcional: Recarregar para garantir estado real
+          loadCompanies();
+      }
     }
   };
 
@@ -92,14 +103,20 @@ const SuperAdminCompanies: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedCompany.id) {
-      const updated = await api.companies.update(selectedCompany.id, selectedCompany);
-      setCompanies(prev => prev.map(c => c.id === updated.id ? updated : c));
-    } else {
-      const created = await api.companies.create(selectedCompany);
-      setCompanies(prev => [...prev, created]);
+    try {
+        if (isEditing && selectedCompany.id) {
+          const updated = await api.companies.update(selectedCompany.id, selectedCompany);
+          setCompanies(prev => prev.map(c => c.id === updated.id ? updated : c));
+          addToast('Empresa atualizada.', 'success');
+        } else {
+          const created = await api.companies.create(selectedCompany);
+          setCompanies(prev => [...prev, created]);
+          addToast('Nova empresa criada.', 'success');
+        }
+        setSelectedCompany(null);
+    } catch(e) {
+        addToast('Erro ao salvar empresa.', 'error');
     }
-    setSelectedCompany(null);
   };
 
   const toggleFeature = (feature: keyof NonNullable<Company['features']>) => {
@@ -134,6 +151,7 @@ const SuperAdminCompanies: React.FC = () => {
       setCompanies(prev => prev.map(c => c.id === aiManageData.id ? { ...c, aiLimit: aiManageData.limit, aiUsage: aiManageData.usage } : c));
       setShowAiModal(false);
       setAiManageData(null);
+      addToast('Limites de IA atualizados.', 'success');
     }
   };
 

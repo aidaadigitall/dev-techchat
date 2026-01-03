@@ -352,7 +352,36 @@ export const api = {
           return adaptCompany(data);
       },
       delete: async(id: string) => {
-          await supabase.from('companies').delete().eq('id', id);
+          // Manual Cascade Delete: Delete related records first to avoid Foreign Key Constraint errors
+          console.log(`Starting cascade delete for company ${id}...`);
+          
+          try {
+              // 1. Delete Profiles (Users) linked to company
+              await supabase.from('profiles').delete().eq('company_id', id);
+              
+              // 2. Delete Contacts
+              await supabase.from('contacts').delete().eq('company_id', id);
+              
+              // 3. Delete Messages
+              await supabase.from('messages').delete().eq('company_id', id);
+              
+              // 4. Delete Tasks
+              await supabase.from('tasks').delete().eq('company_id', id);
+              
+              // 5. Delete Quick Replies
+              await supabase.from('quick_replies').delete().eq('company_id', id);
+
+              // 6. Finally Delete Company
+              const { error } = await supabase.from('companies').delete().eq('id', id);
+              
+              if (error) {
+                  console.error("Error deleting company row:", error);
+                  throw error;
+              }
+          } catch (e) {
+              console.error("Cascade delete failed:", e);
+              throw e;
+          }
       }
   },
   plans: { 
