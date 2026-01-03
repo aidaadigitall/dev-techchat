@@ -12,7 +12,7 @@ import {
   Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
   Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
   Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
-  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File, Copy, Forward, Info
+  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File, Copy, Forward, Info, Navigation
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
@@ -169,13 +169,19 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     
     const shortcut = newQuickReplyForm.shortcut.startsWith('/') ? newQuickReplyForm.shortcut : `/${newQuickReplyForm.shortcut}`;
     
-    // Call API to persist
-    const newReply = await api.chat.createQuickReply(shortcut, newQuickReplyForm.content);
-    
-    setQuickReplies(prev => [...prev, newReply]);
-    setIsCreatingQuickReply(false);
-    setNewQuickReplyForm({ shortcut: '', content: '' });
-    addToast('Resposta rápida salva com sucesso!', 'success');
+    try {
+        // Call API to persist
+        const newReply = await api.chat.createQuickReply(shortcut, newQuickReplyForm.content);
+        
+        // Update local state IMMEDIATELY
+        setQuickReplies(prev => [...prev, newReply]);
+        
+        setIsCreatingQuickReply(false);
+        setNewQuickReplyForm({ shortcut: '', content: '' });
+        addToast('Resposta rápida salva com sucesso!', 'success');
+    } catch (e) {
+        addToast('Erro ao salvar resposta rápida.', 'error');
+    }
   };
 
   const handleReplyMessage = (message: Message) => { setReplyingTo(message); setMessageMenuOpenId(null); const input = document.querySelector('input[type="text"]') as HTMLInputElement; if (input) input.focus(); };
@@ -207,6 +213,53 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
     } 
     catch (e: any) { setMessages(prev => prev.filter(m => m.id !== tempId)); addToast(`Erro: ${e.message}`, 'error'); } 
     finally { setIsSending(false); }
+  };
+
+  const handleSendLocation = async (type: 'static' | 'live') => {
+      if (!selectedContact) return;
+      if (!navigator.geolocation) {
+          addToast('Geolocalização não suportada pelo seu navegador.', 'error');
+          return;
+      }
+
+      setAttachmentMenuOpen(false);
+      addToast('Obtendo localização...', 'info');
+
+      navigator.geolocation.getCurrentPosition(
+          async (position) => {
+              const { latitude, longitude } = position.coords;
+              const content = type === 'live' ? 'Localização em Tempo Real iniciada' : '📍 Localização Fixa';
+              
+              const tempId = `temp_${Date.now()}`;
+              const optimisticMessage: Message = {
+                  id: tempId,
+                  content: content,
+                  senderId: 'me',
+                  timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                  type: MessageType.LOCATION,
+                  status: 'sent',
+                  channel: 'whatsapp',
+                  location: { lat: latitude, lng: longitude }
+              };
+              
+              setMessages(prev => [...prev, optimisticMessage]);
+
+              try {
+                  // Send location via API
+                  await api.chat.sendMessage(selectedContact.id, content, MessageType.LOCATION, { 
+                      lat: latitude, 
+                      lng: longitude, 
+                      isLive: type === 'live' 
+                  });
+              } catch (e: any) {
+                  setMessages(prev => prev.filter(m => m.id !== tempId));
+                  addToast(`Erro ao enviar localização: ${e.message}`, 'error');
+              }
+          },
+          (error) => {
+              addToast(`Erro ao obter localização: ${error.message}`, 'error');
+          }
+      );
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
@@ -387,6 +440,22 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                  <span className="truncate max-w-[200px]">{msg.fileName || 'Documento'}</span>
                              </div>
                          )}
+                         {msg.type === MessageType.LOCATION && (
+                             <div className="mb-1 rounded overflow-hidden border border-gray-200 bg-gray-50">
+                                <div className="h-32 bg-gray-200 flex items-center justify-center relative">
+                                    <Map size={48} className="text-gray-400" />
+                                    {msg.location && (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/50">
+                                            <span className="text-xs font-mono text-gray-600">{msg.location.lat.toFixed(4)}, {msg.location.lng.toFixed(4)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="p-2 bg-white flex items-center">
+                                    <MapPin size={16} className="text-red-500 mr-2" />
+                                    <span className="text-xs font-bold text-gray-700">Localização Compartilhada</span>
+                                </div>
+                             </div>
+                         )}
 
                          {msg.content && <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
                          
@@ -494,6 +563,20 @@ const Chat: React.FC<ChatProps> = ({ branding }) => {
                                     <FileText size={20} />
                                 </div>
                                 <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Documento</span>
+                            </div>
+
+                            <div onClick={() => handleSendLocation('static')} className="flex items-center gap-2 cursor-pointer group">
+                                <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
+                                    <MapPin size={20} />
+                                </div>
+                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Localização</span>
+                            </div>
+
+                            <div onClick={() => handleSendLocation('live')} className="flex items-center gap-2 cursor-pointer group">
+                                <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
+                                    <Navigation size={20} />
+                                </div>
+                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Localização em Tempo Real</span>
                             </div>
 
                             <div onClick={() => setShowQuickReplies(true)} className="flex items-center gap-2 cursor-pointer group">
