@@ -3,17 +3,17 @@ import React, { useState, useRef } from 'react';
 import { 
   Bot, Workflow, Plug, Plus, Search, FileText, Globe, 
   HardDrive, Upload, Trash2, Edit, PlayCircle, PauseCircle, 
-  ExternalLink, CheckCircle2, XCircle, BrainCircuit, History, RotateCcw, Save, Code, Zap, ArrowRight, MessageSquare, Tag
+  ExternalLink, CheckCircle2, XCircle, BrainCircuit, History, RotateCcw, Save, Code, Zap, ArrowRight, MessageSquare, Tag, Link as LinkIcon
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { AIAgent, AutomationFlow, Integration, KBVersion } from '../types';
 import { agentRegistry } from '../services/agentRegistry'; 
 import { useToast } from '../components/ToastContext';
 
-// Mock Data - Atualizado conforme solicitação
+// Mock Data - Atualizado com o fluxo solicitado
 const INITIAL_FLOWS: AutomationFlow[] = [
   { id: '1', name: 'Boas-vindas WhatsApp', trigger: 'Nova Mensagem', steps: 5, active: true },
-  { id: '2', name: 'Qualificação de Leads', trigger: 'Keyword: preço, orçamento', steps: 5, active: true },
+  { id: '2', name: 'Qualificação de Leads', trigger: 'Keyword: preço, orçamento, investir', steps: 4, active: true },
   { id: '3', name: 'Pesquisa de Satisfação', trigger: 'Ticket Fechado', steps: 3, active: false },
 ];
 
@@ -25,7 +25,7 @@ const MOCK_INTEGRATIONS: Integration[] = [
   { id: '5', name: 'OpenAI', type: 'openai', status: 'connected', lastSync: 'Agora' },
 ];
 
-// Agentes Pré-criados conforme solicitação
+// Agentes Pré-criados
 const INITIAL_AGENTS: AIAgent[] = [
   {
     id: 'agent_onboarding',
@@ -81,9 +81,10 @@ const Automations: React.FC = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
 
   // Knowledge Base State
-  const [knowledgeTab, setKnowledgeTab] = useState<'files' | 'history'>('files');
+  const [knowledgeTab, setKnowledgeTab] = useState<'files' | 'links' | 'history'>('files');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [kbHistory, setKbHistory] = useState<KBVersion[]>([]);
+  const [newLinkInput, setNewLinkInput] = useState('');
 
   // Integrations State
   const [integrations, setIntegrations] = useState<Integration[]>(MOCK_INTEGRATIONS);
@@ -141,6 +142,25 @@ const Automations: React.FC = () => {
           addToast(`Base de conhecimento atualizada para ${newVersion.version}`, 'success');
       }, 1500);
     }
+  };
+
+  const handleAddLink = () => {
+      if (!newLinkInput || !selectedAgent) return;
+      // Simulate adding link
+      setAgentForm(prev => ({
+          ...prev,
+          sources: { ...prev.sources!, links: (prev.sources!.links || 0) + 1 }
+      }));
+      setNewLinkInput('');
+      addToast('Link adicionado à base de conhecimento.', 'success');
+  };
+
+  const toggleDrive = () => {
+      if (!selectedAgent) return;
+      setAgentForm(prev => ({
+          ...prev,
+          sources: { ...prev.sources!, drive: !prev.sources?.drive }
+      }));
   };
 
   const handleRollback = (version: string) => {
@@ -221,6 +241,9 @@ const Automations: React.FC = () => {
                 </div>
                 <div className="flex items-center text-xs text-gray-600">
                     <Globe size={14} className="mr-2" /> {agent.sources.links} Links rastreados
+                </div>
+                <div className="flex items-center text-xs text-gray-600">
+                    <HardDrive size={14} className="mr-2" /> {agent.sources.drive ? 'Drive Conectado' : 'Drive Desconectado'}
                 </div>
                 </div>
 
@@ -482,7 +505,7 @@ const Automations: React.FC = () => {
       <Modal 
         isOpen={!!selectedAgent} 
         onClose={() => setSelectedAgent(null)}
-        title={selectedAgent ? `Editar: ${selectedAgent.name}` : ''}
+        title={selectedAgent ? `Configurar: ${selectedAgent.name}` : ''}
         size="lg"
         footer={
            <div className="flex justify-end gap-2">
@@ -491,18 +514,21 @@ const Automations: React.FC = () => {
            </div>
         }
       >
-         <div className="space-y-6">
-            <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200">
-                <div className="flex items-center">
-                    <Bot size={20} className="text-purple-600 mr-2" />
-                    <div>
-                        <p className="text-sm font-bold text-gray-900">Versão da KB: <span className="font-mono bg-white px-1 rounded border border-gray-300">{agentForm.kbVersion || 'v0.0'}</span></p>
-                    </div>
+         <div className="space-y-6 max-h-[70vh] overflow-y-auto p-1 custom-scrollbar">
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                    <input 
+                      type="text" 
+                      className="w-full border rounded-lg p-2 bg-white"
+                      value={agentForm.name || ''}
+                      onChange={e => setAgentForm({...agentForm, name: e.target.value})}
+                    />
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500">Modelo:</span>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Modelo LLM</label>
                     <select 
-                        className="text-xs border-gray-300 rounded p-1 bg-white"
+                        className="w-full border border-gray-300 rounded-lg p-2 bg-white"
                         value={agentForm.model}
                         onChange={e => setAgentForm({...agentForm, model: e.target.value})}
                     >
@@ -519,50 +545,82 @@ const Automations: React.FC = () => {
             <div>
                <label className="block text-sm font-medium text-gray-700 mb-1">Instrução do Sistema (Prompt)</label>
                <textarea 
-                 className="w-full border rounded-lg p-3 bg-white h-24 text-sm font-mono text-gray-600"
+                 className="w-full border rounded-lg p-3 bg-white h-32 text-sm font-mono text-gray-600"
                  value={agentForm.systemInstruction || ''}
                  onChange={e => setAgentForm({...agentForm, systemInstruction: e.target.value})}
+                 placeholder="Defina a personalidade e regras do agente..."
                ></textarea>
             </div>
 
             {/* Knowledge Base Section */}
             <div className="border rounded-xl p-0 bg-white overflow-hidden">
-               <div className="bg-gray-50 p-3 border-b border-gray-200 flex justify-between items-center">
+               <div className="bg-gray-50 p-3 border-b border-gray-200 flex flex-wrap gap-2 justify-between items-center">
                    <h4 className="text-sm font-bold text-gray-800 flex items-center">
-                      <BrainCircuit size={16} className="mr-2 text-purple-600" /> Base de Conhecimento
+                      <BrainCircuit size={16} className="mr-2 text-purple-600" /> Fontes de Conhecimento
                    </h4>
                    <div className="flex bg-white rounded-lg p-0.5 border border-gray-200">
                         <button onClick={() => setKnowledgeTab('files')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'files' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Arquivos</button>
-                        <button onClick={() => setKnowledgeTab('history')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'history' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Histórico & Versões</button>
+                        <button onClick={() => setKnowledgeTab('links')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'links' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Links</button>
+                        <button onClick={() => setKnowledgeTab('history')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${knowledgeTab === 'history' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:text-gray-900'}`}>Versões</button>
                    </div>
                </div>
 
                <div className="p-4">
                    {knowledgeTab === 'files' && (
-                      <div className="space-y-4">
-                          <div className="grid grid-cols-3 gap-2 mb-4">
-                             <div className="bg-gray-50 border border-gray-200 rounded p-2 text-center text-xs text-gray-600">
-                                <FileText size={16} className="mx-auto mb-1 text-blue-500"/> Arquivos
+                      <div className="space-y-4 animate-fadeIn">
+                          <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                             <div className="flex items-center">
+                                <HardDrive size={18} className="text-blue-600 mr-3" />
+                                <div>
+                                   <p className="text-sm font-bold text-gray-900">Google Drive</p>
+                                   <p className="text-xs text-gray-500">Conectar pastas inteiras</p>
+                                </div>
                              </div>
-                             <div className="bg-gray-50 border border-gray-200 rounded p-2 text-center text-xs text-gray-600">
-                                <Globe size={16} className="mx-auto mb-1 text-green-500"/> Links
-                             </div>
-                             <div className="bg-gray-50 border border-gray-200 rounded p-2 text-center text-xs text-gray-600">
-                                <HardDrive size={16} className="mx-auto mb-1 text-orange-500"/> Google Drive
-                             </div>
+                             <label className="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" className="sr-only peer" checked={agentForm.sources?.drive || false} onChange={toggleDrive} />
+                                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                             </label>
                           </div>
 
                           <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white hover:border-purple-400 transition-colors cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
                              <Upload size={32} className="text-gray-400 mx-auto mb-2 group-hover:text-purple-500" />
-                             <p className="text-sm font-medium text-gray-700">Clique para enviar novos documentos</p>
-                             <p className="text-xs text-gray-500 mt-1">Isso criará uma nova versão da KB automaticamente.</p>
+                             <p className="text-sm font-medium text-gray-700">Enviar Documentos (PDF, DOCX, TXT)</p>
+                             <p className="text-xs text-gray-500 mt-1">{agentForm.sources?.files || 0} arquivos carregados</p>
                              <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.txt,.csv,.docx" multiple />
                           </div>
                       </div>
                    )}
 
+                   {knowledgeTab === 'links' && (
+                       <div className="space-y-4 animate-fadeIn">
+                           <div className="flex gap-2">
+                               <input 
+                                 type="text" 
+                                 className="flex-1 border border-gray-300 rounded-lg p-2 text-sm" 
+                                 placeholder="https://sua-empresa.com/faq"
+                                 value={newLinkInput}
+                                 onChange={(e) => setNewLinkInput(e.target.value)}
+                               />
+                               <button onClick={handleAddLink} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 rounded-lg">
+                                   <Plus size={18} />
+                               </button>
+                           </div>
+                           <div className="space-y-2">
+                               <p className="text-xs text-gray-500 font-bold uppercase">Links Ativos ({agentForm.sources?.links || 0})</p>
+                               {/* Mock List */}
+                               <div className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-100 text-sm">
+                                   <div className="flex items-center text-blue-600 truncate">
+                                       <LinkIcon size={14} className="mr-2 flex-shrink-0" />
+                                       <span className="truncate">https://exemplo.com/manual-usuario</span>
+                                   </div>
+                                   <button className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+                               </div>
+                           </div>
+                       </div>
+                   )}
+
                    {knowledgeTab === 'history' && (
-                      <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                      <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar animate-fadeIn">
                           {kbHistory.length === 0 && <p className="text-center text-xs text-gray-400 py-4">Nenhum histórico de versão.</p>}
                           {kbHistory.map((ver) => (
                               <div key={ver.version} className={`flex justify-between items-center p-2 rounded border ${ver.isActive ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100'}`}>

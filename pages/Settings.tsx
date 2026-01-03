@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon, Server, Globe, RotateCcw } from 'lucide-react';
+import { User as UserIcon, Shield, Building, Smartphone, Save, QrCode, Trash2, Plus, Mail, Camera, Lock, Palette, Upload, BrainCircuit, Key, Tag as TagIcon, Briefcase, RefreshCw, CheckCircle, Terminal, Smartphone as PhoneIcon, Server, Globe, RotateCcw, Edit2 } from 'lucide-react';
 import { User, Branding, Tag, Sector } from '../types';
 import { MOCK_USERS } from '../constants';
 import { api } from '../services/api';
@@ -12,6 +13,13 @@ interface SettingsProps {
   onUpdateUser?: (user: User) => void;
   branding?: Branding;
   onUpdateBranding?: (branding: Branding) => void;
+}
+
+interface SavedConnection {
+    id: string;
+    instanceName: string;
+    apiUrl: string;
+    apiKey: string;
 }
 
 const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding, onUpdateBranding }) => {
@@ -32,9 +40,23 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
   // WhatsApp Configuration State
   const [waConfig, setWaConfig] = useState({
       apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
-      apiKey: localStorage.getItem('wa_api_key') || '64EA06725633-4DBC-A2ED-F469AA0CDD14', // Updated Key
-      instanceName: localStorage.getItem('wa_instance_name') || 'Whats-6010'
+      apiKey: localStorage.getItem('wa_api_key') || '',
+      instanceName: localStorage.getItem('wa_instance_name') || 'Whats-Default'
   });
+
+  // Multi-Connection State
+  const [savedConnections, setSavedConnections] = useState<SavedConnection[]>(() => {
+      const saved = localStorage.getItem('wa_saved_instances');
+      if (saved) return JSON.parse(saved);
+      // Default initial connection
+      return [{
+          id: 'default',
+          instanceName: localStorage.getItem('wa_instance_name') || 'Whats-Default',
+          apiUrl: localStorage.getItem('wa_api_url') || 'http://localhost:8083',
+          apiKey: localStorage.getItem('wa_api_key') || ''
+      }];
+  });
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>('default');
 
   // WhatsApp Connection State (Managed by Service)
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
@@ -86,6 +108,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     };
   }, []);
 
+  // Update localStorage when connections change
+  useEffect(() => {
+      localStorage.setItem('wa_saved_instances', JSON.stringify(savedConnections));
+  }, [savedConnections]);
+
   // Auto-scroll logs
   useEffect(() => {
     if (logsEndRef.current) {
@@ -103,8 +130,56 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
 
   // --- Handlers ---
 
+  const handleSelectConnection = (conn: SavedConnection) => {
+      setEditingConnectionId(conn.id);
+      setWaConfig({
+          apiUrl: conn.apiUrl,
+          apiKey: conn.apiKey,
+          instanceName: conn.instanceName
+      });
+      // Switch active service config
+      whatsappService.updateConfig({
+          apiUrl: conn.apiUrl,
+          apiKey: conn.apiKey,
+          instanceName: conn.instanceName
+      });
+      // Force check status for this new connection
+      setTimeout(() => whatsappService.checkConnection(), 500);
+  };
+
+  const handleNewConnection = () => {
+      const newId = `conn_${Date.now()}`;
+      const newConn: SavedConnection = {
+          id: newId,
+          instanceName: `Whats-Nova-${savedConnections.length + 1}`,
+          apiUrl: 'http://localhost:8083',
+          apiKey: ''
+      };
+      setSavedConnections(prev => [...prev, newConn]);
+      handleSelectConnection(newConn);
+  };
+
+  const handleDeleteConnection = (id: string) => {
+      if (savedConnections.length <= 1) {
+          addToast('Você deve ter pelo menos uma conexão.', 'warning');
+          return;
+      }
+      if (confirm('Tem certeza? Isso removerá a configuração desta instância.')) {
+          const newDat = savedConnections.filter(c => c.id !== id);
+          setSavedConnections(newDat);
+          if (editingConnectionId === id) {
+              handleSelectConnection(newDat[0]);
+          }
+      }
+  };
+
   const handleSaveWaConfig = async () => {
-      // Force update logic (will disconnect old instance if name changed)
+      if (!editingConnectionId) return;
+
+      // Update the list
+      setSavedConnections(prev => prev.map(c => c.id === editingConnectionId ? { ...c, ...waConfig } : c));
+
+      // Force update service logic (will disconnect old instance if name changed)
       await whatsappService.updateConfig(waConfig);
       addToast('Configurações salvas. Se o nome mudou, a conexão será reiniciada.', 'success');
   };
@@ -173,118 +248,166 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
     switch(activeTab) {
       case 'integrations':
         return (
-           <div className="space-y-6 animate-fadeIn">
+           <div className="space-y-6 animate-fadeIn h-full flex flex-col">
               <div className="border-b border-gray-100 pb-4 mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">Conexões & Integrações</h2>
-                <p className="text-sm text-gray-500">Gerencie a conexão com o WhatsApp Web (Via Evolution API).</p>
+                <h2 className="text-xl font-semibold text-gray-800">Gerenciar Conexões</h2>
+                <p className="text-sm text-gray-500">Configure múltiplas instâncias do WhatsApp (Evolution API).</p>
               </div>
               
-              {/* API Configuration Card */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm mb-6">
-                 <h3 className="text-md font-bold text-gray-800 mb-4 flex items-center">
-                    <Server size={18} className="mr-2 text-purple-600" /> Configuração do Servidor (Evolution API)
-                 </h3>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">URL da API (Webhook/Gateway)</label>
-                        <div className="relative">
-                            <Globe size={14} className="absolute left-3 top-3 text-gray-400" />
-                            <input 
-                                type="text" 
-                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" 
-                                placeholder="ex: http://localhost:8083"
-                                value={waConfig.apiUrl}
-                                onChange={e => setWaConfig({...waConfig, apiUrl: e.target.value})}
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Global API Key</label>
-                        <div className="relative">
-                            <Key size={14} className="absolute left-3 top-3 text-gray-400" />
-                            <input 
-                                type="password" 
-                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" 
-                                placeholder="Chave da API Evolution"
-                                value={waConfig.apiKey}
-                                onChange={e => setWaConfig({...waConfig, apiKey: e.target.value})}
-                            />
-                        </div>
-                    </div>
-                 </div>
-                 
-                 {/* Instance Name Field Highlighted */}
-                 <div className="mb-4 bg-purple-50 p-4 rounded-lg border border-purple-100">
-                    <label className="block text-xs font-bold text-purple-800 mb-1">Nome da Instância (Conexão)</label>
-                    <p className="text-[10px] text-purple-600 mb-2">Este é o nome usado para identificar este telefone na Evolution API.</p>
-                    <input 
-                        type="text" 
-                        className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm font-medium text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                        placeholder="Ex: Whats-6010"
-                        value={waConfig.instanceName}
-                        onChange={e => setWaConfig({...waConfig, instanceName: e.target.value})}
-                    />
-                 </div>
+              <div className="flex flex-col lg:flex-row gap-6 h-full">
+                  {/* Left List */}
+                  <div className="w-full lg:w-1/3 bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col">
+                      <div className="flex justify-between items-center mb-4">
+                          <h3 className="font-bold text-gray-700">Instâncias</h3>
+                          <button onClick={handleNewConnection} className="p-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100">
+                              <Plus size={16} />
+                          </button>
+                      </div>
+                      <div className="space-y-2 overflow-y-auto max-h-[400px] custom-scrollbar pr-1">
+                          {savedConnections.map(conn => (
+                              <div 
+                                key={conn.id} 
+                                onClick={() => handleSelectConnection(conn)}
+                                className={`p-3 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${editingConnectionId === conn.id ? 'border-purple-500 bg-purple-50 shadow-sm' : 'border-gray-100 hover:bg-gray-50'}`}
+                              >
+                                  <div className="flex items-center overflow-hidden">
+                                      <div className={`w-2 h-2 rounded-full mr-3 flex-shrink-0 ${editingConnectionId === conn.id && whatsappStatus === 'connected' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                                      <div className="truncate">
+                                          <p className={`text-sm font-bold truncate ${editingConnectionId === conn.id ? 'text-purple-900' : 'text-gray-700'}`}>{conn.instanceName}</p>
+                                          <p className="text-[10px] text-gray-400 truncate">{conn.apiUrl}</p>
+                                      </div>
+                                  </div>
+                                  {savedConnections.length > 1 && (
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteConnection(conn.id); }}
+                                        className="text-gray-400 hover:text-red-500 p-1"
+                                      >
+                                          <Trash2 size={14} />
+                                      </button>
+                                  )}
+                              </div>
+                          ))}
+                      </div>
+                  </div>
 
-                 <div className="flex justify-end">
-                    <button onClick={handleSaveWaConfig} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black flex items-center shadow-md">
-                        <Save size={16} className="mr-2" /> Salvar & Aplicar
-                    </button>
-                 </div>
-              </div>
+                  {/* Right Detail */}
+                  <div className="flex-1 space-y-6">
+                      {/* API Configuration Card */}
+                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-md font-bold text-gray-800 flex items-center">
+                                <Server size={18} className="mr-2 text-purple-600" /> Configuração da Instância
+                            </h3>
+                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded">
+                                ID: {editingConnectionId}
+                            </span>
+                        </div>
+                        
+                        {/* Instance Name Field Highlighted */}
+                        <div className="mb-4 bg-purple-50 p-4 rounded-lg border border-purple-100">
+                            <label className="block text-xs font-bold text-purple-800 mb-1">Nome da Instância (Identificador)</label>
+                            <div className="relative">
+                                <Smartphone size={14} className="absolute left-3 top-3 text-purple-400" />
+                                <input 
+                                    type="text" 
+                                    className="w-full pl-9 pr-3 py-2 border border-purple-200 rounded-lg text-sm font-medium text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
+                                    placeholder="Ex: Whats-Comercial"
+                                    value={waConfig.instanceName}
+                                    onChange={e => setWaConfig({...waConfig, instanceName: e.target.value})}
+                                />
+                            </div>
+                        </div>
 
-              {/* WhatsApp Connection Card */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                 <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div className="flex items-center gap-4">
-                       <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-white transition-colors duration-500 ${whatsappStatus === 'connected' ? 'bg-[#25D366]' : 'bg-gray-300'}`}>
-                          <Smartphone size={32} />
-                       </div>
-                       <div>
-                          <h3 className="text-lg font-bold text-gray-900">Sessão do WhatsApp</h3>
-                          {whatsappStatus === 'connected' ? (
-                              <p className="text-sm text-green-600 font-medium flex items-center">
-                                 <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Conectado
-                              </p>
-                          ) : whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating' ? (
-                              <p className="text-sm text-yellow-600 font-medium flex items-center">
-                                 <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></span> 
-                                 {whatsappStatus === 'authenticating' ? 'Autenticando...' : 'Aguardando conexão...'}
-                              </p>
-                          ) : (
-                              <p className="text-sm text-red-500 font-medium flex items-center">
-                                 <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Desconectado
-                              </p>
-                          )}
-                          <p className="text-xs text-gray-500 mt-1">Conectado como: <strong>{waConfig.instanceName}</strong></p>
-                       </div>
-                    </div>
-                    <div className="flex gap-2">
-                       {whatsappStatus === 'connected' ? (
-                           <button onClick={handleDisconnect} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-medium bg-white transition-colors">
-                              Desconectar
-                           </button>
-                       ) : (
-                           <div className="flex gap-2">
-                               <button 
-                                 onClick={handleDisconnect} 
-                                 className="px-3 py-2 border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-100 text-sm font-medium bg-white transition-colors"
-                                 title="Forçar reset da instância"
-                               >
-                                  <RotateCcw size={18} />
-                               </button>
-                               <button 
-                                 onClick={handleGenerateQR} 
-                                 disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating'}
-                                 className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50 transition-all active:scale-95"
-                               >
-                                   <QrCode size={18} className="mr-2" /> 
-                                   {whatsappStatus === 'connecting' ? 'Iniciando...' : 'Conectar Agora'}
-                               </button>
-                           </div>
-                       )}
-                    </div>
-                 </div>
+                        <div className="grid grid-cols-1 gap-4 mb-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">URL da API (Evolution)</label>
+                                <div className="relative">
+                                    <Globe size={14} className="absolute left-3 top-3 text-gray-400" />
+                                    <input 
+                                        type="text" 
+                                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" 
+                                        placeholder="ex: http://localhost:8083"
+                                        value={waConfig.apiUrl}
+                                        onChange={e => setWaConfig({...waConfig, apiUrl: e.target.value})}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Global API Key</label>
+                                <div className="relative">
+                                    <Key size={14} className="absolute left-3 top-3 text-gray-400" />
+                                    <input 
+                                        type="password" 
+                                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" 
+                                        placeholder="Chave da API Evolution"
+                                        value={waConfig.apiKey}
+                                        onChange={e => setWaConfig({...waConfig, apiKey: e.target.value})}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end">
+                            <button onClick={handleSaveWaConfig} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black flex items-center shadow-md">
+                                <Save size={16} className="mr-2" /> Salvar Alterações
+                            </button>
+                        </div>
+                      </div>
+
+                      {/* WhatsApp Connection Card */}
+                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                            <div className="flex items-center gap-4">
+                            <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-white transition-colors duration-500 ${whatsappStatus === 'connected' ? 'bg-[#25D366]' : 'bg-gray-300'}`}>
+                                <Smartphone size={32} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900">Status da Conexão</h3>
+                                {whatsappStatus === 'connected' ? (
+                                    <p className="text-sm text-green-600 font-medium flex items-center">
+                                        <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Conectado
+                                    </p>
+                                ) : whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating' ? (
+                                    <p className="text-sm text-yellow-600 font-medium flex items-center">
+                                        <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></span> 
+                                        {whatsappStatus === 'authenticating' ? 'Autenticando...' : 'Aguardando...'}
+                                    </p>
+                                ) : (
+                                    <p className="text-sm text-red-500 font-medium flex items-center">
+                                        <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Desconectado
+                                    </p>
+                                )}
+                                <p className="text-xs text-gray-500 mt-1">Conectado em: <strong>{waConfig.instanceName}</strong></p>
+                            </div>
+                            </div>
+                            <div className="flex gap-2">
+                            {whatsappStatus === 'connected' ? (
+                                <button onClick={handleDisconnect} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-medium bg-white transition-colors">
+                                    Desconectar
+                                </button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={handleDisconnect} 
+                                        className="px-3 py-2 border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-100 text-sm font-medium bg-white transition-colors"
+                                        title="Forçar reset da instância"
+                                    >
+                                        <RotateCcw size={18} />
+                                    </button>
+                                    <button 
+                                        onClick={handleGenerateQR} 
+                                        disabled={whatsappStatus === 'connecting' || whatsappStatus === 'qr_ready' || whatsappStatus === 'authenticating'}
+                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center shadow-md disabled:opacity-50 transition-all active:scale-95"
+                                    >
+                                        <QrCode size={18} className="mr-2" /> 
+                                        {whatsappStatus === 'connecting' ? 'Iniciando...' : 'Conectar Agora'}
+                                    </button>
+                                </div>
+                            )}
+                            </div>
+                        </div>
+                      </div>
+                  </div>
               </div>
            </div>
         );
@@ -384,7 +507,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser, branding
        </div>
 
        <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-5xl mx-auto h-full">
              {renderContent()}
           </div>
        </div>
