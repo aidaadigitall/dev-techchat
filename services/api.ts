@@ -94,6 +94,30 @@ const adaptProposal = (data: any): Proposal => ({
   validUntil: data.valid_until
 });
 
+const adaptCompany = (data: any): Company => ({
+    id: data.id,
+    name: data.name,
+    ownerName: data.owner_name || '',
+    email: data.email || '',
+    phone: data.phone || '',
+    planId: data.plan_id || 'basic',
+    status: data.status || 'active',
+    subscriptionEnd: data.subscription_end,
+    userCount: 0, // Placeholder, would require a join or separate count
+    aiUsage: data.ai_usage || 0,
+    aiLimit: data.ai_limit || 1000,
+    useCustomKey: data.use_custom_key || false,
+    features: data.features || { crm: true, campaigns: false, automations: false, reports: true }
+});
+
+const adaptPlan = (data: any): Plan => ({
+    id: data.id,
+    name: data.name,
+    price: data.price,
+    limits: data.limits || { users: 1, connections: 1, messages: 1000 },
+    features: data.features || { crm: true, campaigns: false, api: false }
+});
+
 export const api = {
   contacts: {
     list: async (): Promise<Contact[]> => {
@@ -289,14 +313,73 @@ export const api = {
       update: async(id: string, u: any) => u 
   },
   companies: { 
-      list: async() => [] as Company[], 
-      create: async(c: any) => c, 
-      update: async(id: string, u: any) => u, 
-      delete: async(id: string) => {} 
+      list: async(): Promise<Company[]> => {
+          const { data } = await supabase.from('companies').select('*');
+          return (data || []).map(adaptCompany);
+      },
+      create: async(c: any): Promise<Company> => {
+          const payload = {
+              name: c.name,
+              owner_name: c.ownerName,
+              email: c.email,
+              phone: c.phone,
+              plan_id: c.planId,
+              status: c.status,
+              subscription_end: c.subscriptionEnd,
+              ai_limit: c.aiLimit,
+              ai_usage: c.aiUsage,
+              use_custom_key: c.useCustomKey,
+              features: c.features
+          };
+          const { data, error } = await supabase.from('companies').insert(payload).select().single();
+          if (error) throw error;
+          return adaptCompany(data);
+      },
+      update: async(id: string, u: any): Promise<Company> => {
+          const payload: any = {};
+          if (u.name) payload.name = u.name;
+          if (u.ownerName) payload.owner_name = u.ownerName;
+          if (u.email) payload.email = u.email;
+          if (u.planId) payload.plan_id = u.planId;
+          if (u.status) payload.status = u.status;
+          if (u.subscriptionEnd) payload.subscription_end = u.subscriptionEnd;
+          if (u.aiLimit !== undefined) payload.ai_limit = u.aiLimit;
+          if (u.aiUsage !== undefined) payload.ai_usage = u.aiUsage;
+          if (u.features) payload.features = u.features;
+
+          const { data, error } = await supabase.from('companies').update(payload).eq('id', id).select().single();
+          if (error) throw error;
+          return adaptCompany(data);
+      },
+      delete: async(id: string) => {
+          await supabase.from('companies').delete().eq('id', id);
+      }
   },
   plans: { 
-      list: async() => [] as Plan[], 
-      save: async(p: any) => p 
+      list: async(): Promise<Plan[]> => {
+          const { data } = await supabase.from('plans').select('*');
+          return (data || []).map(adaptPlan);
+      },
+      save: async(p: any): Promise<Plan> => {
+          const payload = {
+              name: p.name,
+              price: p.price,
+              limits: p.limits,
+              features: p.features
+          };
+          
+          let result;
+          if (p.id && !p.id.startsWith('plan_')) {
+              // Update existing real plan
+              result = await supabase.from('plans').update(payload).eq('id', p.id).select().single();
+          } else {
+              // Create new
+              result = await supabase.from('plans').insert(payload).select().single();
+          }
+          
+          if (result.error) throw result.error;
+          return adaptPlan(result.data);
+      }
   },
   users: { 
       updateProfile: async(d: any) => d 
