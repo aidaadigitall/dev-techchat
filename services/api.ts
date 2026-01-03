@@ -1,19 +1,6 @@
-// ... (imports remain same) ...
 import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, AIInsight, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, User } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from './supabase';
-
-// ... (helpers remain same) ...
-const getEnv = (key: string) => { /*...*/ return ''; };
-const generateUUID = () => { /*...*/ return ''; };
-let aiClientInstance: GoogleGenAI | null = null;
-const getAiClient = () => { /*...*/ return aiClientInstance; };
-
-// ... (adapters remain same) ...
-const adaptContact = (data: any): Contact => ({ /*...*/ });
-export const adaptMessage = (data: any): Message => ({ /*...*/ });
-const adaptTask = (data: any): Task => ({ /*...*/ });
-const adaptProposal = (data: any): Proposal => ({ /*...*/ });
 
 // Helper: Get Current User Company ID (Robust Version)
 const getCompanyId = async () => {
@@ -41,8 +28,73 @@ const getCompanyId = async () => {
   }
 };
 
+const getEnv = (key: string) => { 
+    // Implementation abstracted in supabase.ts usually, but kept here if needed or removed if unused
+    return ''; 
+};
+const generateUUID = () => crypto.randomUUID();
+let aiClientInstance: GoogleGenAI | null = null;
+const getAiClient = () => aiClientInstance;
+
+// --- Adapters ---
+
+const adaptContact = (data: any): Contact => ({
+  id: data.id,
+  name: data.name,
+  avatar: data.avatar_url || '',
+  phone: data.phone,
+  email: data.email,
+  tags: data.tags || [],
+  company: data.custom_fields?.company,
+  sector: data.custom_fields?.sector,
+  status: data.status || 'open',
+  lastMessage: data.custom_fields?.last_message_preview,
+  lastMessageTime: data.last_message_at ? new Date(data.last_message_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : undefined,
+  unreadCount: 0, 
+  blocked: false,
+  source: data.source,
+  role: data.custom_fields?.role,
+  city: data.custom_fields?.city,
+  state: data.custom_fields?.state,
+  cpfCnpj: data.custom_fields?.cpfCnpj
+});
+
+export const adaptMessage = (data: any): Message => ({
+  id: data.id,
+  content: data.content,
+  senderId: data.sender_id,
+  timestamp: new Date(data.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+  type: data.type || MessageType.TEXT,
+  status: data.status || 'sent',
+  mediaUrl: data.media_url,
+  channel: 'whatsapp'
+});
+
+const adaptTask = (data: any): Task => ({
+  id: data.id,
+  title: data.title,
+  priority: data.priority || 'p4',
+  projectId: data.project_id || 'inbox',
+  completed: data.completed || false,
+  dueDate: data.due_date,
+  description: data.description,
+  assigneeId: data.assignee_id,
+  tags: data.tags,
+  subtasks: [] // Mock subtasks for now or load if available
+});
+
+const adaptProposal = (data: any): Proposal => ({
+  id: data.id,
+  clientId: data.client_id,
+  clientName: data.client_name || 'Cliente',
+  title: data.title,
+  value: data.value,
+  status: data.status,
+  sentDate: data.sent_date,
+  validUntil: data.valid_until
+});
+
 export const api = {
-  // ... (contacts, chat, tasks, proposals, companies, plans, users, campaigns, ai, reports, metadata implementations remain SAME as previous fix) ...
   contacts: {
     list: async (): Promise<Contact[]> => {
       try {
@@ -82,11 +134,12 @@ export const api = {
       return adaptContact(result.data);
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
-        // ... (same as before) ...
         const payload:any = {};
         if(updates.name) payload.name = updates.name;
         if(updates.tags) payload.tags = updates.tags;
         if(updates.status) payload.status = updates.status;
+        if(updates.blocked !== undefined) payload.blocked = updates.blocked; // Handle blocked status if schema supports
+        
         const { data } = await supabase.from('contacts').update(payload).eq('id', id).select().single();
         return adaptContact(data);
     },
@@ -105,12 +158,36 @@ export const api = {
           await supabase.from('contacts').update({ last_message_at: new Date() }).eq('id', cid);
           return adaptMessage(data);
       },
-      getQuickReplies: async () => []
+      getQuickReplies: async () => [] as QuickReply[]
   },
   tasks: {
       list: async () => { const {data} = await supabase.from('tasks').select('*'); return (data||[]).map(adaptTask); },
-      create: async (t: any) => { const cid = await getCompanyId(); await supabase.from('tasks').insert({...t, company_id: cid, status:'pending'}); return t; },
-      update: async (id: string, u: any) => { await supabase.from('tasks').update(u).eq('id', id); return {id, ...u} as Task; },
+      create: async (t: any) => { 
+          const cid = await getCompanyId(); 
+          const payload = {
+              company_id: cid, 
+              title: t.title,
+              description: t.description,
+              due_date: t.dueDate,
+              priority: t.priority,
+              project_id: t.projectId,
+              assignee_id: t.assigneeId,
+              tags: t.tags,
+              status: 'pending'
+          };
+          const { data } = await supabase.from('tasks').insert(payload).select().single(); 
+          return adaptTask(data); 
+      },
+      update: async (id: string, u: any) => { 
+          const payload: any = {};
+          if(u.title) payload.title = u.title;
+          if(u.completed !== undefined) payload.completed = u.completed;
+          if(u.priority) payload.priority = u.priority;
+          if(u.dueDate) payload.due_date = u.dueDate;
+          
+          await supabase.from('tasks').update(payload).eq('id', id); 
+          return {id, ...u} as Task; 
+      },
       delete: async (id: string) => { await supabase.from('tasks').delete().eq('id', id); }
   },
   crm: {
@@ -173,12 +250,39 @@ export const api = {
         return true;
     }
   },
-  proposals: { list: async() => [], create: async(d: any) => d, update: async(id: string, u: any) => u },
-  companies: { list: async() => [], create: async(c: any) => c, update: async(id: string, u: any) => u, delete: async() => {} },
-  plans: { list: async() => [], save: async(p: any) => p },
-  users: { updateProfile: async(d: any) => d },
-  campaigns: { list: async() => [], create: async(d: any) => d },
-  ai: { generateInsight: async() => [], analyzeConversation: async() => "" },
-  reports: { generatePdf: async() => {} },
-  metadata: { getTags: async() => [], saveTags: async() => {}, getSectors: async() => [], saveSectors: async() => {} }
+  proposals: { 
+      list: async() => [], 
+      create: async(d: any) => d, 
+      update: async(id: string, u: any) => u 
+  },
+  companies: { 
+      list: async() => [] as Company[], 
+      create: async(c: any) => c, 
+      update: async(id: string, u: any) => u, 
+      delete: async(id: string) => {} 
+  },
+  plans: { 
+      list: async() => [] as Plan[], 
+      save: async(p: any) => p 
+  },
+  users: { 
+      updateProfile: async(d: any) => d 
+  },
+  campaigns: { 
+      list: async() => [] as Campaign[], 
+      create: async(d: any) => d 
+  },
+  ai: { 
+      generateInsight: async(type: string, context: any): Promise<AIInsight[]> => [], 
+      analyzeConversation: async(messages: Message[]): Promise<string> => "Análise de conversa indisponível no momento." 
+  },
+  reports: { 
+      generatePdf: async() => {} 
+  },
+  metadata: { 
+      getTags: async() => [] as Tag[], 
+      saveTags: async() => {}, 
+      getSectors: async() => [] as Sector[], 
+      saveSectors: async() => {} 
+  }
 };
