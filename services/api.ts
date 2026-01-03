@@ -168,15 +168,35 @@ export const api = {
         }
       };
       
-      // Using UPSERT based on phone to prevent duplicates during import
-      const { data, error } = await supabase
+      // Manual "Upsert" to allow duplicate checking without DB constraints
+      // 1. Check if contact exists
+      const { data: existing } = await supabase
         .from('contacts')
-        .upsert(payload, { onConflict: 'phone' })
-        .select()
-        .single();
+        .select('id')
+        .eq('phone', cleanPhone)
+        .maybeSingle(); // maybeSingle prevents errors if multiple or none
 
-      if (error) throw error; 
-      return adaptContact(data);
+      let response;
+
+      if (existing) {
+        // 2. Update existing
+        response = await supabase
+          .from('contacts')
+          .update(payload)
+          .eq('id', existing.id)
+          .select()
+          .single();
+      } else {
+        // 3. Create new
+        response = await supabase
+          .from('contacts')
+          .insert(payload)
+          .select()
+          .single();
+      }
+
+      if (response.error) throw response.error; 
+      return adaptContact(response.data);
     },
     update: async (id: string, updates: Partial<Contact>): Promise<Contact> => {
       try {

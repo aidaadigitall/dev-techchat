@@ -288,14 +288,19 @@ class WhatsAppService {
               custom_fields: { last_message_preview: lastMessagePreview }
           };
 
-          // Upsert into Supabase
-          const { error } = await supabase
+          // Manual Upsert Logic to avoid "ON CONFLICT" error due to missing unique constraint
+          const { data: existing } = await supabase
             .from('contacts')
-            .upsert(payload, { onConflict: 'phone', ignoreDuplicates: false });
+            .select('id')
+            .eq('phone', phone)
+            .maybeSingle();
 
-          if (error) { 
-              // console.error('Error syncing contact:', error);
+          if (existing) {
+             await supabase.from('contacts').update(payload).eq('id', existing.id);
+          } else {
+             await supabase.from('contacts').insert(payload);
           }
+
       } catch (e) {
           console.error("Upsert Contact Exception:", e);
       }
