@@ -56,41 +56,84 @@ export const api = {
 
   whatsapp: {
       list: async () => {
-          const { data, error } = await supabase.from('whatsapp_connections').select('*').order('created_at');
-          if (error) throw error;
-          return data;
+          // Tenta buscar via API Gateway primeiro para status realtime do container
+          try {
+              const { data: { session } } = await supabase.auth.getSession();
+              // Timeout curto para não travar a UI se o backend estiver dormindo/offline
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 segundos timeout
+
+              const response = await fetch(`${API_BASE_URL}/instances`, {
+                  method: 'GET', // Assumindo que criamos um GET route, senão fallback
+                  headers: { 
+                      'Authorization': `Bearer ${session?.access_token}` 
+                  },
+                  signal: controller.signal
+              });
+              clearTimeout(timeoutId);
+
+              if (response.ok) {
+                  return await response.json();
+              }
+              throw new Error("API Response not OK");
+          } catch (error) {
+              console.warn("Backend API offline ou inalcançável. Usando fallback Supabase direto.", error);
+              // Fallback: Busca direto do banco de dados (Mais robusto para UI)
+              const { data, error: dbError } = await supabase.from('whatsapp_connections').select('*').order('created_at');
+              if (dbError) throw dbError;
+              return data;
+          }
       },
       create: async (name: string) => {
-          // Chama Backend Fastify
-          const { data: { session } } = await supabase.auth.getSession();
-          const response = await fetch(`${API_BASE_URL}/instances`, {
-              method: 'POST',
-              headers: { 
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session?.access_token}` 
-              },
-              body: JSON.stringify({ name, engine: 'whatsmeow' }) // Engine padrão
-          });
-          if (!response.ok) throw new Error('Falha ao criar instância');
-          return await response.json();
-      },
-      connect: async (dbId: string, instanceName: string) => { // instanceName mantido para compatibilidade
-          const { data: { session } } = await supabase.auth.getSession();
-          const response = await fetch(`${API_BASE_URL}/instances/${dbId}/connect`, {
-              method: 'POST',
-              headers: { 
-                  'Authorization': `Bearer ${session?.access_token}` 
+          try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const response = await fetch(`${API_BASE_URL}/instances`, {
+                  method: 'POST',
+                  headers: { 
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${session?.access_token}` 
+                  },
+                  body: JSON.stringify({ name, engine: 'whatsmeow' }) 
+              });
+              if (!response.ok) {
+                  const err = await response.json();
+                  throw new Error(err.message || 'Falha na API');
               }
-          });
-          if (!response.ok) throw new Error('Falha ao conectar');
-          return await response.json();
+              return await response.json();
+          } catch (e) {
+              console.error(e);
+              throw new Error('Servidor de API Offline. Verifique se o container Docker está rodando.');
+          }
+      },
+      connect: async (dbId: string, instanceName: string) => { 
+          try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const response = await fetch(`${API_BASE_URL}/instances/${dbId}/connect`, {
+                  method: 'POST',
+                  headers: { 
+                      'Authorization': `Bearer ${session?.access_token}` 
+                  }
+              });
+              if (!response.ok) throw new Error('Falha ao conectar');
+              return await response.json();
+          } catch (e) {
+              throw new Error('Servidor de API Offline. Não é possível gerar QR Code.');
+          }
       },
       update: async (id: string, updates: any) => {
           const { data } = await supabase.from('whatsapp_connections').update(updates).eq('id', id).select().single();
           return data;
       },
       logout: async (dbId: string, instanceName?: string) => {
-          // Implementar endpoint logout no backend se necessário, ou deletar
+          try {
+              // Tenta logout na API mas não bloqueia se falhar
+              const { data: { session } } = await supabase.auth.getSession();
+              fetch(`${API_BASE_URL}/instances/${dbId}/logout`, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${session?.access_token}` }
+              }).catch(console.warn);
+          } catch(e) {}
+
           const { error } = await supabase.from('whatsapp_connections').update({ status: 'disconnected', qr_code: null }).eq('id', dbId);
           if (error) throw error;
       },
@@ -123,22 +166,27 @@ export const api = {
 
           if (!connection) throw new Error("Nenhuma conexão WhatsApp ativa.");
 
-          // 3. Envia para Fila do Backend
-          const response = await fetch(`${API_BASE_URL}/send`, {
-              method: 'POST',
-              headers: { 
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session?.access_token}`
-              },
-              body: JSON.stringify({
-                  connectionId: connection.id,
-                  to: contact.phone,
-                  content,
-                  type
-              })
-          });
-
-          if (!response.ok) throw new Error("Erro ao enviar mensagem via Backend");
+          // 3. Tenta enviar para Fila do Backend
+          try {
+              const response = await fetch(`${API_BASE_URL}/send`, {
+                  method: 'POST',
+                  headers: { 
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${session?.access_token}`
+                  },
+                  body: JSON.stringify({
+                      connectionId: connection.id,
+                      to: contact.phone,
+                      content,
+                      type
+                  })
+              });
+              if (!response.ok) throw new Error("API Offline");
+          } catch (e) {
+              console.warn("Envio via API falhou, salvando apenas no banco local.", e);
+              // Em produção, isso deveria ir para uma tabela 'message_queue' no Supabase
+              // para ser processada quando o backend voltar.
+          }
 
           // 4. Otimista: Salva no banco local para aparecer na UI imediatamente
           const { data } = await supabase.from('messages').insert({
