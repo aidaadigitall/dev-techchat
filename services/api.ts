@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 import { whatsappService } from './whatsapp';
 
 // URL do Backend Node.js (Fastify)
-const API_BASE_URL = 'https://apitech.escsistemas.com/api/whatsapp';
+const API_BASE_URL = 'https://apitechchat.escsistemas.com/api/whatsapp';
 
 // Helper: Get Current User Company ID
 const getCompanyId = async () => {

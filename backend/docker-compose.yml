@@ -13,6 +13,7 @@ services:
       - NODE_ENV=production
       - REDIS_HOST=redis
       - WHATSMEOW_URL=http://whatsmeow:8080
+      - API_BASE_URL=https://apitechchat.escsistemas.com
     depends_on:
       - redis
       - whatsmeow

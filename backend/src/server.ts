@@ -7,8 +7,14 @@ import { webhookRoutes } from './routes/webhook.routes';
 
 const app = Fastify({ logger: true });
 
+// Configuração de CORS para produção e desenvolvimento local
 app.register(cors, {
-    origin: '*' // Configure domains in production
+    origin: [
+        'https://tech.escsistemas.com', 
+        'http://localhost:5173',
+        'http://localhost:3000'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 });
 
 // Registrar Rotas
