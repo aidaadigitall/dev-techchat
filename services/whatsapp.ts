@@ -103,7 +103,7 @@ class WhatsAppService {
     this.addLog(`Solicitando conexão para: ${this.activeInstance.name}...`);
     
     try {
-        await api.whatsapp.connect(this.activeInstance.id, this.activeInstance.instance_name);
+        await api.whatsapp.connect(this.activeInstance.id);
         this.addLog('Solicitação enviada. Aguardando QR Code...');
     } catch (error: any) {
         this.addLog(`Erro ao conectar: ${error.message}`);
@@ -116,7 +116,7 @@ class WhatsAppService {
 
     try {
         this.addLog('Desconectando...');
-        await api.whatsapp.logout(this.activeInstance.id, this.activeInstance.instance_name);
+        await api.whatsapp.logout(this.activeInstance.id);
         this.emit('status', 'disconnected');
         this.addLog('Desconectado.');
     } catch (e: any) {

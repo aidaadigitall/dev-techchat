@@ -186,7 +186,7 @@ const SuperAdminCompanies: React.FC = () => {
           <p className="text-gray-500">Gerencie todas as instâncias e acessos.</p>
         </div>
         <button 
-          onClick={handleOpenCreate}
+          onClick={() => handleOpenCreate()}
           className="bg-gray-900 text-white px-4 py-2 rounded-lg flex items-center hover:bg-gray-800 transition-colors shadow-sm"
         >
           <Plus size={18} className="mr-2" /> Nova Empresa

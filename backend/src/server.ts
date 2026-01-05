@@ -33,7 +33,7 @@ const start = async () => {
         console.log(`🚀 Backend Tech Chat running on port ${env.PORT}`);
     } catch (err) {
         app.log.error(err);
-        process.exit(1);
+        (process as any).exit(1);
     }
 };
 

@@ -1,873 +1,163 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { api, adaptMessage } from '../services/api';
-import { supabase } from '../services/supabase'; 
-import { whatsappService } from '../services/whatsapp'; 
-import { Contact, Message, MessageType, QuickReply, AIInsight, Proposal, Branding, TaskPriority } from '../types';
-import { 
-  Search, MoreVertical, Paperclip, Smile, Mic, Send, 
-  Check, CheckCheck, Tag, Clock, User, MessageSquare,
-  Phone, Video, FileText, Image as ImageIcon, Briefcase,
-  Bot, ChevronDown, X, Loader2, ArrowRightLeft,
-  Calendar, CheckSquare, Trash2, Plus, Key, Save, Settings,
-  Edit, Share2, Download, Ban, Film, Repeat, MapPin, PenTool, Zap, Map, Sparkles, BrainCircuit, Lightbulb, PlayCircle, Target, Lock,
-  Star, PhoneCall, Grid, List, ChevronLeft, FileSpreadsheet, CornerDownRight, Eye, Reply,
-  ArrowRight, StickyNote, RefreshCw, AlertTriangle, AlertCircle, File, Copy, Forward, Info, Navigation
-} from 'lucide-react';
+import { Contact, Message, MessageType } from '../types';
+import { Search, MoreVertical, Paperclip, Send, Check, CheckCheck, Clock, Plus, Phone, Video, Bot, ChevronLeft, Trash2 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
 
-const COMMON_EMOJIS = [
-  "😀", "😂", "😅", "🥰", "😎", "🤔", "👍", "👎", "👋", "🙏", "🔥", "🎉", "❤️", "💔", "✅", "❌", "✉️", "📞", "👀", "🚀", "✨", "💯",
-  "😊", "🥺", "😭", "😤", "🤒", "🤒", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "👯", "🕴️"
-];
-
-const DEPARTMENTS = [
-  { id: 'comercial', name: 'Comercial' },
-  { id: 'suporte', name: 'Suporte Técnico' },
-  { id: 'financeiro', name: 'Financeiro' },
-  { id: 'retencao', name: 'Retenção' }
-];
-
-interface ChatProps {
-  branding?: Branding;
-}
-
-const Chat: React.FC<ChatProps> = ({ branding }) => {
+const Chat: React.FC = () => {
   const { addToast } = useToast();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [activeTab, setActiveTab] = useState<'open' | 'pending' | 'resolved'>('open');
   
-  // Right Panel States
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  
-  // AI States
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiAnalysisResult, setAiAnalysisResult] = useState<any | null>(null);
-  
-  // Chat States
-  const [isTyping, setIsTyping] = useState(false);
-  const [isContactTyping, setIsContactTyping] = useState(false);
-  const [isSending, setIsSending] = useState(false);
-  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
-  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
-  const [messageMenuOpenId, setMessageMenuOpenId] = useState<string | null>(null);
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [loading, setLoading] = useState(false);
-  
-  // Search Messages State
-  const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
-  const [messageSearchQuery, setMessageSearchQuery] = useState('');
-
-  // Advanced Features States
-  const [signatureEnabled, setSignatureEnabled] = useState(true); 
-  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
-  const [showQuickReplies, setShowQuickReplies] = useState(false);
-  const [isCreatingQuickReply, setIsCreatingQuickReply] = useState(false);
-  const [newQuickReplyForm, setNewQuickReplyForm] = useState({ shortcut: '', content: '' });
-
-  // Attachment State
-  const [attachment, setAttachment] = useState<{ file?: File, preview?: string, type: MessageType, text?: string } | null>(null);
-  
-  const [activeModal, setActiveModal] = useState<'transfer' | 'export' | 'schedule' | 'forward' | 'resolve' | 'delete' | 'block' | 'createTask' | 'tags' | 'deleteMessage' | null>(null);
-  const [modalData, setModalData] = useState<any>(null); 
-  
-  const [newTaskForm, setNewTaskForm] = useState({ title: '', dueDate: '', priority: 'p2' as TaskPriority });
-  
-  // New Chat Modal States
-  const [newChatModalOpen, setNewChatModalOpen] = useState(false);
-  const [availableConnections, setAvailableConnections] = useState<{id: string, name: string}[]>([]);
-  const [newChatForm, setNewChatForm] = useState({
-      contactId: '',
-      connectionId: '',
-      sectorId: '',
-      initialMessage: ''
-  });
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Polling State
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
 
   useEffect(() => {
-    // Load Connections from LocalStorage
-    try {
-        const saved = localStorage.getItem('wa_saved_instances');
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            const mapped = parsed.map((p: any) => ({ id: p.id, name: p.instanceName }));
-            setAvailableConnections(mapped);
-            if(mapped.length > 0) {
-                setNewChatForm(prev => ({...prev, connectionId: mapped[0].id}));
-            }
-        } else {
-            // Default Fallback
-            setAvailableConnections([{id: 'default', name: 'WhatsApp Padrão'}]);
-        }
-    } catch(e) {
-        setAvailableConnections([{id: 'default', name: 'WhatsApp Padrão'}]);
-    }
-
-    const loadInit = async () => {
-        const fetchedContacts = await api.contacts.list();
-        setContacts(fetchedContacts);
-        if (!selectedContact && fetchedContacts.length > 0 && window.innerWidth >= 768) {
-           const initial = fetchedContacts.find(c => c.status === activeTab) || fetchedContacts[0];
-           if (initial && initial.status === activeTab) setSelectedContact(initial);
-        }
-    };
-    loadInit();
-    const contactsChannel = supabase.channel('contacts-list')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, () => loadInit())
-        .subscribe();
-    return () => { supabase.removeChannel(contactsChannel); };
-  }, [activeTab]);
+    loadContacts();
+  }, []);
 
   useEffect(() => {
     if (!selectedContact) return;
     loadMessages(selectedContact.id);
-    loadQuickReplies(); // Load on contact switch to ensure freshness
-    setAiAnalysisResult(null); // Clear previous analysis
     
-    const chatChannel = supabase.channel(`chat-${selectedContact.id}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `contact_id=eq.${selectedContact.id}` }, (payload) => {
-            const newMsg = adaptMessage(payload.new);
-            setMessages(prev => { if (prev.find(m => m.id === newMsg.id)) return prev; return [...prev, newMsg]; });
-            if (newMsg.senderId !== 'me') setIsContactTyping(false);
-        }).subscribe();
-
-    setAttachment(null);
-    setMessageInput('');
-    setReplyingTo(null);
-    setIsContactTyping(false); // Reset typing state
-    return () => { supabase.removeChannel(chatChannel); };
+    // Simple polling every 5s for new messages (since we removed Supabase Realtime)
+    const interval = setInterval(() => {
+        loadMessages(selectedContact.id);
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, [selectedContact]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping, attachment, isContactTyping, replyingTo, messageSearchQuery]);
-
-  // Click outside to close message menu
-  useEffect(() => {
-    const handleClickOutside = () => setMessageMenuOpenId(null);
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
+  const loadContacts = async () => {
+      const fetchedContacts = await api.contacts.list();
+      setContacts(fetchedContacts);
+  };
 
   const loadMessages = async (contactId: string) => {
     const data = await api.chat.getMessages(contactId);
     setMessages(data);
   };
 
-  const loadQuickReplies = async () => {
-    const data = await api.chat.getQuickReplies();
-    setQuickReplies(data);
-  };
-
-  const handleCreateQuickReply = async () => {
-    if (!newQuickReplyForm.shortcut || !newQuickReplyForm.content) return;
-    
-    const shortcut = newQuickReplyForm.shortcut.startsWith('/') ? newQuickReplyForm.shortcut : `/${newQuickReplyForm.shortcut}`;
-    
-    try {
-        // Call API to persist
-        const newReply = await api.chat.createQuickReply(shortcut, newQuickReplyForm.content);
-        
-        // Update local state IMMEDIATELY
-        setQuickReplies(prev => [...prev, newReply]);
-        
-        setIsCreatingQuickReply(false);
-        setNewQuickReplyForm({ shortcut: '', content: '' });
-        addToast('Resposta rápida salva com sucesso!', 'success');
-    } catch (e) {
-        addToast('Erro ao salvar resposta rápida.', 'error');
-    }
-  };
-
-  const handleReplyMessage = (message: Message) => { setReplyingTo(message); setMessageMenuOpenId(null); const input = document.querySelector('input[type="text"]') as HTMLInputElement; if (input) input.focus(); };
-  
   const handleSendMessage = async () => {
-    if ((!messageInput.trim() && !attachment) || !selectedContact) return;
-    setIsSending(true);
-    let contentToSend = messageInput;
-    if (signatureEnabled && !attachment) contentToSend += `\n\n~ Admin User`;
-
+    if (!messageInput.trim() || !selectedContact) return;
+    
     const tempId = `temp_${Date.now()}`;
     const optimisticMessage: Message = {
-        id: tempId, content: contentToSend, senderId: 'me', timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-        type: attachment ? attachment.type : MessageType.TEXT, status: 'sent', channel: 'whatsapp', mediaUrl: attachment?.preview, fileName: attachment?.file?.name
+        id: tempId, content: messageInput, senderId: 'me', timestamp: new Date().toLocaleTimeString(),
+        type: MessageType.TEXT, status: 'sent', channel: 'whatsapp'
     };
+    
     setMessages(prev => [...prev, optimisticMessage]);
-    setMessageInput(''); setAttachment(null); setReplyingTo(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    setMessageInput('');
 
     try { 
-        await api.chat.sendMessage(selectedContact.id, contentToSend, optimisticMessage.type); 
-        
-        // Simulate contact typing response after 1.5 seconds for UX demo
-        setTimeout(() => {
-            setIsContactTyping(true);
-            setTimeout(() => setIsContactTyping(false), 3000); // Stop typing after 3s
-        }, 1500);
-
+        await api.chat.sendMessage(selectedContact.id, optimisticMessage.content, MessageType.TEXT);
+        loadMessages(selectedContact.id); // Refresh to get real ID and status
+    } catch (e: any) { 
+        addToast(`Erro: ${e.message}`, 'error'); 
     } 
-    catch (e: any) { setMessages(prev => prev.filter(m => m.id !== tempId)); addToast(`Erro: ${e.message}`, 'error'); } 
-    finally { setIsSending(false); }
   };
 
-  const handleSendLocation = async (type: 'static' | 'live') => {
-      if (!selectedContact) return;
-      if (!navigator.geolocation) {
-          addToast('Geolocalização não suportada pelo seu navegador.', 'error');
-          return;
-      }
-
-      setAttachmentMenuOpen(false);
-      addToast('Obtendo localização...', 'info');
-
-      navigator.geolocation.getCurrentPosition(
-          async (position) => {
-              const { latitude, longitude } = position.coords;
-              const content = type === 'live' ? 'Localização em Tempo Real iniciada' : '📍 Localização Fixa';
-              
-              const tempId = `temp_${Date.now()}`;
-              const optimisticMessage: Message = {
-                  id: tempId,
-                  content: content,
-                  senderId: 'me',
-                  timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                  type: MessageType.LOCATION,
-                  status: 'sent',
-                  channel: 'whatsapp',
-                  location: { lat: latitude, lng: longitude }
-              };
-              
-              setMessages(prev => [...prev, optimisticMessage]);
-
-              try {
-                  // Send location via API
-                  await api.chat.sendMessage(selectedContact.id, content, MessageType.LOCATION, { 
-                      lat: latitude, 
-                      lng: longitude, 
-                      isLive: type === 'live' 
-                  });
-              } catch (e: any) {
-                  setMessages(prev => prev.filter(m => m.id !== tempId));
-                  addToast(`Erro ao enviar localização: ${e.message}`, 'error');
-              }
-          },
-          (error) => {
-              addToast(`Erro ao obter localização: ${error.message}`, 'error');
-          }
-      );
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
-  
-  // Handlers for Modals (Block, Export, Resolve, Delete, etc)
-  const handleResolveTicket = () => { if(selectedContact) setActiveModal('resolve'); };
-  const confirmResolveTicket = async () => { if(selectedContact) { await api.contacts.update(selectedContact.id, {status: 'resolved'}); setActiveModal(null); } };
-  const handleBlockContactModal = () => { if(selectedContact) setActiveModal('block'); };
-  const confirmBlockContact = async () => { if(selectedContact) { await api.contacts.update(selectedContact.id, {blocked: !selectedContact.blocked}); setActiveModal(null); } };
-  const handleDeleteChat = () => { if(selectedContact) setActiveModal('delete'); };
-  const confirmDeleteChat = async () => { if(selectedContact) { await api.contacts.delete(selectedContact.id); setActiveModal(null); setSelectedContact(null); } };
-  const handleDeleteMessage = (id: string) => { setModalData({messageId: id}); setActiveModal('deleteMessage'); };
-  const confirmDeleteMessage = () => { setMessages(prev => prev.filter(m => m.id !== modalData.messageId)); setActiveModal(null); };
-  const handleCreateTask = () => { if(selectedContact) setActiveModal('createTask'); };
-  const confirmCreateTask = async () => { if(newTaskForm.title) { await api.tasks.create(newTaskForm); setActiveModal(null); addToast('Tarefa criada', 'success'); } };
-  
-  // AI Analysis Logic
-  const handleAnalyzeChat = async () => { 
-      if(selectedContact) { 
-          setIsAnalyzing(true);
-          try {
-              const rawResult = await api.ai.analyzeConversation(messages);
-              const parsedResult = JSON.parse(rawResult);
-              setAiAnalysisResult(parsedResult);
-              setRightPanelOpen(true); // Ensure panel is open to see result
-          } catch(e) {
-              addToast('Erro ao analisar conversa.', 'error');
-          } finally {
-              setIsAnalyzing(false); 
-          }
+  const handleKeyPress = (e: React.KeyboardEvent) => { 
+      if (e.key === 'Enter' && !e.shiftKey) { 
+          e.preventDefault(); 
+          handleSendMessage(); 
       } 
   };
-  
-  // Start New Chat Handler
-  const handleStartChat = async () => {
-      if (!newChatForm.contactId) {
-          addToast("Selecione um contato para iniciar.", "warning");
-          return;
-      }
-      if (!newChatForm.sectorId) {
-          addToast("Selecione o setor responsável.", "warning");
-          return;
-      }
-
-      setLoading(true);
-      try {
-          if (newChatForm.initialMessage.trim()) {
-              await api.chat.sendMessage(newChatForm.contactId, newChatForm.initialMessage);
-          }
-          await api.contacts.update(newChatForm.contactId, { status: 'open' });
-
-          addToast("Atendimento iniciado com sucesso!", "success");
-          setNewChatModalOpen(false);
-          setNewChatForm(prev => ({ ...prev, contactId: '', sectorId: '', initialMessage: '' }));
-          
-          // Switch to new contact
-          const selected = contacts.find(c => c.id === newChatForm.contactId);
-          if (selected) setSelectedContact(selected);
-      } catch (error) {
-          addToast("Erro ao iniciar atendimento.", "error");
-      } finally {
-          setLoading(false);
-      }
-  };
-
-  // New Message Actions
-  const handleStarMessage = (message: Message) => {
-      setMessages(prev => prev.map(m => m.id === message.id ? { ...m, starred: !m.starred } : m));
-      setMessageMenuOpenId(null);
-      addToast(message.starred ? 'Mensagem removida dos favoritos' : 'Mensagem favoritada', 'success');
-  };
-
-  const handleCopyMessage = (content: string) => {
-      navigator.clipboard.writeText(content);
-      setMessageMenuOpenId(null);
-      addToast('Copiado para a área de transferência', 'info');
-  };
-
-  // --- Attachment Handling ---
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const isImage = file.type.startsWith('image');
-      const isVideo = file.type.startsWith('video');
-      
-      const type = isImage ? MessageType.IMAGE : isVideo ? MessageType.VIDEO : MessageType.DOCUMENT;
-      const preview = URL.createObjectURL(file);
-      
-      setAttachment({ file, preview, type });
-      setAttachmentMenuOpen(false);
-    }
-  };
-
-  const removeAttachment = () => {
-      setAttachment(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const filteredMessages = messages.filter(m => m.content.toLowerCase().includes(messageSearchQuery.toLowerCase()));
-
-  // Render Helpers
-  const StatusIcon = ({ status }: { status: string }) => { if (status === 'sent') return <Check size={14} className="text-gray-400" />; if (status === 'delivered') return <CheckCheck size={14} className="text-gray-400" />; if (status === 'read') return <CheckCheck size={14} className="text-blue-500" />; return <Clock size={14} className="text-gray-300" />; };
 
   return (
     <div className="flex h-full bg-white overflow-hidden relative">
-      {/* 1. Sidebar - Contact List */}
+      {/* Sidebar - Contact List */}
       <div className={`w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50 h-full absolute md:relative z-20 md:z-auto transition-transform duration-300 ${selectedContact ? '-translate-x-full md:translate-x-0' : 'translate-x-0'}`}>
-         
-         {/* Search & New Chat Button */}
          <div className="p-4 bg-white border-b border-gray-100">
-           <div className="flex gap-2 mb-3">
-               <div className="relative flex-1">
-                   <input type="text" placeholder="Buscar conversa..." className="w-full bg-gray-100 border-none rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 transition-all" />
-                   <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-               </div>
-               
-               <button 
-                 onClick={() => setNewChatModalOpen(true)}
-                 className="group relative flex items-center justify-center p-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors shadow-sm"
-               >
-                   <Plus size={20} />
-                   <span className="absolute top-full right-0 mt-2 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap">
-                       Novo Atendimento
-                   </span>
-               </button>
-           </div>
-
-           <div className="flex bg-gray-100 rounded-lg p-1">
-              {[{ id: 'open', label: 'Abertos' }, { id: 'pending', label: 'Pendentes' }, { id: 'resolved', label: 'Fechados' }].map(tab => (
-                 <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === tab.id ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tab.label}</button>
-              ))}
+           <div className="relative">
+               <input type="text" placeholder="Buscar conversa..." className="w-full bg-gray-100 border-none rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500" />
+               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
            </div>
          </div>
-         <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {contacts.filter(c => c.status === activeTab).map(contact => (
+         <div className="flex-1 overflow-y-auto">
+            {contacts.map(contact => (
                <div key={contact.id} onClick={() => setSelectedContact(contact)} className={`flex items-center p-3 cursor-pointer transition-colors border-b border-gray-100 hover:bg-gray-50 ${selectedContact?.id === contact.id ? 'bg-purple-50 border-l-4 border-l-purple-600' : 'border-l-4 border-l-transparent'}`}>
                   <img src={contact.avatar} className="w-10 h-10 rounded-full object-cover mr-3" />
-                  <div className="flex-1 overflow-hidden"><div className="flex justify-between items-baseline mb-0.5"><span className="text-sm font-semibold truncate">{contact.name}</span><span className="text-[10px] text-gray-400">{contact.lastMessageTime}</span></div><p className="text-xs text-gray-500 truncate">{contact.lastMessage}</p></div>
+                  <div className="flex-1 overflow-hidden">
+                      <div className="flex justify-between items-baseline mb-0.5">
+                          <span className="text-sm font-semibold truncate">{contact.name}</span>
+                          <span className="text-[10px] text-gray-400">{contact.lastMessageTime}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">{contact.lastMessage}</p>
+                  </div>
                </div>
             ))}
          </div>
       </div>
 
-      {/* 2. Chat Area */}
+      {/* Chat Area */}
       <div className={`flex-1 flex flex-col relative bg-[#efeae2] h-full w-full absolute md:relative transition-transform duration-300 ${selectedContact ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
          {selectedContact ? (
            <>
              {/* Header */}
              <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-10 shadow-sm">
-                <div className="flex items-center flex-1" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
-                   <button onClick={(e) => { e.stopPropagation(); setSelectedContact(null); }} className="md:hidden mr-3 text-gray-600"><ChevronLeft size={24} /></button>
-                   <div className="flex items-center cursor-pointer flex-1">
-                      <img src={selectedContact.avatar} className="w-9 h-9 rounded-full object-cover mr-3" />
-                      <div>
-                          <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
-                          {isContactTyping ? (
-                              <p className="text-xs text-green-600 font-bold animate-pulse">Digitando...</p>
-                          ) : (
-                              <p className="text-xs text-gray-500">{selectedContact.company || 'Cliente'}</p>
-                          )}
-                      </div>
+                <div className="flex items-center">
+                   <button onClick={() => setSelectedContact(null)} className="md:hidden mr-3 text-gray-600"><ChevronLeft size={24} /></button>
+                   <img src={selectedContact.avatar} className="w-9 h-9 rounded-full object-cover mr-3" />
+                   <div>
+                       <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
+                       <p className="text-xs text-gray-500">{selectedContact.phone}</p>
                    </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                    <button onClick={() => setIsMessageSearchOpen(!isMessageSearchOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Search size={20} /></button>
-                    <button onClick={() => setRightPanelOpen(!rightPanelOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title="Ver Detalhes"><Info size={20} /></button>
-                    <button onClick={() => setHeaderMenuOpen(!headerMenuOpen)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><MoreVertical size={20} /></button>
-                    {headerMenuOpen && (
-                        <div className="absolute right-4 top-12 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-50 animate-fadeIn">
-                            <button onClick={handleResolveTicket} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center"><CheckSquare size={16} className="mr-2"/> Resolver</button>
-                            <button onClick={handleBlockContactModal} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center"><Ban size={16} className="mr-2"/> Bloquear</button>
-                            <button onClick={handleDeleteChat} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center"><Trash2 size={16} className="mr-2"/> Excluir</button>
-                        </div>
-                    )}
+                    <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Phone size={20} /></button>
+                    <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Video size={20} /></button>
+                    <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><MoreVertical size={20} /></button>
                 </div>
              </div>
 
              {/* Messages */}
              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
-                {filteredMessages.map((msg) => (
-                   <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} group mb-2 relative`}>
+                {messages.map((msg) => (
+                   <div key={msg.id} className={`flex ${msg.senderId === 'me' ? 'justify-end' : 'justify-start'} group mb-2`}>
                       <div className={`max-w-[85%] relative shadow-sm rounded-lg px-3 py-2 text-sm ${msg.senderId === 'me' ? 'bg-[#d9fdd3] text-gray-900 rounded-tr-none' : 'bg-white text-gray-900 rounded-tl-none'}`}>
-                         
-                         {/* Attachment Rendering */}
-                         {msg.type === MessageType.IMAGE && msg.mediaUrl && (
-                             <div className="mb-1 rounded overflow-hidden">
-                                 <img src={msg.mediaUrl} alt="anexo" className="max-w-full h-auto object-cover max-h-64" />
-                             </div>
-                         )}
-                         {msg.type === MessageType.DOCUMENT && (
-                             <div className="flex items-center bg-gray-100 p-2 rounded mb-1 border border-gray-200">
-                                 <FileText size={24} className="text-red-500 mr-2" />
-                                 <span className="truncate max-w-[200px]">{msg.fileName || 'Documento'}</span>
-                             </div>
-                         )}
-                         {msg.type === MessageType.LOCATION && (
-                             <div className="mb-1 rounded overflow-hidden border border-gray-200 bg-gray-50">
-                                <div className="h-32 bg-gray-200 flex items-center justify-center relative">
-                                    <Map size={48} className="text-gray-400" />
-                                    {msg.location && (
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/50">
-                                            <span className="text-xs font-mono text-gray-600">{msg.location.lat.toFixed(4)}, {msg.location.lng.toFixed(4)}</span>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="p-2 bg-white flex items-center">
-                                    <MapPin size={16} className="text-red-500 mr-2" />
-                                    <span className="text-xs font-bold text-gray-700">Localização Compartilhada</span>
-                                </div>
-                             </div>
-                         )}
-
-                         {msg.content && <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
-                         
+                         <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                          <div className="flex items-center justify-end space-x-1 mt-1">
-                            {msg.starred && <Star size={10} className="text-yellow-500 fill-yellow-500" />}
                             <span className="text-[10px] text-gray-500">{msg.timestamp}</span>
-                            {msg.senderId === 'me' && <StatusIcon status={msg.status} />}
+                            {msg.senderId === 'me' && (
+                                msg.status === 'read' ? <CheckCheck size={14} className="text-blue-500"/> : <Check size={14} className="text-gray-400"/>
+                            )}
                          </div>
-                         
-                         {/* Enhanced Context Menu Button */}
-                         <button 
-                           onClick={(e) => { e.stopPropagation(); setMessageMenuOpenId(messageMenuOpenId === msg.id ? null : msg.id); }} 
-                           className={`absolute top-0 right-0 p-1 rounded-full bg-white/50 text-gray-500 hover:bg-white hover:text-gray-800 transition-all opacity-0 group-hover:opacity-100 shadow-sm`}
-                         >
-                           <ChevronDown size={14} />
-                         </button>
-
-                         {/* Enhanced Dropdown Menu */}
-                         {messageMenuOpenId === msg.id && (
-                            <div className="absolute top-6 right-0 bg-white rounded-xl shadow-xl border border-gray-100 z-50 w-48 overflow-hidden animate-scaleIn origin-top-right">
-                               <div className="p-1">
-                                  <button onClick={() => handleReplyMessage(msg)} className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
-                                     <Reply size={14} className="mr-3 text-gray-500"/> Responder
-                                  </button>
-                                  <button onClick={() => handleStarMessage(msg)} className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
-                                     <Star size={14} className={`mr-3 ${msg.starred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-500'}`}/> {msg.starred ? 'Desfavoritar' : 'Favoritar'}
-                                  </button>
-                                  <button onClick={() => handleCopyMessage(msg.content)} className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
-                                     <Copy size={14} className="mr-3 text-gray-500"/> Copiar
-                                  </button>
-                                  <button className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded-lg flex items-center transition-colors">
-                                     <Forward size={14} className="mr-3 text-gray-500"/> Encaminhar
-                                  </button>
-                               </div>
-                               <div className="border-t border-gray-100 p-1 bg-gray-50/50">
-                                  <button onClick={() => handleDeleteMessage(msg.id)} className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-lg flex items-center transition-colors font-medium">
-                                     <Trash2 size={14} className="mr-3"/> Apagar
-                                  </button>
-                               </div>
-                            </div>
-                         )}
                       </div>
                    </div>
                 ))}
-                <div ref={messagesEndRef} />
              </div>
 
              {/* Footer */}
              <div className="bg-[#f0f2f5] px-4 py-2 border-t border-gray-200">
-                {replyingTo && <div className="mb-2 p-2 bg-white rounded border-l-4 border-purple-500 flex justify-between animate-fadeIn"><div className="text-xs text-gray-500 truncate">Respondendo: {replyingTo.content}</div><button onClick={() => setReplyingTo(null)}><X size={14}/></button></div>}
-                
-                {/* Attachment Preview Area */}
-                {attachment && (
-                    <div className="mb-2 p-2 bg-gray-200 rounded-lg flex items-center justify-between animate-fadeIn border border-gray-300">
-                        <div className="flex items-center gap-3">
-                            {attachment.type === MessageType.IMAGE || attachment.type === MessageType.VIDEO ? (
-                                <img src={attachment.preview} alt="preview" className="h-16 w-16 object-cover rounded-md border border-gray-300" />
-                            ) : (
-                                <div className="h-16 w-16 bg-white rounded-md flex items-center justify-center border border-gray-300">
-                                    <FileText size={24} className="text-gray-500" />
-                                </div>
-                            )}
-                            <div className="flex flex-col">
-                                <span className="text-xs font-bold text-gray-700 truncate max-w-[150px]">{attachment.file?.name}</span>
-                                <span className="text-[10px] text-gray-500 uppercase">{attachment.type}</span>
-                            </div>
-                        </div>
-                        <button onClick={removeAttachment} className="p-1 bg-white rounded-full text-gray-500 hover:text-red-500 shadow-sm transition-colors">
-                            <X size={16} />
-                        </button>
-                    </div>
-                )}
-
-                <div className="flex items-end gap-2 relative">
-                   <div className="relative">
-                      <button onClick={() => setAttachmentMenuOpen(!attachmentMenuOpen)} className="p-3 text-gray-500 hover:bg-gray-200 rounded-full transition-colors"><Paperclip size={24} /></button>
-                      
-                      {/* Attachment Menu */}
-                      {attachmentMenuOpen && (
-                         <div className="absolute bottom-14 left-0 flex flex-col gap-2 animate-scaleIn origin-bottom-left z-20">
-                            {/* Hidden Input for Files */}
-                            <input 
-                                type="file" 
-                                ref={fileInputRef} 
-                                className="hidden" 
-                                onChange={handleFileSelect} 
-                                accept="image/*,video/*,application/pdf,.doc,.docx"
-                            />
-                            
-                            <div 
-                                onClick={() => fileInputRef.current?.click()} 
-                                className="flex items-center gap-2 cursor-pointer group"
-                            >
-                                <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-                                    <ImageIcon size={20} />
-                                </div>
-                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Fotos e Vídeos</span>
-                            </div>
-
-                            <div 
-                                onClick={() => fileInputRef.current?.click()} 
-                                className="flex items-center gap-2 cursor-pointer group"
-                            >
-                                <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-                                    <FileText size={20} />
-                                </div>
-                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Documento</span>
-                            </div>
-
-                            <div onClick={() => handleSendLocation('static')} className="flex items-center gap-2 cursor-pointer group">
-                                <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-                                    <MapPin size={20} />
-                                </div>
-                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Localização</span>
-                            </div>
-
-                            <div onClick={() => handleSendLocation('live')} className="flex items-center gap-2 cursor-pointer group">
-                                <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-                                    <Navigation size={20} />
-                                </div>
-                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Localização em Tempo Real</span>
-                            </div>
-
-                            <div onClick={() => setShowQuickReplies(true)} className="flex items-center gap-2 cursor-pointer group">
-                                <div className="w-10 h-10 rounded-full bg-yellow-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-                                    <Zap size={20} />
-                                </div>
-                                <span className="bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Respostas Rápidas</span>
-                            </div>
-                         </div>
-                      )}
-                   </div>
+                <div className="flex items-end gap-2">
+                   <button className="p-3 text-gray-500 hover:bg-gray-200 rounded-full transition-colors"><Paperclip size={24} /></button>
                    <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 flex items-center px-2 py-1">
-                      <input type="text" placeholder="Digite uma mensagem..." className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 py-3" value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyDown={handleKeyPress} />
+                      <input 
+                        type="text" 
+                        placeholder="Digite uma mensagem..." 
+                        className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 py-3" 
+                        value={messageInput} 
+                        onChange={(e) => setMessageInput(e.target.value)} 
+                        onKeyDown={handleKeyPress} 
+                      />
                    </div>
-                   <button onClick={handleSendMessage} className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 shadow-sm transition-transform active:scale-95"><Send size={20} /></button>
+                   <button onClick={handleSendMessage} className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 shadow-sm"><Send size={20} /></button>
                 </div>
              </div>
            </>
          ) : (
-           <div className="flex-1 flex flex-col items-center justify-center bg-[#f0f2f5]"><MessageSquare size={56} className="text-gray-300 mb-4"/><p className="text-gray-500">Selecione um contato para iniciar.</p></div>
+           <div className="flex-1 flex flex-col items-center justify-center bg-[#f0f2f5]">
+               <Bot size={56} className="text-gray-300 mb-4"/>
+               <p className="text-gray-500">Selecione um contato para iniciar.</p>
+           </div>
          )}
       </div>
-
-      {/* 3. Right Panel (Expanded Info) */}
-      <div className={`w-80 bg-white border-l border-gray-200 flex flex-col h-full absolute right-0 z-20 transition-transform duration-300 ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'} shadow-xl`}>
-          <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="font-bold text-gray-700">Dados do Contato</h3>
-              <button onClick={() => setRightPanelOpen(false)} className="text-gray-500 hover:bg-gray-200 rounded-full p-1"><X size={20}/></button>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Profile Header */}
-              <div className="flex flex-col items-center">
-                  <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md mb-3">
-                      <img src={selectedContact?.avatar} className="w-full h-full object-cover" alt={selectedContact?.name} />
-                  </div>
-                  <h2 className="text-lg font-bold text-gray-900">{selectedContact?.name}</h2>
-                  <p className="text-sm text-gray-500">{selectedContact?.phone}</p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-center gap-4">
-                  <button className="flex flex-col items-center text-gray-600 hover:text-purple-600 transition-colors">
-                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-1 hover:bg-purple-50">
-                          <Phone size={18} />
-                      </div>
-                      <span className="text-xs">Ligar</span>
-                  </button>
-                  <button className="flex flex-col items-center text-gray-600 hover:text-purple-600 transition-colors">
-                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-1 hover:bg-purple-50">
-                          <Video size={18} />
-                      </div>
-                      <span className="text-xs">Vídeo</span>
-                  </button>
-                  <button className="flex flex-col items-center text-gray-600 hover:text-purple-600 transition-colors">
-                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-1 hover:bg-purple-50">
-                          <Search size={18} />
-                      </div>
-                      <span className="text-xs">Buscar</span>
-                  </button>
-              </div>
-
-              {/* Info Details */}
-              <div className="space-y-4 border-t border-gray-100 pt-4">
-                  <div>
-                      <label className="text-xs font-bold text-gray-400 uppercase">Email</label>
-                      <p className="text-sm text-gray-800">{selectedContact?.email || '-'}</p>
-                  </div>
-                  <div>
-                      <label className="text-xs font-bold text-gray-400 uppercase">Empresa / Cargo</label>
-                      <p className="text-sm text-gray-800">{selectedContact?.company || '-'} / {selectedContact?.role || '-'}</p>
-                  </div>
-                  <div>
-                      <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">Etiquetas</label>
-                      <div className="flex flex-wrap gap-1">
-                          {selectedContact?.tags && selectedContact.tags.length > 0 ? (
-                              selectedContact.tags.map(tag => (
-                                  <span key={tag} className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs border border-gray-200">{tag}</span>
-                              ))
-                          ) : (
-                              <span className="text-xs text-gray-400 italic">Sem etiquetas</span>
-                          )}
-                          <button className="px-2 py-1 bg-purple-50 text-purple-600 rounded text-xs hover:bg-purple-100 transition-colors border border-purple-100">+ Add</button>
-                      </div>
-                  </div>
-                  
-                  {/* Strategic Notes Preview */}
-                  {selectedContact?.strategicNotes && (
-                      <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                          <label className="text-xs font-bold text-yellow-700 uppercase mb-1 flex items-center"><StickyNote size={12} className="mr-1"/> Notas Estratégicas</label>
-                          <p className="text-xs text-gray-700 line-clamp-4 italic">
-                              "{selectedContact.strategicNotes}"
-                          </p>
-                      </div>
-                  )}
-              </div>
-
-              {/* AI Intelligence Section */}
-              <div className="border-t border-gray-100 pt-4">
-                  <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center">
-                      <BrainCircuit size={16} className="mr-2 text-purple-600" /> Inteligência Artificial
-                  </h4>
-                  
-                  {!aiAnalysisResult ? (
-                      <button 
-                        onClick={handleAnalyzeChat} 
-                        disabled={isAnalyzing}
-                        className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg p-2.5 text-sm font-medium hover:opacity-90 flex items-center justify-center shadow-md transition-all"
-                      >
-                          {isAnalyzing ? <Loader2 size={16} className="animate-spin mr-2" /> : <Sparkles size={16} className="mr-2" />}
-                          {isAnalyzing ? 'Analisando...' : 'Analisar Conversa'}
-                      </button>
-                  ) : (
-                      <div className="bg-purple-50 rounded-xl border border-purple-100 p-3 text-sm animate-fadeIn">
-                          <div className="flex justify-between items-center mb-2">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${aiAnalysisResult.sentiment === 'positive' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'}`}>
-                                  {aiAnalysisResult.sentiment === 'positive' ? 'Positivo' : 'Neutro'}
-                              </span>
-                              <span className="flex items-center text-[10px] text-purple-700 font-bold">
-                                  <Target size={10} className="mr-1"/> Oportunidade: {aiAnalysisResult.opportunity === 'high' ? 'Alta' : 'Normal'}
-                              </span>
-                          </div>
-                          
-                          <p className="text-gray-700 text-xs mb-3 italic leading-relaxed">
-                              "{aiAnalysisResult.summary}"
-                          </p>
-                          
-                          <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Sugestões de Ação:</p>
-                          <ul className="space-y-1">
-                              {aiAnalysisResult.actions?.map((action: string, i: number) => (
-                                  <li key={i} className="flex items-start text-xs text-gray-700">
-                                      <span className="mr-1.5 mt-0.5 text-purple-500">•</span> {action}
-                                  </li>
-                              ))}
-                          </ul>
-                          
-                          <button 
-                            onClick={() => setAiAnalysisResult(null)}
-                            className="w-full text-center text-[10px] text-gray-400 mt-3 hover:text-purple-600 underline"
-                          >
-                              Nova Análise
-                          </button>
-                      </div>
-                  )}
-              </div>
-
-              {/* CRM Shortcuts */}
-              <div className="border-t border-gray-100 pt-4">
-                  <h4 className="text-sm font-bold text-gray-800 mb-2">Ações CRM</h4>
-                  <button onClick={handleCreateTask} className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors group">
-                      <div className="flex items-center text-sm text-gray-700">
-                          <CheckSquare size={16} className="mr-2 text-gray-400 group-hover:text-purple-600"/> Criar Tarefa
-                      </div>
-                      <ChevronDown size={14} className="text-gray-400 -rotate-90"/>
-                  </button>
-                  <button className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors group">
-                      <div className="flex items-center text-sm text-gray-700">
-                          <Briefcase size={16} className="mr-2 text-gray-400 group-hover:text-purple-600"/> Criar Oportunidade
-                      </div>
-                      <ChevronDown size={14} className="text-gray-400 -rotate-90"/>
-                  </button>
-              </div>
-          </div>
-      </div>
-
-      {/* Quick Replies Modal */}
-      <Modal isOpen={showQuickReplies} onClose={() => { setShowQuickReplies(false); setIsCreatingQuickReply(false); }} title="Respostas Rápidas">
-         <div className="space-y-2">
-            {!isCreatingQuickReply ? (
-                <>
-                    {quickReplies.length === 0 && <p className="text-center text-gray-400 py-4 text-sm">Nenhuma resposta rápida salva.</p>}
-                    {quickReplies.map(qr => (
-                       <button key={qr.id} onClick={() => { setMessageInput(prev => prev + qr.content); setShowQuickReplies(false); }} className="w-full text-left p-3 hover:bg-gray-50 rounded-lg border border-gray-200 group transition-colors">
-                          <div className="flex justify-between"><span className="font-bold text-gray-800 text-sm">{qr.shortcut}</span></div>
-                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">{qr.content}</p>
-                       </button>
-                    ))}
-                    <button onClick={() => setIsCreatingQuickReply(true)} className="w-full py-3 border border-dashed border-gray-300 rounded-lg text-gray-500 text-sm hover:bg-gray-50 mt-2 flex items-center justify-center transition-colors"><Plus size={16} className="mr-2" /> Criar nova resposta</button>
-                </>
-            ) : (
-                <div className="space-y-4 p-1">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Atalho (ex: /ola)</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2 text-sm" value={newQuickReplyForm.shortcut} onChange={e => setNewQuickReplyForm({...newQuickReplyForm, shortcut: e.target.value})} /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Mensagem</label><textarea className="w-full border border-gray-300 rounded-lg p-2 text-sm h-24" value={newQuickReplyForm.content} onChange={e => setNewQuickReplyForm({...newQuickReplyForm, content: e.target.value})} /></div>
-                    <div className="flex gap-2 justify-end pt-2">
-                        <button onClick={() => setIsCreatingQuickReply(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Cancelar</button>
-                        <button onClick={handleCreateQuickReply} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium">Salvar</button>
-                    </div>
-                </div>
-            )}
-         </div>
-      </Modal>
-
-      {/* Start Chat Modal */}
-      <Modal
-        isOpen={newChatModalOpen}
-        onClose={() => setNewChatModalOpen(false)}
-        title="Iniciar Novo Atendimento"
-        size="md"
-      >
-         <div className="space-y-4">
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Selecionar Contato</label>
-               <select 
-                 className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                 value={newChatForm.contactId}
-                 onChange={e => setNewChatForm({...newChatForm, contactId: e.target.value})}
-               >
-                  <option value="">Selecione um contato...</option>
-                  {contacts.map(c => (
-                     <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
-                  ))}
-               </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">Conexão (WhatsApp)</label>
-                   <select 
-                     className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm"
-                     value={newChatForm.connectionId}
-                     onChange={e => setNewChatForm({...newChatForm, connectionId: e.target.value})}
-                   >
-                      {availableConnections.length === 0 && <option value="">Nenhuma conexão ativa</option>}
-                      {availableConnections.map(conn => (
-                         <option key={conn.id} value={conn.id}>{conn.name}</option>
-                      ))}
-                   </select>
-                </div>
-                <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">Setor / Departamento</label>
-                   <select 
-                     className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm"
-                     value={newChatForm.sectorId}
-                     onChange={e => setNewChatForm({...newChatForm, sectorId: e.target.value})}
-                   >
-                      <option value="">Selecione...</option>
-                      {DEPARTMENTS.map(dept => (
-                         <option key={dept.id} value={dept.id}>{dept.name}</option>
-                      ))}
-                   </select>
-                </div>
-            </div>
-
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Mensagem Inicial (Opcional)</label>
-               <textarea 
-                 className="w-full border border-gray-300 rounded-lg p-2.5 bg-white text-sm h-24 resize-none focus:ring-2 focus:ring-blue-500 outline-none"
-                 placeholder="Olá, como podemos ajudar hoje?"
-                 value={newChatForm.initialMessage}
-                 onChange={e => setNewChatForm({...newChatForm, initialMessage: e.target.value})}
-               ></textarea>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-gray-100 mt-2">
-                <button 
-                  onClick={() => setNewChatModalOpen(false)} 
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg mr-2"
-                >
-                   Cancelar
-                </button>
-                <button 
-                  onClick={handleStartChat} 
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center shadow-sm font-medium"
-                >
-                   {loading ? <RefreshCw size={16} className="animate-spin mr-2"/> : <Send size={16} className="mr-2" />} 
-                   Iniciar Conversa
-                </button>
-            </div>
-         </div>
-      </Modal>
-
-      {/* Other Modals */}
-      <Modal isOpen={activeModal === 'resolve'} onClose={() => setActiveModal(null)} title="Finalizar" footer={<button onClick={confirmResolveTicket} className="bg-green-600 text-white px-4 py-2 rounded">Confirmar</button>}><p>Deseja finalizar este atendimento?</p></Modal>
-      <Modal isOpen={activeModal === 'delete'} onClose={() => setActiveModal(null)} title="Excluir" footer={<button onClick={confirmDeleteChat} className="bg-red-600 text-white px-4 py-2 rounded">Excluir</button>}><p>Tem certeza?</p></Modal>
     </div>
   );
 };

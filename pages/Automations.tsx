@@ -149,8 +149,9 @@ const Automations: React.FC = () => {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length && selectedAgent) {
-      const newFiles = Array.from(e.target.files).map(f => ({
+    const files = e.target.files;
+    if (files && files.length && selectedAgent) {
+      const newFiles = Array.from(files).map((f: File) => ({
           name: f.name,
           size: `${(f.size / 1024).toFixed(1)} KB`,
           date: new Date().toISOString().split('T')[0]
