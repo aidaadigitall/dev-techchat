@@ -1,0 +1,71 @@
+
+version: '3.8'
+
+services:
+  # --- FRONTEND (tech.escsistemas.com) ---
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # INSERIR SUAS CHAVES DO SUPABASE AQUI NO MOMENTO DO BUILD OU VIA ARQUIVO .ENV NA VPS
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    container_name: tech_frontend
+    restart: always
+    ports:
+      - "8080:80" # Roda internamente na 8080, o Proxy Reverso da VPS (Nginx/Traefik) vai apontar pra cá
+    networks:
+      - tech_net
+
+  # --- BACKEND (apitechchat.escsistemas.com) ---
+  api:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tech_backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_HOST=redis
+      - WHATSMEOW_URL=http://whatsmeow:8080
+      - API_BASE_URL=https://apitechchat.escsistemas.com
+      # Credenciais do Supabase (Mesmas do Frontend)
+      - SUPABASE_URL=${VITE_SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - WEBHOOK_SECRET=sua_senha_secreta_webhook
+    depends_on:
+      - redis
+      - whatsmeow
+    networks:
+      - tech_net
+
+  # --- SERVIÇOS AUXILIARES ---
+  redis:
+    image: redis:alpine
+    container_name: tech_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - tech_net
+
+  whatsmeow:
+    image: mikelue/whatsmeow-http-api:latest
+    container_name: tech_whatsmeow
+    restart: always
+    volumes:
+      - whatsmeow_data:/app/db
+    networks:
+      - tech_net
+
+networks:
+  tech_net:
+    driver: bridge
+
+volumes:
+  redis_data:
+  whatsmeow_data:

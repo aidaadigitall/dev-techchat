@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import { env } from './config/env';
 import { whatsappRoutes } from './routes/whatsapp.routes';
 import { webhookRoutes } from './routes/webhook.routes';
+import { aiRoutes } from './routes/ai.routes';
 
 const app = Fastify({ logger: true });
 
@@ -20,6 +21,7 @@ app.register(cors, {
 // Registrar Rotas
 app.register(whatsappRoutes, { prefix: '/api/whatsapp' });
 app.register(webhookRoutes, { prefix: '/webhooks' });
+app.register(aiRoutes, { prefix: '/api/ai' });
 
 app.get('/health', async () => {
     return { status: 'ok', timestamp: new Date() };
