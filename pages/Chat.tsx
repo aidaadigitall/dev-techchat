@@ -3,7 +3,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { api, adaptMessage } from '../services/api';
 import { Contact, Message, MessageType } from '../types';
 import { Search, MoreVertical, Paperclip, Send, Check, CheckCheck, Clock, Plus, Phone, Video, Bot, ChevronLeft, Trash2 } from 'lucide-react';
-import Modal from '../components/Modal';
 import { useToast } from '../components/ToastContext';
 
 const Chat: React.FC = () => {
@@ -12,25 +11,32 @@ const Chat: React.FC = () => {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  
-  // Polling State
-  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadContacts();
   }, []);
 
+  // Polling for messages when a contact is selected
   useEffect(() => {
     if (!selectedContact) return;
     loadMessages(selectedContact.id);
     
-    // Simple polling every 5s for new messages (since we removed Supabase Realtime)
+    // Poll every 5s for new messages (Standard REST approach)
     const interval = setInterval(() => {
         loadMessages(selectedContact.id);
     }, 5000);
     
     return () => clearInterval(interval);
   }, [selectedContact]);
+
+  useEffect(() => {
+      scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const loadContacts = async () => {
       const fetchedContacts = await api.contacts.list();
@@ -39,6 +45,7 @@ const Chat: React.FC = () => {
 
   const loadMessages = async (contactId: string) => {
     const data = await api.chat.getMessages(contactId);
+    // Simple diff check could be here to prevent unnecessary re-renders, but React handles it ok
     setMessages(data);
   };
 
@@ -82,13 +89,13 @@ const Chat: React.FC = () => {
          <div className="flex-1 overflow-y-auto">
             {contacts.map(contact => (
                <div key={contact.id} onClick={() => setSelectedContact(contact)} className={`flex items-center p-3 cursor-pointer transition-colors border-b border-gray-100 hover:bg-gray-50 ${selectedContact?.id === contact.id ? 'bg-purple-50 border-l-4 border-l-purple-600' : 'border-l-4 border-l-transparent'}`}>
-                  <img src={contact.avatar} className="w-10 h-10 rounded-full object-cover mr-3" />
+                  <img src={contact.avatar || `https://ui-avatars.com/api/?name=${contact.name}`} className="w-10 h-10 rounded-full object-cover mr-3" />
                   <div className="flex-1 overflow-hidden">
                       <div className="flex justify-between items-baseline mb-0.5">
                           <span className="text-sm font-semibold truncate">{contact.name}</span>
                           <span className="text-[10px] text-gray-400">{contact.lastMessageTime}</span>
                       </div>
-                      <p className="text-xs text-gray-500 truncate">{contact.lastMessage}</p>
+                      <p className="text-xs text-gray-500 truncate">{contact.lastMessage || 'Nenhuma mensagem'}</p>
                   </div>
                </div>
             ))}
@@ -103,7 +110,7 @@ const Chat: React.FC = () => {
              <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-10 shadow-sm">
                 <div className="flex items-center">
                    <button onClick={() => setSelectedContact(null)} className="md:hidden mr-3 text-gray-600"><ChevronLeft size={24} /></button>
-                   <img src={selectedContact.avatar} className="w-9 h-9 rounded-full object-cover mr-3" />
+                   <img src={selectedContact.avatar || `https://ui-avatars.com/api/?name=${selectedContact.name}`} className="w-9 h-9 rounded-full object-cover mr-3" />
                    <div>
                        <h3 className="text-sm font-bold text-gray-900">{selectedContact.name}</h3>
                        <p className="text-xs text-gray-500">{selectedContact.phone}</p>
@@ -131,6 +138,7 @@ const Chat: React.FC = () => {
                       </div>
                    </div>
                 ))}
+                <div ref={messagesEndRef} />
              </div>
 
              {/* Footer */}

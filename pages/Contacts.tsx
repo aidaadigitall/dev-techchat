@@ -27,31 +27,20 @@ const Contacts: React.FC = () => {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Selection State
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
   // Edit State
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Contact>>({});
   const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
   
   // New Modals State
-  const [importModalOpen, setImportModalOpen] = useState(false);
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null); 
-  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState(false);
-
-  // Import Job State
-  const [importJob, setImportJob] = useState<ImportJob | null>(null);
-  const stopImportRef = useRef(false);
 
   // New Chat Form State
   const [newChatForm, setNewChatForm] = useState({
       contactId: '',
       initialMessage: ''
   });
-
-  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadContacts();
@@ -145,9 +134,11 @@ const Contacts: React.FC = () => {
           if (newChatForm.initialMessage) {
               await api.chat.sendMessage(newChatForm.contactId, newChatForm.initialMessage);
           }
+          // Ensure it's in open status
           await api.contacts.update(newChatForm.contactId, { status: 'open' });
           addToast("Atendimento iniciado!", "success");
           setNewChatModalOpen(false);
+          // Optional: Navigate to chat
       } catch (error) {
           addToast("Erro ao iniciar atendimento.", "error");
       }

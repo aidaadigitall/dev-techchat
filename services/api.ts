@@ -4,16 +4,15 @@ import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, Task, Pr
 // URL do Backend Node.js em Produção
 const API_BASE_URL = 'https://apitechchat.escsistemas.com';
 
-// Helper: Get Tenant ID (Simulating Context or LocalStorage)
+// Helper: Get Tenant ID
 const getTenantId = () => {
-  // Em produção, isso viria do login. Usando default para compatibilidade imediata.
   return localStorage.getItem('tenant_id') || 'tenant-default-123';
 };
 
-// Helper: Fetch Wrapper handling tenantId
+// Helper: Fetch Wrapper handling tenantId in Body (POST/PUT) or Query (GET)
 const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
   const tenantId = getTenantId();
-  let url = `${API_BASE_URL}${endpoint}`;
+  let url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
   
   const headers: any = {
     'Content-Type': 'application/json',
@@ -35,11 +34,11 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
           bodyObj = options.body;
       }
       
-      // Merge tenantId
+      // Merge tenantId (CRITICAL: Backend requires tenantId in BODY)
       bodyObj.tenantId = tenantId;
       config.body = JSON.stringify(bodyObj);
   } else {
-      // Inject into Query Params for GET/DELETE (Browsers don't support Body in GET)
+      // Inject into Query Params for GET/DELETE
       const separator = url.includes('?') ? '&' : '?';
       url = `${url}${separator}tenantId=${tenantId}`;
   }
@@ -64,34 +63,88 @@ const adaptMessage = (data: any): Message => ({
   senderId: data.from === 'me' ? 'me' : data.contactId || 'unknown',
   timestamp: new Date(data.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
   type: data.type || MessageType.TEXT,
-  status: 'sent', // Backend typically handles status updates via socket/webhook
+  status: 'sent',
   channel: 'whatsapp'
 });
 
+// --- Local Storage Helpers (For Modules without Backend Endpoints) ---
+const localDb = {
+    get: (key: string) => {
+        const data = localStorage.getItem(`db_${key}_${getTenantId()}`);
+        return data ? JSON.parse(data) : [];
+    },
+    save: (key: string, data: any) => {
+        localStorage.setItem(`db_${key}_${getTenantId()}`, JSON.stringify(data));
+    },
+    add: (key: string, item: any) => {
+        const list = localDb.get(key);
+        const newItem = { ...item, id: `${key}_${Date.now()}` };
+        list.push(newItem);
+        localDb.save(key, list);
+        return newItem;
+    },
+    update: (key: string, id: string, updates: any) => {
+        const list = localDb.get(key);
+        const updated = list.map((i: any) => i.id === id ? { ...i, ...updates } : i);
+        localDb.save(key, updated);
+        return updated.find((i: any) => i.id === id);
+    },
+    delete: (key: string, id: string) => {
+        const list = localDb.get(key);
+        const filtered = list.filter((i: any) => i.id !== id);
+        localDb.save(key, filtered);
+    }
+};
+
 export const api = {
-  // --- Contacts ---
+  // --- Contacts (Real Backend or Fallback) ---
   contacts: {
       list: async (): Promise<Contact[]> => {
-          const data = await fetchClient('/contacts'); // GET uses query param
-          return data.map((d: any) => ({
-              id: d.id, 
-              name: d.name || d.pushName || 'Desconhecido', 
-              phone: d.phone, 
-              email: d.email, 
-              tags: d.tags || [],
-              avatar: d.profilePicUrl || '', 
-              status: d.status || 'open', 
-              lastMessage: d.lastMessage,
-              company: d.company, 
-              role: d.role
-          }));
+          try {
+              // Try fetching from backend
+              const data = await fetchClient('/contacts');
+              return data.map((d: any) => ({
+                  id: d.id, 
+                  name: d.name || d.pushName || 'Desconhecido', 
+                  phone: d.phone, 
+                  email: d.email, 
+                  tags: d.tags || [],
+                  avatar: d.profilePicUrl || '', 
+                  status: d.status || 'open', 
+                  lastMessage: d.lastMessage,
+                  company: d.company, 
+                  role: d.role
+              }));
+          } catch (e) {
+              // Fallback to local if backend is not ready
+              console.warn("Using local contacts fallback");
+              return localDb.get('contacts');
+          }
       },
-      create: async (c: any) => fetchClient('/contacts', { method: 'POST', body: JSON.stringify(c) }),
-      update: async (id: string, u: any) => fetchClient(`/contacts/${id}`, { method: 'PUT', body: JSON.stringify(u) }),
-      delete: async (id: string) => fetchClient(`/contacts/${id}`, { method: 'DELETE' })
+      create: async (c: any) => {
+          try {
+              return await fetchClient('/contacts', { method: 'POST', body: JSON.stringify(c) });
+          } catch (e) {
+              return localDb.add('contacts', c);
+          }
+      },
+      update: async (id: string, u: any) => {
+          try {
+              return await fetchClient(`/contacts/${id}`, { method: 'PUT', body: JSON.stringify(u) });
+          } catch (e) {
+              return localDb.update('contacts', id, u);
+          }
+      },
+      delete: async (id: string) => {
+          try {
+              return await fetchClient(`/contacts/${id}`, { method: 'DELETE' });
+          } catch (e) {
+              return localDb.delete('contacts', id);
+          }
+      }
   },
 
-  // --- WhatsApp / Instances ---
+  // --- WhatsApp / Instances (Real Backend) ---
   whatsapp: {
       list: async () => fetchClient('/whatsapp/instances'),
       create: async (name: string) => fetchClient('/whatsapp/instances', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -101,64 +154,118 @@ export const api = {
       logout: async (id: string) => fetchClient(`/whatsapp/instances/${id}/logout`, { method: 'POST' })
   },
 
-  // --- Chat ---
+  // --- Chat (Real Backend) ---
   chat: {
       getMessages: async (contactId: string) => { 
-          const data = await fetchClient(`/chat/${contactId}/messages`);
-          return data.map(adaptMessage);
+          try {
+              const data = await fetchClient(`/chat/${contactId}/messages`);
+              return data.map(adaptMessage);
+          } catch(e) {
+              return [];
+          }
       },
       sendMessage: async (contactId: string, content: string, type: MessageType = MessageType.TEXT, extraData?: any) => {
           const payload = { contactId, content, type, ...extraData };
+          // This goes to the queue in backend
           const data = await fetchClient('/chat/send', { method: 'POST', body: JSON.stringify(payload) });
           return adaptMessage(data);
       },
-      getQuickReplies: async () => fetchClient('/chat/quick-replies'),
-      createQuickReply: async (shortcut: string, content: string) => fetchClient('/chat/quick-replies', { method: 'POST', body: JSON.stringify({ shortcut, content }) })
+      getQuickReplies: async () => localDb.get('quick_replies'),
+      createQuickReply: async (shortcut: string, content: string) => localDb.add('quick_replies', { shortcut, content })
   },
   
   // --- Tasks (LOCAL STORAGE ONLY - Opção A) ---
   tasks: { 
-      list: async (): Promise<Task[]> => {
-          const stored = localStorage.getItem('local_tasks');
-          return stored ? JSON.parse(stored) : [];
-      }, 
-      create: async (t: any) => {
-          const stored = localStorage.getItem('local_tasks');
-          const tasks = stored ? JSON.parse(stored) : [];
-          const newTask = { ...t, id: `local_${Date.now()}` };
-          tasks.push(newTask);
-          localStorage.setItem('local_tasks', JSON.stringify(tasks));
-          return newTask;
-      }, 
-      update: async (id: string, u: any) => {
-          const stored = localStorage.getItem('local_tasks');
-          let tasks = stored ? JSON.parse(stored) : [];
-          tasks = tasks.map((t: any) => t.id === id ? { ...t, ...u } : t);
-          localStorage.setItem('local_tasks', JSON.stringify(tasks));
-          return u;
-      }, 
-      delete: async (id: string) => {
-          const stored = localStorage.getItem('local_tasks');
-          let tasks = stored ? JSON.parse(stored) : [];
-          tasks = tasks.filter((t: any) => t.id !== id);
-          localStorage.setItem('local_tasks', JSON.stringify(tasks));
-          return id;
+      list: async (): Promise<Task[]> => localDb.get('tasks'),
+      create: async (t: any) => localDb.add('tasks', t),
+      update: async (id: string, u: any) => localDb.update('tasks', id, u),
+      delete: async (id: string) => localDb.delete('tasks', id)
+  },
+
+  // --- CRM / Kanban (MOCKED LOCAL - Backend not ready) ---
+  crm: { 
+      getPipelines: async (): Promise<Pipeline[]> => {
+          const pipes = localDb.get('pipelines');
+          if (pipes.length === 0) {
+              // Seed default pipeline
+              const defaultPipe = {
+                  id: 'default_pipeline',
+                  name: 'Funil de Vendas',
+                  columns: [
+                      { id: 'col1', title: 'Novo Lead', color: 'border-blue-500', cards: [] },
+                      { id: 'col2', title: 'Em Contato', color: 'border-yellow-500', cards: [] },
+                      { id: 'col3', title: 'Proposta', color: 'border-purple-500', cards: [] },
+                      { id: 'col4', title: 'Fechado', color: 'border-green-500', cards: [] }
+                  ]
+              };
+              localDb.save('pipelines', [defaultPipe]);
+              return [defaultPipe];
+          }
+          return pipes;
+      },
+      createCard: async (columnId: string, card: any) => {
+          const pipes = localDb.get('pipelines');
+          // Find and update nested card
+          // Simplified: Just add to first pipeline for demo
+          if(pipes.length > 0) {
+              const pipe = pipes[0];
+              const col = pipe.columns.find((c: any) => c.id === columnId);
+              if(col) {
+                  const newCard = { ...card, id: `card_${Date.now()}` };
+                  col.cards.push(newCard);
+                  localDb.save('pipelines', pipes);
+                  return newCard;
+              }
+          }
+          return null;
+      },
+      moveCard: async (cardId: string, fromColId: string, toColId: string) => {
+          const pipes = localDb.get('pipelines');
+          if(pipes.length > 0) {
+              const pipe = pipes[0];
+              const fromCol = pipe.columns.find((c: any) => c.id === fromColId);
+              const toCol = pipe.columns.find((c: any) => c.id === toColId);
+              if(fromCol && toCol) {
+                  const cardIndex = fromCol.cards.findIndex((c: any) => c.id === cardId);
+                  if(cardIndex > -1) {
+                      const [card] = fromCol.cards.splice(cardIndex, 1);
+                      toCol.cards.push(card);
+                      localDb.save('pipelines', pipes);
+                  }
+              }
+          }
+      },
+      createColumn: async (pipelineId: string, title: string, order: number, color: string) => {
+          const pipes = localDb.get('pipelines');
+          const pipe = pipes.find((p: any) => p.id === pipelineId);
+          if(pipe) {
+              const newCol = { id: `col_${Date.now()}`, title, order, color, cards: [] };
+              pipe.columns.push(newCol);
+              localDb.save('pipelines', pipes);
+              return newCol;
+          }
+          return null;
+      },
+      updateColumn: async (id: string, data: any) => {
+          const pipes = localDb.get('pipelines');
+          pipes.forEach((p: any) => {
+              const col = p.columns.find((c: any) => c.id === id);
+              if(col) Object.assign(col, data);
+          });
+          localDb.save('pipelines', pipes);
+      },
+      deleteColumn: async (id: string) => {
+          const pipes = localDb.get('pipelines');
+          pipes.forEach((p: any) => {
+              p.columns = p.columns.filter((c: any) => c.id !== id);
+          });
+          localDb.save('pipelines', pipes);
       }
   },
 
-  // --- CRM / Kanban ---
-  crm: { 
-      getPipelines: async () => fetchClient('/crm/pipelines'), 
-      createCard: async (columnId: string, card: any) => fetchClient(`/crm/columns/${columnId}/cards`, { method: 'POST', body: JSON.stringify(card) }), 
-      moveCard: async (cardId: string, fromColId: string, toColId: string) => fetchClient(`/crm/cards/${cardId}/move`, { method: 'POST', body: JSON.stringify({ fromColId, toColId }) }), 
-      createColumn: async (pipelineId: string, title: string, order: number, color: string) => fetchClient(`/crm/pipelines/${pipelineId}/columns`, { method: 'POST', body: JSON.stringify({ title, order, color }) }),
-      updateColumn: async (id: string, data: any) => fetchClient(`/crm/columns/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-      deleteColumn: async (id: string) => fetchClient(`/crm/columns/${id}`, { method: 'DELETE' })
-  },
-
-  // --- AI Service ---
+  // --- AI Service (Real Backend) ---
   ai: { 
-      listAgents: async () => fetchClient('/ai/agents'),
+      listAgents: async () => localDb.get('ai_agents'),
       
       // Calls POST /ai/suggest
       // Receives local tasks or chat history
@@ -194,15 +301,19 @@ export const api = {
           });
       },
 
-      getConfig: async () => fetchClient('/ai/configs') // GET might imply fetching current config
+      getConfig: async () => fetchClient('/ai/configs')
   },
 
-  // --- Other modules (Mocked for now) ---
-  proposals: { list: async() => [], create: async(d:any) => d, update: async() => {} },
+  // --- Other modules (Mocked Local) ---
+  proposals: { 
+      list: async() => localDb.get('proposals'), 
+      create: async(d:any) => localDb.add('proposals', d), 
+      update: async() => {} 
+  },
   companies: { list: async() => [], create: async(c:any) => c, update: async(id:string, c:any) => c, delete: async(id: string) => {} },
   plans: { list: async() => [], save: async(p:any) => p },
   users: { updateProfile: async(d:any) => d },
-  campaigns: { list: async() => [], create: async(d:any) => d },
+  campaigns: { list: async() => localDb.get('campaigns'), create: async(d:any) => localDb.add('campaigns', d) },
   reports: { generatePdf: async() => {} },
   metadata: { getTags: async() => [], saveTags: async() => {}, getSectors: async() => [], saveSectors: async() => {} }
 };
