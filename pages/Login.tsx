@@ -197,7 +197,23 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
                 <div>
                    <label className="block text-sm font-medium text-gray-700">Senha</label>
-                   <input type="password" required className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white" placeholder="Senha forte" value={regPassword} onChange={e => setRegPassword(e.target.value)} />
+                   <div className="relative">
+                      <input 
+                        type={showPassword ? "text" : "password"} 
+                        required 
+                        className="w-full border border-gray-300 rounded-lg p-2.5 pr-10 text-sm bg-white focus:ring-2 focus:ring-purple-500 outline-none" 
+                        placeholder="Senha forte" 
+                        value={regPassword} 
+                        onChange={e => setRegPassword(e.target.value)} 
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setShowPassword(!showPassword)} 
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                   </div>
                 </div>
 
                 <button type="submit" disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-lg mt-2 disabled:opacity-70" style={{ backgroundColor: branding.primaryColor }}>

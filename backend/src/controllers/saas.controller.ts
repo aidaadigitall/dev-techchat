@@ -9,7 +9,6 @@ export class SaasController {
 
   // POST /saas/tenants
   async register(req: FastifyRequest, reply: FastifyReply) {
-    // Validação do Payload
     const schema = z.object({
       companyName: z.string().min(3, "Nome da empresa deve ter no mínimo 3 caracteres"),
       ownerName: z.string().min(3, "Nome do responsável deve ter no mínimo 3 caracteres"),
@@ -37,7 +36,6 @@ export class SaasController {
       });
 
     } catch (error: any) {
-      // Tratamento de erro Zod ou Service
       const msg = error.issues ? error.issues[0].message : error.message;
       return reply.code(400).send({ error: msg });
     }
@@ -54,7 +52,7 @@ export class SaasController {
       const data = schema.parse(req.body);
       const user = await service.login(data);
 
-      // Gerar Token JWT
+      // Gerar Token JWT contendo o tenantId
       const token = await reply.jwtSign({
         id: user.id,
         email: user.email,

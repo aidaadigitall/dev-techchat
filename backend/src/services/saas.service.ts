@@ -33,7 +33,6 @@ export class SaasService {
     const passwordHash = await bcrypt.hash(data.password || '123456', 10);
 
     // 3. Transação: Criar Tenant e Usuário Admin
-    // Usamos transaction para garantir que ou cria tudo ou nada
     const result = await prisma.$transaction(async (tx) => {
       // Criar Empresa
       const tenant = await tx.tenant.create({
@@ -42,7 +41,7 @@ export class SaasService {
           ownerName: data.ownerName,
           email: data.email,
           status: 'active',
-          planId: 'basic' // Plano padrão
+          planId: 'basic'
         }
       });
 
@@ -61,7 +60,7 @@ export class SaasService {
     });
 
     // Remover senha do retorno
-    const { password, ...safeUser } = result.user;
+    const { password, ...safeUser } = result.user as any;
     
     return {
       tenant: result.tenant,
@@ -73,27 +72,31 @@ export class SaasService {
    * Autentica um usuário e retorna seus dados.
    */
   async login(data: LoginDTO) {
+    // Busca usuário pelo email
     const user = await prisma.user.findFirst({ 
-      where: { email: data.email },
-      include: {
-        // Opcional: incluir dados da empresa se necessário
-        // tenant: true 
-      }
+      where: { email: data.email }
     });
 
+    // Segurança: Mensagem genérica para não revelar se email existe
     if (!user) {
       throw new Error('Credenciais inválidas.');
     }
 
-    // @ts-ignore - Prisma types workaround if password field is missing in generated client type
-    const isValid = await bcrypt.compare(data.password || '', user.password);
+    // Casting para any para acessar password caso o tipo gerado do Prisma esteja desatualizado
+    const userWithPassword = user as any;
+
+    if (!userWithPassword.password) {
+       throw new Error('Usuário sem senha definida. Contate o suporte.');
+    }
+
+    const isValid = await bcrypt.compare(data.password || '', userWithPassword.password);
 
     if (!isValid) {
       throw new Error('Credenciais inválidas.');
     }
 
-    // @ts-ignore
-    const { password, ...safeUser } = user;
+    // Remove a senha do objeto retornado
+    const { password, ...safeUser } = userWithPassword;
     return safeUser;
   }
 
