@@ -1,11 +1,23 @@
 
 import { Contact, Message, MessageType, Pipeline, Campaign, Task, Proposal, Plan, User, Company, SaasStats, KanbanColumn } from '../types';
 
-// URL do Backend: Usa a URL de produção ou localhost
-const hostname = window.location.hostname;
-const API_BASE_URL = (hostname === 'localhost' || hostname === '127.0.0.1') 
-  ? 'http://localhost:3000' 
-  : 'https://apitechchat.escsistemas.com';
+// --- Dynamic URL Detection ---
+// Permite que funcione em localhost, IP da VPS ou Domínio sem configuração manual
+const getBaseUrl = () => {
+    const hostname = window.location.hostname;
+    
+    // Ambiente Local
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'http://localhost:3000';
+    }
+    
+    // Ambiente VPS/Produção (Assume backend na porta 3000 do mesmo host)
+    // Se estiver usando HTTPS no frontend via Nginx, certifique-se que a API também está proxied ou acessível
+    return `${window.location.protocol}//${hostname}:3000`;
+};
+
+const API_BASE_URL = getBaseUrl();
+console.log('API Endpoint:', API_BASE_URL); // Debug
 
 // --- Auth Helpers ---
 export const getToken = () => localStorage.getItem('auth_token');
@@ -75,18 +87,21 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
     const responseData = await response.json().catch(() => ({}));
     
     if (!response.ok) {
-        throw new Error(responseData.error || `Erro API ${response.status}: ${response.statusText}`);
+        // Tenta pegar a mensagem de erro específica do backend
+        const errorMessage = responseData.error || responseData.message || `Erro API ${response.status}: ${response.statusText}`;
+        throw new Error(errorMessage);
     }
     return responseData;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`API Request Failed [${endpoint}]:`, error);
+    // Repassa o erro original para ser tratado no frontend (ex: mostrar no toast)
     throw error;
   }
 };
 
 export const api = {
   
-  // --- Auth & SaaS Core (CONNECTED TO REAL BACKEND) ---
+  // --- Auth & SaaS Core ---
   auth: {
       login: async (email: string, password: string) => {
           const data = await fetchClient('/saas/login', {
@@ -101,23 +116,27 @@ export const api = {
           return data;
       },
       register: async (companyData: any, adminUserData: any) => {
-          // 1. Criar Tenant (Empresa)
-          const tenant = await fetchClient('/saas/tenants', {
+          // Adaptar para o payload unificado do SaasController
+          const payload = {
+              companyName: companyData.name,
+              ownerName: adminUserData.name, // Nome do responsável
+              email: adminUserData.email,
+              password: adminUserData.password
+          };
+
+          const response = await fetchClient('/saas/tenants', {
               method: 'POST',
-              body: JSON.stringify(companyData)
+              body: JSON.stringify(payload)
           });
           
-          // 2. Criar Admin User vinculado ao Tenant
-          const user = await fetchClient('/saas/users', {
-              method: 'POST',
-              body: JSON.stringify({
-                  ...adminUserData,
-                  tenantId: tenant.id,
-                  role: 'admin'
-              })
-          });
+          // O backend já retorna o token e usuário logado
+          if (response.token) {
+              setToken(response.token);
+              localStorage.setItem('app_current_user', JSON.stringify(response.user));
+              if (response.user.tenantId) localStorage.setItem('tenant_id', response.user.tenantId);
+          }
 
-          return { tenant, user };
+          return response; // { tenant, user, token, message }
       },
       me: async () => {
           const u = localStorage.getItem('app_current_user');
@@ -127,14 +146,14 @@ export const api = {
 
   // --- SaaS Management (Super Admin) ---
   saas: {
-      getMetrics: async (): Promise<SaasStats> => fetchClient('/saas/metrics'), // Implementar no controller se necessário
+      getMetrics: async (): Promise<SaasStats> => fetchClient('/saas/metrics'),
   },
 
   companies: {
       list: async (): Promise<Company[]> => fetchClient('/saas/tenants'),
       create: async (data: any) => fetchClient('/saas/tenants', { method: 'POST', body: JSON.stringify(data) }),
-      update: async (id: string, data: any) => fetchClient(`/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }), // Implementar PUT se necessário
-      delete: async (id: string) => fetchClient(`/saas/tenants/${id}`, { method: 'DELETE' }) // Implementar DELETE se necessário
+      update: async (id: string, data: any) => fetchClient(`/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: async (id: string) => fetchClient(`/saas/tenants/${id}`, { method: 'DELETE' })
   },
 
   plans: {
@@ -192,7 +211,7 @@ export const api = {
       getConfig: async () => fetchClient('/api/ai/configs')
   },
 
-  // --- Placeholders/Real Routes ---
+  // --- Modules ---
   tasks: { 
       list: async () => fetchClient('/api/tasks'), 
       create: async (t:any) => fetchClient('/api/tasks', { method: 'POST', body: JSON.stringify(t) }), 

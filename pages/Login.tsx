@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
 import { Branding, User } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, Phone, Building, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, Building, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
@@ -19,7 +19,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
   // Register State
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [phone, setPhone] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -38,7 +37,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       const data = await api.auth.login(email, password);
       onLoginSuccess(data);
     } catch (err: any) {
-      setError(err.message || 'Erro ao realizar login. Verifique suas credenciais.');
+      console.error(err);
+      setError(err.message || 'Erro de conexão. Verifique se o servidor está rodando.');
     } finally {
       setLoading(false);
     }
@@ -53,9 +53,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       // 1. Prepara dados
       const companyData = {
           name: companyName,
-          email: regEmail, // Email da empresa/dono
-          ownerName: `${firstName} ${lastName}`,
-          planId: 'basic' // Default plan
+          // Outros campos são inferidos pelo backend
       };
 
       const adminData = {
@@ -65,16 +63,24 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
           role: 'admin'
       };
 
-      // 2. Chama API de registro unificada (Helper no frontend)
-      const { user, tenant } = await api.auth.register(companyData, adminData);
+      // 2. Chama API
+      // A nova função register já lida com tudo e retorna o token se sucesso
+      const response = await api.auth.register(companyData, adminData);
 
-      // 3. Auto Login
-      const loginData = await api.auth.login(regEmail, regPassword);
-      onLoginSuccess(loginData);
+      // 3. Login Automático
+      if (response.user && response.token) {
+          onLoginSuccess({ user: response.user, token: response.token });
+      } else {
+          // Fallback caso a API não retorne token (improvável com o novo controller)
+          const loginData = await api.auth.login(regEmail, regPassword);
+          onLoginSuccess(loginData);
+      }
 
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Erro ao criar conta. Tente novamente.');
+      console.error("Erro Registro:", err);
+      // Extrai mensagem limpa do erro
+      const msg = err.message || 'Erro desconhecido';
+      setError(msg.includes('Failed to fetch') ? 'Erro de conexão com o servidor. Tente novamente.' : msg);
       setLoading(false);
     }
   };
@@ -149,7 +155,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                       <input 
                         type="email" required
                         className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all bg-white"
-                        placeholder="seu@email.com"
+                        placeholder="admin@admin.com"
                         value={email} onChange={(e) => setEmail(e.target.value)}
                       />
                    </div>
@@ -165,7 +171,12 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                         placeholder="••••••••"
                         value={password} onChange={(e) => setPassword(e.target.value)}
                       />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer">
+                      <button 
+                        type="button" 
+                        onClick={() => setShowPassword(!showPassword)} 
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer outline-none"
+                        tabIndex={-1}
+                      >
                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                    </div>
@@ -209,7 +220,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                       <button 
                         type="button" 
                         onClick={() => setShowPassword(!showPassword)} 
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer outline-none"
+                        tabIndex={-1}
                       >
                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
