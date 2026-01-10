@@ -5,19 +5,15 @@ import { SaasController } from '../controllers/saas.controller';
 const controller = new SaasController();
 
 export async function saasRoutes(app: FastifyInstance) {
-  // Autenticação e Registro
+  
+  // --- Auth Public Routes ---
   app.post('/auth/login', controller.login.bind(controller));
   app.post('/auth/register', controller.register.bind(controller));
 
-  // Gestão de Tenants
-  app.get('/tenants', {
-      // Opcional: Adicionar middleware de auth aqui para proteger a listagem
-      // preValidation: [app.authenticate] 
-  }, controller.listTenants.bind(controller));
-
-  // Métricas do SaaS (Super Admin)
+  // --- Management Routes (Protected Ideally) ---
+  app.get('/tenants', controller.listTenants.bind(controller));
   app.get('/metrics', controller.getMetrics.bind(controller));
 
-  // Rota de Usuários (Listagem geral ou por tenant)
-  app.get('/users', controller.listUsers.bind(controller));
+  // Health check específico do módulo SaaS
+  app.get('/health', async () => ({ status: 'saas_active' }));
 }

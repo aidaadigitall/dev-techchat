@@ -9,13 +9,13 @@ export class SaasController {
 
   // POST /api/saas/auth/register
   async register(req: FastifyRequest, reply: FastifyReply) {
-    console.log(`[SaaS] Nova tentativa de registro`, req.body);
+    console.log(`[SaaS] Registro iniciado:`, req.body);
     
     const schema = z.object({
-      companyName: z.string().min(3),
-      ownerName: z.string().min(3),
-      email: z.string().email(),
-      password: z.string().min(6)
+      companyName: z.string().min(3, "Nome da empresa muito curto"),
+      ownerName: z.string().min(3, "Nome do responsável muito curto"),
+      email: z.string().email("Email inválido"),
+      password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres")
     });
 
     try {
@@ -31,14 +31,14 @@ export class SaasController {
       });
 
       return reply.code(201).send({
-        message: 'Conta criada com sucesso',
+        message: 'Empresa registrada com sucesso',
         tenant: result.tenant,
         user: result.user,
         token
       });
 
     } catch (error: any) {
-      console.error("Erro no registro:", error);
+      console.error("[SaaS] Erro Registro:", error);
       const msg = error.issues ? error.issues[0].message : error.message;
       return reply.code(400).send({ error: msg });
     }
@@ -68,28 +68,18 @@ export class SaasController {
       });
 
     } catch (error: any) {
-      return reply.code(401).send({ error: error.message || 'Credenciais inválidas' });
+      return reply.code(401).send({ error: 'Email ou senha incorretos' });
     }
   }
 
   // GET /api/saas/tenants
   async listTenants(req: FastifyRequest, reply: FastifyReply) {
     try {
+      // TODO: Validar se user é super_admin via request.user
       const tenants = await service.listTenants();
       return reply.send(tenants);
     } catch (error) {
       return reply.code(500).send({ error: 'Erro ao listar empresas' });
-    }
-  }
-
-  // GET /api/saas/users
-  async listUsers(req: FastifyRequest, reply: FastifyReply) {
-    try {
-        // Implementar filtro por tenantId se necessário
-        const users = await service.listUsers();
-        return reply.send(users);
-    } catch (error) {
-        return reply.code(500).send({ error: 'Erro ao listar usuários' });
     }
   }
 

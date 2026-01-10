@@ -4,7 +4,6 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { env } from './config/env';
 import { saasRoutes } from './routes/saas.routes';
-// Importar outras rotas conforme necessário (whatsapp, webhooks, etc) mantendo a estrutura existente
 import { whatsappRoutes } from './routes/whatsapp.routes';
 import { webhookRoutes } from './routes/webhook.routes';
 import { aiRoutes } from './routes/ai.routes';
@@ -16,7 +15,7 @@ const app = Fastify({ logger: true });
 app.register(cors, {
     origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id']
 });
 
 // 2. Registrar JWT
@@ -29,25 +28,26 @@ app.decorate("authenticate", async function(request: any, reply: any) {
     try {
         await request.jwtVerify();
     } catch (err) {
-        reply.send(err);
+        reply.code(401).send({ error: "Unauthorized" });
     }
 });
 
 // 4. Registrar Rotas
-// Rotas funcionais do sistema
+// --- CAMADA SAAS (CORE) ---
+console.log('🔄 Carregando Módulo SaaS...');
+app.register(saasRoutes, { prefix: '/api/saas' });
+
+// --- Módulos Funcionais ---
 app.register(whatsappRoutes, { prefix: '/api/whatsapp' });
 app.register(webhookRoutes, { prefix: '/webhooks' });
 app.register(aiRoutes, { prefix: '/api/ai' });
 app.register(contactRoutes, { prefix: '/api/contacts' });
 
-// === ROTA CRÍTICA: SAAS ===
-console.log('🔄 Registrando rotas SaaS em /api/saas ...');
-app.register(saasRoutes, { prefix: '/api/saas' });
-
 // Healthcheck Global
 app.get('/health', async () => {
     return { 
         status: 'online', 
+        service: 'tech-chat-backend',
         environment: process.env.NODE_ENV, 
         timestamp: new Date() 
     };
@@ -56,10 +56,11 @@ app.get('/health', async () => {
 const start = async () => {
     try {
         // Bind em 0.0.0.0 é obrigatório para Docker
-        await app.listen({ port: parseInt(env.PORT || '3000'), host: '0.0.0.0' });
+        const port = parseInt(env.PORT || '3000');
+        await app.listen({ port, host: '0.0.0.0' });
         
         console.log(`
-🚀 SERVER RUNNING ON PORT ${env.PORT}
+🚀 SERVER RUNNING ON PORT ${port}
 --------------------------------------------------
 ✅ SaaS Routes Loaded:
    POST /api/saas/auth/login

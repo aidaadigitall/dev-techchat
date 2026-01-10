@@ -2,7 +2,7 @@
 import { Contact, Message, MessageType, Pipeline, Campaign, Task, Proposal, Plan, User, Company, SaasStats, KanbanColumn } from '../types';
 
 // --- PRODUCTION URL HARDCODED ---
-// Garante que o frontend sempre aponte para a API de produção na VPS
+// Garante que o frontend sempre aponte para a API de produção na VPS via HTTPS
 const API_BASE_URL = 'https://apitechchat.escsistemas.com';
 
 console.log('🔗 API Endpoint:', API_BASE_URL);
@@ -43,25 +43,11 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
 
   // Tenant ID Injection Logic (se não for POST público)
   const tenantId = getTenantId();
-  const method = options.method || 'GET';
-  let body = options.body;
-
   if (tenantId) {
-      if (['POST', 'PUT', 'DELETE'].includes(method)) {
-          if (body && typeof body === 'string') {
-              try {
-                  const parsed = JSON.parse(body);
-                  // Só injeta se for um objeto e não tiver tenantId ainda
-                  if (typeof parsed === 'object' && !parsed.tenantId && !url.includes('/auth/')) {
-                      parsed.tenantId = tenantId;
-                      body = JSON.stringify(parsed);
-                  }
-              } catch(e) {}
-          }
-      } 
+      headers['x-tenant-id'] = tenantId;
   }
 
-  const config: RequestInit = { ...options, headers, body };
+  const config: RequestInit = { ...options, headers };
 
   try {
     const response = await fetch(url, config);
@@ -80,7 +66,7 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
 
 export const api = {
   
-  // --- Auth & SaaS Core ---
+  // --- Auth & SaaS Core (NEW) ---
   auth: {
       login: async (email: string, password: string) => {
           // Rota Fixa: /api/saas/auth/login
@@ -125,14 +111,11 @@ export const api = {
 
   // --- SaaS Management (Super Admin) ---
   saas: {
-      // Rota Fixa: /api/saas/metrics
       getMetrics: async (): Promise<SaasStats> => fetchClient('/api/saas/metrics'),
   },
 
   companies: {
-      // Rota Fixa: /api/saas/tenants
       list: async (): Promise<Company[]> => fetchClient('/api/saas/tenants'),
-      // Implementar create/update/delete conforme necessidade usando endpoints saas
       create: async (data: any) => fetchClient('/api/saas/tenants', { method: 'POST', body: JSON.stringify(data) }), // Mock se backend nao tiver endpoint POST /tenants ainda
       delete: async (id: string) => fetchClient(`/api/saas/tenants/${id}`, { method: 'DELETE' }),
       update: async (id: string, data: any) => fetchClient(`/api/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) })
@@ -141,7 +124,6 @@ export const api = {
   plans: {
       list: async (): Promise<Plan[]> => fetchClient('/api/saas/plans'),
       save: async (plan: any) => {
-          // Heuristic: If ID starts with 'plan_', it's a temp ID from frontend, so CREATE. Else UPDATE.
           if (plan.id && String(plan.id).startsWith('plan_')) {
               const { id, ...rest } = plan;
               return fetchClient('/api/saas/plans', { method: 'POST', body: JSON.stringify(rest) });
@@ -160,7 +142,7 @@ export const api = {
       create: async (data: any) => fetchClient('/api/saas/users', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  // --- Business Modules (Chat, Contacts, etc) ---
+  // --- Business Modules ---
   contacts: {
       list: async (): Promise<Contact[]> => fetchClient('/api/contacts'),
       create: async (c: any) => fetchClient('/api/contacts', { method: 'POST', body: JSON.stringify(c) }),

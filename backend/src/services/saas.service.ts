@@ -4,18 +4,19 @@ import bcrypt from 'bcryptjs';
 
 export class SaasService {
   
+  // Criação de Empresa + Usuário Admin em uma única transação
   async createTenantAndAdmin(data: { companyName: string; ownerName: string; email: string; password?: string }) {
-    // 1. Validar duplicidade
+    // 1. Validar duplicidade de email
     const existing = await prisma.user.findFirst({ where: { email: data.email } });
     if (existing) throw new Error('Este email já está em uso.');
 
-    // 2. Hash senha
+    // 2. Hash da senha
     const passwordHash = await bcrypt.hash(data.password || '123456', 10);
 
-    // 3. Garantir Plano Basic (Fallback de Segurança)
+    // 3. Garantir existência do Plano Basic (Fallback)
     let plan = await prisma.plan.findUnique({ where: { id: 'basic' } });
     if (!plan) {
-        console.log("[Auto-Seed] Criando plano 'basic' automaticamente...");
+        console.log("[SaaS] Criando plano 'basic' padrão...");
         plan = await prisma.plan.create({
             data: {
                 id: 'basic',
@@ -28,7 +29,7 @@ export class SaasService {
         });
     }
 
-    // 4. Transação
+    // 4. Executar Transação
     return await prisma.$transaction(async (tx) => {
       // Criar Tenant
       const tenant = await tx.tenant.create({
@@ -41,7 +42,7 @@ export class SaasService {
         }
       });
 
-      // Criar User Admin
+      // Criar User Admin vinculado ao Tenant
       const user = await tx.user.create({
         data: {
           name: data.ownerName,
@@ -52,50 +53,52 @@ export class SaasService {
         }
       });
 
-      // Sanitizar retorno
+      // Remover senha do retorno
       const { password, ...safeUser } = user as any;
       return { tenant, user: safeUser };
     });
   }
 
+  // Login Unificado (SaaS)
   async login(data: { email: string; password?: string }) {
     const user = await prisma.user.findFirst({ where: { email: data.email } });
-    if (!user) throw new Error('Email ou senha inválidos.');
+    if (!user) throw new Error('Credenciais inválidas.');
 
     const userWithPass = user as any;
     const isValid = await bcrypt.compare(data.password || '', userWithPass.password);
-    if (!isValid) throw new Error('Email ou senha inválidos.');
+    if (!isValid) throw new Error('Credenciais inválidas.');
 
     const { password, ...safeUser } = userWithPass;
     return safeUser;
   }
 
+  // Listagem de Tenants (Para Super Admin)
   async listTenants() {
     return prisma.tenant.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
-        _count: { select: { users: true } }
+        _count: { select: { users: true } },
+        plan: true
       }
     });
   }
 
-  async listUsers() {
-      return prisma.user.findMany({
-          select: { id: true, name: true, email: true, role: true, tenantId: true }
-      });
-  }
-
+  // Métricas Globais (SaaS Dashboard)
   async getMetrics() {
     const [totalTenants, totalUsers] = await Promise.all([
       prisma.tenant.count(),
       prisma.user.count()
     ]);
 
+    // Cálculo estimado de MRR baseado nos planos ativos
+    const tenants = await prisma.tenant.findMany({ include: { plan: true } });
+    const mrr = tenants.reduce((acc, t) => acc + (t.plan?.price || 0), 0);
+
     return {
       totalCompanies: totalTenants,
       activeUsers: totalUsers,
-      mrr: totalTenants * 199.90,
-      churnRate: 0
+      mrr: mrr,
+      churnRate: 0 // Implementar lógica futura
     };
   }
 }
