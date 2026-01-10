@@ -12,7 +12,23 @@ export class SaasService {
     // 2. Hash senha
     const passwordHash = await bcrypt.hash(data.password || '123456', 10);
 
-    // 3. Transação
+    // 3. Garantir Plano Basic (Fallback de Segurança)
+    let plan = await prisma.plan.findUnique({ where: { id: 'basic' } });
+    if (!plan) {
+        console.log("[Auto-Seed] Criando plano 'basic' automaticamente...");
+        plan = await prisma.plan.create({
+            data: {
+                id: 'basic',
+                name: 'Start',
+                price: 199.90,
+                active: true,
+                limits: { users: 3, connections: 1, messages: 1000 },
+                features: { crm: true, campaigns: false, api: false, automations: false, reports: true }
+            }
+        });
+    }
+
+    // 4. Transação
     return await prisma.$transaction(async (tx) => {
       // Criar Tenant
       const tenant = await tx.tenant.create({
@@ -21,7 +37,7 @@ export class SaasService {
           ownerName: data.ownerName,
           email: data.email,
           status: 'active',
-          planId: 'basic' // Default plan
+          planId: 'basic'
         }
       });
 
