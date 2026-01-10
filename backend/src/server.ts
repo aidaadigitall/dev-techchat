@@ -38,7 +38,8 @@ app.register(aiRoutes, { prefix: '/api/ai' });
 app.register(contactRoutes, { prefix: '/api/contacts' });
 
 // === REGISTRO DA CAMADA SAAS REAL ===
-app.register(saasRoutes, { prefix: '/saas' });
+// Alterado para /api/saas para consistência
+app.register(saasRoutes, { prefix: '/api/saas' });
 
 // Rota padrão de saúde
 app.get('/health', async () => {
@@ -50,7 +51,7 @@ const start = async () => {
         // Bind 0.0.0.0 para funcionar corretamente dentro do Docker
         await app.listen({ port: parseInt(env.PORT || '3000'), host: '0.0.0.0' });
         console.log(`🚀 Backend SaaS running on port ${env.PORT}`);
-        console.log(`✅ Rotas SaaS ativas: /saas/tenants (POST), /saas/login (POST)`);
+        console.log(`✅ Rotas SaaS ativas em: /api/saas/tenants e /api/saas/login`);
     } catch (err) {
         app.log.error(err);
         (process as any).exit(1);

@@ -104,7 +104,8 @@ export const api = {
   // --- Auth & SaaS Core ---
   auth: {
       login: async (email: string, password: string) => {
-          const data = await fetchClient('/saas/login', {
+          // ROTA ATUALIZADA: /api/saas/login
+          const data = await fetchClient('/api/saas/login', {
               method: 'POST',
               body: JSON.stringify({ email, password })
           });
@@ -124,7 +125,8 @@ export const api = {
               password: adminUserData.password
           };
 
-          const response = await fetchClient('/saas/tenants', {
+          // ROTA ATUALIZADA: /api/saas/tenants
+          const response = await fetchClient('/api/saas/tenants', {
               method: 'POST',
               body: JSON.stringify(payload)
           });
@@ -146,28 +148,28 @@ export const api = {
 
   // --- SaaS Management (Super Admin) ---
   saas: {
-      getMetrics: async (): Promise<SaasStats> => fetchClient('/saas/metrics'),
+      getMetrics: async (): Promise<SaasStats> => fetchClient('/api/saas/metrics'),
   },
 
   companies: {
-      list: async (): Promise<Company[]> => fetchClient('/saas/tenants'),
-      create: async (data: any) => fetchClient('/saas/tenants', { method: 'POST', body: JSON.stringify(data) }),
-      update: async (id: string, data: any) => fetchClient(`/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-      delete: async (id: string) => fetchClient(`/saas/tenants/${id}`, { method: 'DELETE' })
+      list: async (): Promise<Company[]> => fetchClient('/api/saas/tenants'),
+      create: async (data: any) => fetchClient('/api/saas/tenants', { method: 'POST', body: JSON.stringify(data) }),
+      update: async (id: string, data: any) => fetchClient(`/api/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: async (id: string) => fetchClient(`/api/saas/tenants/${id}`, { method: 'DELETE' })
   },
 
   plans: {
-      list: async (): Promise<Plan[]> => fetchClient('/saas/plans'),
-      save: async (plan: any) => fetchClient('/saas/plans', { method: 'POST', body: JSON.stringify(plan) })
+      list: async (): Promise<Plan[]> => fetchClient('/api/saas/plans'),
+      save: async (plan: any) => fetchClient('/api/saas/plans', { method: 'POST', body: JSON.stringify(plan) })
   },
 
   users: {
       list: async (tenantId?: string) => {
-          let url = '/saas/users';
+          let url = '/api/saas/users';
           if (tenantId) url += `?tenantId=${tenantId}`;
           return fetchClient(url);
       },
-      create: async (data: any) => fetchClient('/saas/users', { method: 'POST', body: JSON.stringify(data) })
+      create: async (data: any) => fetchClient('/api/saas/users', { method: 'POST', body: JSON.stringify(data) })
   },
 
   // --- Contacts ---

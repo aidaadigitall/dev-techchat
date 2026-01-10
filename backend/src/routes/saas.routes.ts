@@ -5,6 +5,7 @@ import { SaasController } from '../controllers/saas.controller';
 const controller = new SaasController();
 
 export async function saasRoutes(app: FastifyInstance) {
+  console.log('[SaaS Routes] Registrando rotas de autenticação...');
   
   // Rota Pública: Criar Empresa (Register)
   app.post('/tenants', controller.register.bind(controller));
@@ -20,4 +21,6 @@ export async function saasRoutes(app: FastifyInstance) {
 
   // Healthcheck do módulo SaaS
   app.get('/health', async () => ({ status: 'SaaS Module Active' }));
+  
+  console.log('[SaaS Routes] Rotas registradas: POST /login, POST /tenants, GET /tenants');
 }
