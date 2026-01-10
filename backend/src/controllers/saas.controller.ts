@@ -7,20 +7,22 @@ const service = new SaasService();
 
 export class SaasController {
 
-  // POST /saas/tenants
+  // POST /api/saas/auth/register
   async register(req: FastifyRequest, reply: FastifyReply) {
+    console.log(`[SaaS] Nova tentativa de registro`, req.body);
+    
     const schema = z.object({
-      companyName: z.string().min(3, "Nome da empresa deve ter no mínimo 3 caracteres"),
-      ownerName: z.string().min(3, "Nome do responsável deve ter no mínimo 3 caracteres"),
-      email: z.string().email("Email inválido"),
-      password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres")
+      companyName: z.string().min(3),
+      ownerName: z.string().min(3),
+      email: z.string().email(),
+      password: z.string().min(6)
     });
 
     try {
       const data = schema.parse(req.body);
-      const result = await service.createTenant(data);
+      const result = await service.createTenantAndAdmin(data);
       
-      // Gerar Token JWT automático após registro
+      // Gera token JWT
       const token = await reply.jwtSign({
         id: result.user.id,
         email: result.user.email,
@@ -29,19 +31,20 @@ export class SaasController {
       });
 
       return reply.code(201).send({
-        message: 'Empresa registrada com sucesso',
+        message: 'Conta criada com sucesso',
         tenant: result.tenant,
         user: result.user,
         token
       });
 
     } catch (error: any) {
+      console.error("Erro no registro:", error);
       const msg = error.issues ? error.issues[0].message : error.message;
       return reply.code(400).send({ error: msg });
     }
   }
 
-  // POST /saas/login
+  // POST /api/saas/auth/login
   async login(req: FastifyRequest, reply: FastifyReply) {
     const schema = z.object({
       email: z.string().email(),
@@ -52,7 +55,6 @@ export class SaasController {
       const data = schema.parse(req.body);
       const user = await service.login(data);
 
-      // Gerar Token JWT contendo o tenantId
       const token = await reply.jwtSign({
         id: user.id,
         email: user.email,
@@ -66,17 +68,38 @@ export class SaasController {
       });
 
     } catch (error: any) {
-      return reply.code(401).send({ error: error.message || 'Falha na autenticação' });
+      return reply.code(401).send({ error: error.message || 'Credenciais inválidas' });
     }
   }
 
-  // GET /saas/tenants
+  // GET /api/saas/tenants
   async listTenants(req: FastifyRequest, reply: FastifyReply) {
     try {
       const tenants = await service.listTenants();
       return reply.send(tenants);
     } catch (error) {
-      return reply.code(500).send({ error: 'Erro interno ao listar empresas' });
+      return reply.code(500).send({ error: 'Erro ao listar empresas' });
+    }
+  }
+
+  // GET /api/saas/users
+  async listUsers(req: FastifyRequest, reply: FastifyReply) {
+    try {
+        // Implementar filtro por tenantId se necessário
+        const users = await service.listUsers();
+        return reply.send(users);
+    } catch (error) {
+        return reply.code(500).send({ error: 'Erro ao listar usuários' });
+    }
+  }
+
+  // GET /api/saas/metrics
+  async getMetrics(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const metrics = await service.getMetrics();
+      return reply.send(metrics);
+    } catch (error) {
+      return reply.code(500).send({ error: 'Erro ao calcular métricas' });
     }
   }
 }

@@ -1,23 +1,11 @@
 
 import { Contact, Message, MessageType, Pipeline, Campaign, Task, Proposal, Plan, User, Company, SaasStats, KanbanColumn } from '../types';
 
-// --- Dynamic URL Detection ---
-// Permite que funcione em localhost, IP da VPS ou Domínio sem configuração manual
-const getBaseUrl = () => {
-    const hostname = window.location.hostname;
-    
-    // Ambiente Local
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return 'http://localhost:3000';
-    }
-    
-    // Ambiente VPS/Produção (Assume backend na porta 3000 do mesmo host)
-    // Se estiver usando HTTPS no frontend via Nginx, certifique-se que a API também está proxied ou acessível
-    return `${window.location.protocol}//${hostname}:3000`;
-};
+// --- PRODUCTION URL HARDCODED ---
+// Garante que o frontend sempre aponte para a API de produção na VPS
+const API_BASE_URL = 'https://apitechchat.escsistemas.com';
 
-const API_BASE_URL = getBaseUrl();
-console.log('API Endpoint:', API_BASE_URL); // Debug
+console.log('🔗 API Endpoint:', API_BASE_URL);
 
 // --- Auth Helpers ---
 export const getToken = () => localStorage.getItem('auth_token');
@@ -53,7 +41,7 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Tenant ID Injection Logic
+  // Tenant ID Injection Logic (se não for POST público)
   const tenantId = getTenantId();
   const method = options.method || 'GET';
   let body = options.body;
@@ -63,38 +51,29 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
           if (body && typeof body === 'string') {
               try {
                   const parsed = JSON.parse(body);
-                  if (typeof parsed === 'object' && !parsed.tenantId) {
+                  // Só injeta se for um objeto e não tiver tenantId ainda
+                  if (typeof parsed === 'object' && !parsed.tenantId && !url.includes('/auth/')) {
                       parsed.tenantId = tenantId;
                       body = JSON.stringify(parsed);
                   }
               } catch(e) {}
-          } else if (!body) {
-              body = JSON.stringify({ tenantId });
           }
       } 
-  }
-
-  let finalUrl = url;
-  if (method === 'GET' && tenantId && !url.includes('tenantId=')) {
-      const separator = url.includes('?') ? '&' : '?';
-      finalUrl = `${url}${separator}tenantId=${tenantId}`;
   }
 
   const config: RequestInit = { ...options, headers, body };
 
   try {
-    const response = await fetch(finalUrl, config);
+    const response = await fetch(url, config);
     const responseData = await response.json().catch(() => ({}));
     
     if (!response.ok) {
-        // Tenta pegar a mensagem de erro específica do backend
-        const errorMessage = responseData.error || responseData.message || `Erro API ${response.status}: ${response.statusText}`;
+        const errorMessage = responseData.error || responseData.message || `Erro API ${response.status}`;
         throw new Error(errorMessage);
     }
     return responseData;
   } catch (error: any) {
     console.error(`API Request Failed [${endpoint}]:`, error);
-    // Repassa o erro original para ser tratado no frontend (ex: mostrar no toast)
     throw error;
   }
 };
@@ -104,8 +83,8 @@ export const api = {
   // --- Auth & SaaS Core ---
   auth: {
       login: async (email: string, password: string) => {
-          // ROTA ATUALIZADA: /api/saas/login
-          const data = await fetchClient('/api/saas/login', {
+          // Rota Fixa: /api/saas/auth/login
+          const data = await fetchClient('/api/saas/auth/login', {
               method: 'POST',
               body: JSON.stringify({ email, password })
           });
@@ -117,28 +96,26 @@ export const api = {
           return data;
       },
       register: async (companyData: any, adminUserData: any) => {
-          // Adaptar para o payload unificado do SaasController
+          // Rota Fixa: /api/saas/auth/register
           const payload = {
               companyName: companyData.name,
-              ownerName: adminUserData.name, // Nome do responsável
+              ownerName: adminUserData.name,
               email: adminUserData.email,
               password: adminUserData.password
           };
 
-          // ROTA ATUALIZADA: /api/saas/tenants
-          const response = await fetchClient('/api/saas/tenants', {
+          const response = await fetchClient('/api/saas/auth/register', {
               method: 'POST',
               body: JSON.stringify(payload)
           });
           
-          // O backend já retorna o token e usuário logado
           if (response.token) {
               setToken(response.token);
               localStorage.setItem('app_current_user', JSON.stringify(response.user));
               if (response.user.tenantId) localStorage.setItem('tenant_id', response.user.tenantId);
           }
 
-          return response; // { tenant, user, token, message }
+          return response;
       },
       me: async () => {
           const u = localStorage.getItem('app_current_user');
@@ -148,19 +125,30 @@ export const api = {
 
   // --- SaaS Management (Super Admin) ---
   saas: {
+      // Rota Fixa: /api/saas/metrics
       getMetrics: async (): Promise<SaasStats> => fetchClient('/api/saas/metrics'),
   },
 
   companies: {
+      // Rota Fixa: /api/saas/tenants
       list: async (): Promise<Company[]> => fetchClient('/api/saas/tenants'),
-      create: async (data: any) => fetchClient('/api/saas/tenants', { method: 'POST', body: JSON.stringify(data) }),
-      update: async (id: string, data: any) => fetchClient(`/api/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-      delete: async (id: string) => fetchClient(`/api/saas/tenants/${id}`, { method: 'DELETE' })
+      // Implementar create/update/delete conforme necessidade usando endpoints saas
+      create: async (data: any) => fetchClient('/api/saas/tenants', { method: 'POST', body: JSON.stringify(data) }), // Mock se backend nao tiver endpoint POST /tenants ainda
+      delete: async (id: string) => fetchClient(`/api/saas/tenants/${id}`, { method: 'DELETE' }),
+      update: async (id: string, data: any) => fetchClient(`/api/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
 
   plans: {
       list: async (): Promise<Plan[]> => fetchClient('/api/saas/plans'),
-      save: async (plan: any) => fetchClient('/api/saas/plans', { method: 'POST', body: JSON.stringify(plan) })
+      save: async (plan: any) => {
+          // Heuristic: If ID starts with 'plan_', it's a temp ID from frontend, so CREATE. Else UPDATE.
+          if (plan.id && String(plan.id).startsWith('plan_')) {
+              const { id, ...rest } = plan;
+              return fetchClient('/api/saas/plans', { method: 'POST', body: JSON.stringify(rest) });
+          } else {
+              return fetchClient(`/api/saas/plans/${plan.id}`, { method: 'PUT', body: JSON.stringify(plan) });
+          }
+      }
   },
 
   users: {
@@ -172,7 +160,7 @@ export const api = {
       create: async (data: any) => fetchClient('/api/saas/users', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  // --- Contacts ---
+  // --- Business Modules (Chat, Contacts, etc) ---
   contacts: {
       list: async (): Promise<Contact[]> => fetchClient('/api/contacts'),
       create: async (c: any) => fetchClient('/api/contacts', { method: 'POST', body: JSON.stringify(c) }),
@@ -180,7 +168,6 @@ export const api = {
       delete: async (id: string) => fetchClient(`/api/contacts/${id}`, { method: 'DELETE' })
   },
 
-  // --- WhatsApp ---
   whatsapp: {
       list: async () => fetchClient('/api/whatsapp/instances'),
       create: async (name: string, engine = 'whatsmeow') => fetchClient('/api/whatsapp/instances', { method: 'POST', body: JSON.stringify({ name, engine }) }),
@@ -189,7 +176,6 @@ export const api = {
       logout: async (id: string) => fetchClient(`/api/whatsapp/instances/${id}/logout`, { method: 'POST' })
   },
 
-  // --- Chat ---
   chat: {
       getMessages: async (contactId: string) => fetchClient(`/api/chat/${contactId}/messages`),
       sendMessage: async (contactId: string, content: string, type: MessageType = MessageType.TEXT) => {
@@ -198,7 +184,6 @@ export const api = {
       }
   },
 
-  // --- AI ---
   ai: { 
       generateInsight: async (dataPayload: any, contextType: string = 'tasks_analysis'): Promise<string> => {
           const response = await fetchClient('/api/ai/suggest', { 
@@ -207,19 +192,19 @@ export const api = {
           });
           return response.suggestion || response.text || 'Sem sugestão.';
       },
-      saveConfig: async (config: { apiKey: string; provider: string; model?: string; enabled?: boolean }) => {
+      saveConfig: async (config: any) => {
           return fetchClient('/api/ai/configs', { method: 'POST', body: JSON.stringify(config) });
       },
       getConfig: async () => fetchClient('/api/ai/configs')
   },
 
-  // --- Modules ---
   tasks: { 
       list: async () => fetchClient('/api/tasks'), 
       create: async (t:any) => fetchClient('/api/tasks', { method: 'POST', body: JSON.stringify(t) }), 
       update: async (id:string, u:any) => fetchClient(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify(u) }), 
       delete: async (id:string) => fetchClient(`/api/tasks/${id}`, { method: 'DELETE' }) 
   },
+  
   crm: { 
       getPipelines: async (): Promise<Pipeline[]> => fetchClient('/api/crm/pipelines'),
       createCard: async (columnId: string, cardData: any) => fetchClient(`/api/crm/cards`, { method: 'POST', body: JSON.stringify({ columnId, ...cardData }) }),
@@ -228,6 +213,7 @@ export const api = {
       updateColumn: async (colId: string, data: any) => fetchClient(`/api/crm/columns/${colId}`, { method: 'PUT', body: JSON.stringify(data) }),
       deleteColumn: async (colId: string) => fetchClient(`/api/crm/columns/${colId}`, { method: 'DELETE' })
   },
+  
   proposals: { 
       list: async (): Promise<Proposal[]> => fetchClient('/api/proposals'), 
       create: async (d:any) => fetchClient('/api/proposals', { method: 'POST', body: JSON.stringify(d) }) 

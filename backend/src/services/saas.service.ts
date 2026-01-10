@@ -2,50 +2,30 @@
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 
-interface CreateTenantDTO {
-  companyName: string;
-  ownerName: string;
-  email: string;
-  password?: string;
-}
-
-interface LoginDTO {
-  email: string;
-  password?: string;
-}
-
 export class SaasService {
   
-  /**
-   * Cria uma nova empresa (Tenant) e o usuário administrador inicial.
-   */
-  async createTenant(data: CreateTenantDTO) {
-    // 1. Verificar se o email já está em uso
-    const existingUser = await prisma.user.findFirst({ 
-      where: { email: data.email } 
-    });
-    
-    if (existingUser) {
-      throw new Error('Este email já está cadastrado no sistema.');
-    }
+  async createTenantAndAdmin(data: { companyName: string; ownerName: string; email: string; password?: string }) {
+    // 1. Validar duplicidade
+    const existing = await prisma.user.findFirst({ where: { email: data.email } });
+    if (existing) throw new Error('Este email já está em uso.');
 
-    // 2. Hash da senha
+    // 2. Hash senha
     const passwordHash = await bcrypt.hash(data.password || '123456', 10);
 
-    // 3. Transação: Criar Tenant e Usuário Admin
-    const result = await prisma.$transaction(async (tx) => {
-      // Criar Empresa
+    // 3. Transação
+    return await prisma.$transaction(async (tx) => {
+      // Criar Tenant
       const tenant = await tx.tenant.create({
         data: {
           name: data.companyName,
           ownerName: data.ownerName,
           email: data.email,
           status: 'active',
-          planId: 'basic'
+          planId: 'basic' // Default plan
         }
       });
 
-      // Criar Usuário Admin vinculado
+      // Criar User Admin
       const user = await tx.user.create({
         data: {
           name: data.ownerName,
@@ -56,61 +36,50 @@ export class SaasService {
         }
       });
 
-      return { tenant, user };
+      // Sanitizar retorno
+      const { password, ...safeUser } = user as any;
+      return { tenant, user: safeUser };
     });
-
-    // Remover senha do retorno
-    const { password, ...safeUser } = result.user as any;
-    
-    return {
-      tenant: result.tenant,
-      user: safeUser
-    };
   }
 
-  /**
-   * Autentica um usuário e retorna seus dados.
-   */
-  async login(data: LoginDTO) {
-    // Busca usuário pelo email
-    const user = await prisma.user.findFirst({ 
-      where: { email: data.email }
-    });
+  async login(data: { email: string; password?: string }) {
+    const user = await prisma.user.findFirst({ where: { email: data.email } });
+    if (!user) throw new Error('Email ou senha inválidos.');
 
-    // Segurança: Mensagem genérica para não revelar se email existe
-    if (!user) {
-      throw new Error('Credenciais inválidas.');
-    }
+    const userWithPass = user as any;
+    const isValid = await bcrypt.compare(data.password || '', userWithPass.password);
+    if (!isValid) throw new Error('Email ou senha inválidos.');
 
-    // Casting para any para acessar password caso o tipo gerado do Prisma esteja desatualizado
-    const userWithPassword = user as any;
-
-    if (!userWithPassword.password) {
-       throw new Error('Usuário sem senha definida. Contate o suporte.');
-    }
-
-    const isValid = await bcrypt.compare(data.password || '', userWithPassword.password);
-
-    if (!isValid) {
-      throw new Error('Credenciais inválidas.');
-    }
-
-    // Remove a senha do objeto retornado
-    const { password, ...safeUser } = userWithPassword;
+    const { password, ...safeUser } = userWithPass;
     return safeUser;
   }
 
-  /**
-   * Lista todas as empresas (Apenas Super Admin)
-   */
   async listTenants() {
     return prisma.tenant.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
-        _count: {
-          select: { users: true }
-        }
+        _count: { select: { users: true } }
       }
     });
+  }
+
+  async listUsers() {
+      return prisma.user.findMany({
+          select: { id: true, name: true, email: true, role: true, tenantId: true }
+      });
+  }
+
+  async getMetrics() {
+    const [totalTenants, totalUsers] = await Promise.all([
+      prisma.tenant.count(),
+      prisma.user.count()
+    ]);
+
+    return {
+      totalCompanies: totalTenants,
+      activeUsers: totalUsers,
+      mrr: totalTenants * 199.90,
+      churnRate: 0
+    };
   }
 }
