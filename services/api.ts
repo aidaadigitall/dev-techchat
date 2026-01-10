@@ -2,7 +2,8 @@
 import { Contact, Message, MessageType, Pipeline, Campaign, Task, Proposal, Plan, User, Company, SaasStats, KanbanColumn } from '../types';
 
 // URL do Backend: Usa a URL de produção ou localhost
-const API_BASE_URL = window.location.hostname === 'localhost' 
+const hostname = window.location.hostname;
+const API_BASE_URL = (hostname === 'localhost' || hostname === '127.0.0.1') 
   ? 'http://localhost:3000' 
   : 'https://apitechchat.escsistemas.com';
 

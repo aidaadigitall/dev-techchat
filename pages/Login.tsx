@@ -114,9 +114,13 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
         <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-gray-100 my-auto animate-fadeIn">
            
            <div className="flex flex-col items-center mb-6">
-              <div className="w-14 h-14 rounded-xl bg-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-2">
-                  {branding.appName.charAt(0)}
-              </div>
+              {branding.logoUrl ? (
+                  <img src={branding.logoUrl} alt={branding.appName} className="h-16 w-auto object-contain mb-4" />
+              ) : (
+                  <div className="w-14 h-14 rounded-xl bg-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-2" style={{ backgroundColor: branding.primaryColor }}>
+                      {branding.appName.charAt(0)}
+                  </div>
+              )}
               <span className="text-xl font-bold text-gray-800 tracking-tight">{branding.appName}</span>
            </div>
 
@@ -167,7 +171,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                    </div>
                 </div>
 
-                <button type="submit" disabled={loading} className="w-full bg-[#09090b] hover:bg-black text-white font-bold py-2.5 rounded-lg transition-all transform active:scale-[0.98] flex items-center justify-center shadow-lg disabled:opacity-70">
+                <button type="submit" disabled={loading} className="w-full bg-[#09090b] hover:bg-black text-white font-bold py-2.5 rounded-lg transition-all transform active:scale-[0.98] flex items-center justify-center shadow-lg disabled:opacity-70" style={{ backgroundColor: branding.primaryColor === '#9333ea' ? '#09090b' : branding.primaryColor }}>
                    {loading ? <Loader2 size={20} className="animate-spin" /> : <>Entrar <ArrowRight size={18} className="ml-2" /></>}
                 </button>
              </form>
@@ -196,7 +200,7 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                    <input type="password" required className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white" placeholder="Senha forte" value={regPassword} onChange={e => setRegPassword(e.target.value)} />
                 </div>
 
-                <button type="submit" disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-lg mt-2 disabled:opacity-70">
+                <button type="submit" disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-lg mt-2 disabled:opacity-70" style={{ backgroundColor: branding.primaryColor }}>
                    {loading ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Criar Conta e Empresa'}
                 </button>
              </form>
@@ -205,11 +209,11 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
            <div className="mt-8 pt-6 border-t border-gray-100 flex flex-col gap-3 text-center">
               {view === 'login' ? (
                  <p className="text-sm text-gray-600">
-                    Novo por aqui? <button onClick={() => setView('register')} className="text-purple-600 font-bold hover:underline">Criar conta</button>
+                    Novo por aqui? <button onClick={() => setView('register')} className="text-purple-600 font-bold hover:underline" style={{ color: branding.primaryColor }}>Criar conta</button>
                  </p>
               ) : (
                  <p className="text-sm text-gray-600">
-                    Já tem conta? <button onClick={() => setView('login')} className="text-purple-600 font-bold hover:underline">Fazer Login</button>
+                    Já tem conta? <button onClick={() => setView('login')} className="text-purple-600 font-bold hover:underline" style={{ color: branding.primaryColor }}>Fazer Login</button>
                  </p>
               )}
            </div>
