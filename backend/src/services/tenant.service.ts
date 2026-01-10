@@ -5,6 +5,12 @@ export class TenantService {
   async create(data: { name: string; email: string; ownerName: string; planId?: string }) {
     console.log(`[SAAS] Criando tenant: ${data.name}`);
     
+    // Validate Plan if provided
+    if (data.planId) {
+       const plan = await prisma.plan.findUnique({ where: { id: data.planId } });
+       if (!plan) throw new Error("Plano informado não existe.");
+    }
+
     // Create tenant
     const tenant = await prisma.tenant.create({
       data: {
@@ -12,8 +18,7 @@ export class TenantService {
         email: data.email,
         ownerName: data.ownerName,
         status: 'active',
-        // If you have a Plan relation, connect it here, otherwise just store ID
-        // planId: data.planId 
+        planId: data.planId || null
       }
     });
 
@@ -23,13 +28,20 @@ export class TenantService {
 
   async list() {
     return prisma.tenant.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: {
+        // Include plan details for the frontend list
+        plan: {
+          select: { name: true, price: true }
+        }
+      }
     });
   }
 
   async getById(id: string) {
     return prisma.tenant.findUnique({
-      where: { id }
+      where: { id },
+      include: { plan: true }
     });
   }
 
@@ -43,7 +55,8 @@ export class TenantService {
 
   async delete(id: string) {
     console.log(`[SAAS] Removendo tenant: ${id}`);
-    // Ideally, implement soft delete or cascading delete logic here
+    
+    // Transactional cleanup could be implemented here (delete users, messages, etc.)
     return prisma.tenant.delete({
       where: { id }
     });
