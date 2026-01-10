@@ -1,7 +1,5 @@
 
-// ESTE ARQUIVO ESTÁ DEPRECADO.
-// A arquitetura agora utiliza REST API com JWT no backend Node.js.
-// Não utilize este arquivo.
-
+// ARQUIVO DEPRECADO
+// A arquitetura SaaS agora é 100% baseada em API REST (Fastify + Prisma).
+// Não utilize este arquivo para nada.
 export const supabase = null;
-export const isSupabaseConfigured = () => false;

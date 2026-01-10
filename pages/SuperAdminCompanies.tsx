@@ -73,6 +73,7 @@ const SuperAdminCompanies: React.FC = () => {
       features: {
         crm: true,
         campaigns: false,
+        api: false,
         automations: false,
         reports: true
       }
@@ -84,6 +85,7 @@ const SuperAdminCompanies: React.FC = () => {
     const features = company.features || {
         crm: true,
         campaigns: true,
+        api: true,
         automations: true,
         reports: true
     };
@@ -421,6 +423,16 @@ const SuperAdminCompanies: React.FC = () => {
                       onChange={() => toggleFeature('reports')}
                     />
                     <span className="text-sm text-gray-700">Relatórios Avançados</span>
+                 </label>
+
+                 <label className="flex items-center space-x-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 h-4 w-4"
+                      checked={selectedCompany?.features?.api}
+                      onChange={() => toggleFeature('api')}
+                    />
+                    <span className="text-sm text-gray-700">API Pública</span>
                  </label>
               </div>
               <p className="text-xs text-gray-500 mt-2 ml-1">
