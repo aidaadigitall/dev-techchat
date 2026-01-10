@@ -8,61 +8,38 @@ const service = new SaasService();
 export class SaasController {
 
   // POST /saas/tenants
-  async createTenant(req: FastifyRequest, reply: FastifyReply) {
+  async register(req: FastifyRequest, reply: FastifyReply) {
+    // Validação do Payload
     const schema = z.object({
-      name: z.string(),
-      email: z.string().email(),
-      ownerName: z.string(),
-      planId: z.string().optional()
+      companyName: z.string().min(3, "Nome da empresa deve ter no mínimo 3 caracteres"),
+      ownerName: z.string().min(3, "Nome do responsável deve ter no mínimo 3 caracteres"),
+      email: z.string().email("Email inválido"),
+      password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres")
     });
 
     try {
       const data = schema.parse(req.body);
-      const tenant = await service.createTenant(data);
-      return reply.code(201).send(tenant);
+      const result = await service.createTenant(data);
+      
+      // Gerar Token JWT automático após registro
+      const token = await reply.jwtSign({
+        id: result.user.id,
+        email: result.user.email,
+        tenantId: result.user.tenantId,
+        role: result.user.role
+      });
+
+      return reply.code(201).send({
+        message: 'Empresa registrada com sucesso',
+        tenant: result.tenant,
+        user: result.user,
+        token
+      });
+
     } catch (error: any) {
-      console.error(error);
-      return reply.code(400).send({ error: error.message || 'Erro ao criar empresa.' });
-    }
-  }
-
-  // GET /saas/tenants
-  async listTenants(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tenants = await service.listTenants();
-      return reply.send(tenants);
-    } catch (error) {
-      return reply.code(500).send({ error: 'Erro ao listar empresas.' });
-    }
-  }
-
-  // POST /saas/users
-  async createUser(req: FastifyRequest, reply: FastifyReply) {
-    const schema = z.object({
-      name: z.string(),
-      email: z.string().email(),
-      password: z.string().min(6),
-      tenantId: z.string().uuid(),
-      role: z.string().optional()
-    });
-
-    try {
-      const data = schema.parse(req.body);
-      const user = await service.createUser(data);
-      return reply.code(201).send(user);
-    } catch (error: any) {
-      return reply.code(400).send({ error: error.message || 'Erro ao criar usuário.' });
-    }
-  }
-
-  // GET /saas/users
-  async listUsers(req: FastifyRequest, reply: FastifyReply) {
-    const { tenantId } = req.query as { tenantId?: string };
-    try {
-      const users = await service.listUsers(tenantId);
-      return reply.send(users);
-    } catch (error) {
-      return reply.code(500).send({ error: 'Erro ao listar usuários.' });
+      // Tratamento de erro Zod ou Service
+      const msg = error.issues ? error.issues[0].message : error.message;
+      return reply.code(400).send({ error: msg });
     }
   }
 
@@ -74,10 +51,10 @@ export class SaasController {
     });
 
     try {
-      const { email, password } = schema.parse(req.body);
-      const user = await service.login(email, password);
+      const data = schema.parse(req.body);
+      const user = await service.login(data);
 
-      // Gerar JWT usando o plugin registrado no server.ts
+      // Gerar Token JWT
       const token = await reply.jwtSign({
         id: user.id,
         email: user.email,
@@ -85,9 +62,23 @@ export class SaasController {
         role: user.role
       });
 
-      return reply.send({ user, token });
+      return reply.code(200).send({
+        user,
+        token
+      });
+
     } catch (error: any) {
-      return reply.code(401).send({ error: error.message || 'Autenticação falhou.' });
+      return reply.code(401).send({ error: error.message || 'Falha na autenticação' });
+    }
+  }
+
+  // GET /saas/tenants
+  async listTenants(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenants = await service.listTenants();
+      return reply.send(tenants);
+    } catch (error) {
+      return reply.code(500).send({ error: 'Erro interno ao listar empresas' });
     }
   }
 }

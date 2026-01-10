@@ -6,21 +6,18 @@ const controller = new SaasController();
 
 export async function saasRoutes(app: FastifyInstance) {
   
-  // Auth
+  // Rota Pública: Criar Empresa (Register)
+  app.post('/tenants', controller.register.bind(controller));
+
+  // Rota Pública: Login
   app.post('/login', controller.login.bind(controller));
 
-  // Tenants
-  app.post('/tenants', controller.createTenant.bind(controller));
-  app.get('/tenants', controller.listTenants.bind(controller));
+  // Rotas Protegidas (Exemplo para listagem)
+  app.get('/tenants', {
+    // Middleware de Auth opcional aqui se quiser proteger a listagem
+    // preValidation: [app.authenticate] 
+  }, controller.listTenants.bind(controller));
 
-  // Users
-  app.post('/users', controller.createUser.bind(controller));
-  app.get('/users', controller.listUsers.bind(controller));
-  
-  // Rota de teste/debug para verificar JWT (protegida)
-  app.get('/me', {
-    preValidation: [app.authenticate] 
-  } as any, async (req: any, reply) => {
-    return req.user;
-  });
+  // Healthcheck do módulo SaaS
+  app.get('/health', async () => ({ status: 'SaaS Module Active' }));
 }

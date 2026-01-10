@@ -2,83 +2,112 @@
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 
+interface CreateTenantDTO {
+  companyName: string;
+  ownerName: string;
+  email: string;
+  password?: string;
+}
+
+interface LoginDTO {
+  email: string;
+  password?: string;
+}
+
 export class SaasService {
   
-  // --- Tenant Operations ---
-  
-  async createTenant(data: { name: string; email: string; ownerName: string; planId?: string }) {
-    // Verifica se já existe tenant com este email (opcional, mas boa prática)
-    // const existing = await prisma.tenant.findFirst({ where: { email: data.email } });
-    // if (existing) throw new Error('Empresa já registrada com este email.');
-
-    const tenant = await prisma.tenant.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        ownerName: data.ownerName,
-        status: 'active',
-        planId: data.planId || 'basic'
-      }
+  /**
+   * Cria uma nova empresa (Tenant) e o usuário administrador inicial.
+   */
+  async createTenant(data: CreateTenantDTO) {
+    // 1. Verificar se o email já está em uso
+    const existingUser = await prisma.user.findFirst({ 
+      where: { email: data.email } 
     });
-    return tenant;
-  }
+    
+    if (existingUser) {
+      throw new Error('Este email já está cadastrado no sistema.');
+    }
 
-  async listTenants() {
-    return prisma.tenant.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
-  }
-
-  // --- User Operations ---
-
-  async createUser(data: { name: string; email: string; password?: string; tenantId: string; role?: string }) {
-    if (!data.tenantId) throw new Error('Tenant ID é obrigatório para criar usuário.');
-
-    const existing = await prisma.user.findFirst({ where: { email: data.email } });
-    if (existing) throw new Error('Email já está em uso.');
-
+    // 2. Hash da senha
     const passwordHash = await bcrypt.hash(data.password || '123456', 10);
 
-    const user = await prisma.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        password: passwordHash,
-        tenantId: data.tenantId,
-        role: data.role || 'user'
+    // 3. Transação: Criar Tenant e Usuário Admin
+    // Usamos transaction para garantir que ou cria tudo ou nada
+    const result = await prisma.$transaction(async (tx) => {
+      // Criar Empresa
+      const tenant = await tx.tenant.create({
+        data: {
+          name: data.companyName,
+          ownerName: data.ownerName,
+          email: data.email,
+          status: 'active',
+          planId: 'basic' // Plano padrão
+        }
+      });
+
+      // Criar Usuário Admin vinculado
+      const user = await tx.user.create({
+        data: {
+          name: data.ownerName,
+          email: data.email,
+          password: passwordHash,
+          role: 'admin',
+          tenantId: tenant.id
+        }
+      });
+
+      return { tenant, user };
+    });
+
+    // Remover senha do retorno
+    const { password, ...safeUser } = result.user;
+    
+    return {
+      tenant: result.tenant,
+      user: safeUser
+    };
+  }
+
+  /**
+   * Autentica um usuário e retorna seus dados.
+   */
+  async login(data: LoginDTO) {
+    const user = await prisma.user.findFirst({ 
+      where: { email: data.email },
+      include: {
+        // Opcional: incluir dados da empresa se necessário
+        // tenant: true 
       }
     });
 
-    const { password, ...safeUser } = user as any;
+    if (!user) {
+      throw new Error('Credenciais inválidas.');
+    }
+
+    // @ts-ignore - Prisma types workaround if password field is missing in generated client type
+    const isValid = await bcrypt.compare(data.password || '', user.password);
+
+    if (!isValid) {
+      throw new Error('Credenciais inválidas.');
+    }
+
+    // @ts-ignore
+    const { password, ...safeUser } = user;
     return safeUser;
   }
 
-  async listUsers(tenantId?: string) {
-    const where = tenantId ? { tenantId } : {};
-    return prisma.user.findMany({
-      where,
-      select: { 
-        id: true, 
-        name: true, 
-        email: true, 
-        role: true, 
-        tenantId: true, 
-        createdAt: true 
+  /**
+   * Lista todas as empresas (Apenas Super Admin)
+   */
+  async listTenants() {
+    return prisma.tenant.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { users: true }
+        }
       }
     });
-  }
-
-  // --- Auth Operations ---
-
-  async login(email: string, pass: string) {
-    const user = await prisma.user.findFirst({ where: { email } });
-    if (!user) throw new Error('Credenciais inválidas.');
-
-    const isValid = await bcrypt.compare(pass, (user as any).password);
-    if (!isValid) throw new Error('Credenciais inválidas.');
-
-    // Remove a senha do objeto retornado
-    const { password, ...safeUser } = user as any;
-    return safeUser;
   }
 }

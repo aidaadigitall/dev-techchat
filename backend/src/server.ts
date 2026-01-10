@@ -11,18 +11,18 @@ import { saasRoutes } from './routes/saas.routes';
 
 const app = Fastify({ logger: true });
 
-// Configuração de CORS
+// 1. Configuração de CORS
 app.register(cors, {
     origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 });
 
-// Registrar JWT
+// 2. Registrar JWT (Essencial para SaaS)
 app.register(jwt, {
     secret: process.env.JWT_SECRET || 'supersecret_saas_key_change_me'
 });
 
-// Decorator para proteger rotas
+// 3. Decorator para proteger rotas (Auth Middleware)
 app.decorate("authenticate", async function(request: any, reply: any) {
     try {
         await request.jwtVerify();
@@ -31,29 +31,26 @@ app.decorate("authenticate", async function(request: any, reply: any) {
     }
 });
 
-// Registrar Rotas Principais
+// 4. Registrar Rotas da Aplicação
 app.register(whatsappRoutes, { prefix: '/api/whatsapp' });
 app.register(webhookRoutes, { prefix: '/webhooks' });
 app.register(aiRoutes, { prefix: '/api/ai' });
 app.register(contactRoutes, { prefix: '/api/contacts' });
 
-// Registrar Rotas SaaS (Camada Real)
+// === REGISTRO DA CAMADA SAAS REAL ===
 app.register(saasRoutes, { prefix: '/saas' });
 
-// Placeholders para evitar erros 404 no Frontend enquanto módulos não são implementados no backend
-app.get('/api/tasks', async () => []);
-app.post('/api/tasks', async (req, reply) => reply.code(201).send({ id: 'real_db_id', ...req.body as any }));
-app.get('/api/crm/pipelines', async () => []); 
-
+// Rota padrão de saúde
 app.get('/health', async () => {
     return { status: 'ok', timestamp: new Date() };
 });
 
 const start = async () => {
     try {
-        await app.listen({ port: parseInt(env.PORT), host: '0.0.0.0' });
-        console.log(`🚀 Backend Tech Chat running on port ${env.PORT}`);
-        console.log(`✨ SaaS Module Loaded (Routes: /saas/tenants, /saas/users, /saas/login)`);
+        // Bind 0.0.0.0 para funcionar corretamente dentro do Docker
+        await app.listen({ port: parseInt(env.PORT || '3000'), host: '0.0.0.0' });
+        console.log(`🚀 Backend SaaS running on port ${env.PORT}`);
+        console.log(`✅ Rotas SaaS ativas: /saas/tenants (POST), /saas/login (POST)`);
     } catch (err) {
         app.log.error(err);
         (process as any).exit(1);
