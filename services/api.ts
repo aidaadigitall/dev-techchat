@@ -16,18 +16,14 @@ export const clearToken = () => {
   localStorage.removeItem('tenant_id');
 };
 
-// Recupera o Tenant ID da sessão
 export const getTenantId = () => {
     const userStr = localStorage.getItem('app_current_user');
     if (userStr) {
         try {
             const user = JSON.parse(userStr);
             if (user.tenantId) return user.tenantId;
-        } catch(e) {
-            console.error("Erro ao ler tenantId do usuario", e);
-        }
+        } catch(e) { console.error(e); }
     }
-    // Fallback: tenta ler direto do storage se foi salvo separadamente
     return localStorage.getItem('tenant_id') || '';
 };
 
@@ -35,27 +31,23 @@ export const getTenantId = () => {
 const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
   
-  // Headers padrão
   const headers: any = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
 
-  // Injeção de JWT
   const token = getToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Injeção de Tenant ID (Obrigatório em SaaS Multi-tenant)
+  // Tenant ID Injection Logic
   const tenantId = getTenantId();
   const method = options.method || 'GET';
-
   let body = options.body;
 
   if (tenantId) {
-      if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
-          // Injeta tenantId no corpo JSON
+      if (['POST', 'PUT', 'DELETE'].includes(method)) {
           if (body && typeof body === 'string') {
               try {
                   const parsed = JSON.parse(body);
@@ -65,44 +57,21 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
                   }
               } catch(e) {}
           } else if (!body) {
-              // Se não tem body, cria um com tenantId
               body = JSON.stringify({ tenantId });
           }
-      } else if (method === 'GET') {
-          // Injeta tenantId na Query String
-          const separator = url.includes('?') ? '&' : '?';
-          if (!url.includes('tenantId=')) {
-             // Modificamos a URL da chamada localmente (não a variavel endpoint original)
-             // Note: fetch recebe a URL final montada acima, mas aqui precisamos anexar a query
-             // Como 'url' é const, vamos criar uma nova string na chamada do fetch
-          }
-      }
+      } 
   }
 
-  // Montagem final da URL com Query Params de Tenant se for GET
   let finalUrl = url;
   if (method === 'GET' && tenantId && !url.includes('tenantId=')) {
       const separator = url.includes('?') ? '&' : '?';
       finalUrl = `${url}${separator}tenantId=${tenantId}`;
   }
 
-  const config: RequestInit = {
-    ...options,
-    headers,
-    body
-  };
+  const config: RequestInit = { ...options, headers, body };
 
   try {
     const response = await fetch(finalUrl, config);
-    
-    // Tratamento de Sessão Expirada
-    if (response.status === 401) {
-        console.warn("Sessão expirada (401).");
-        // Opcional: limpar token e redirecionar
-        // clearToken();
-        // window.location.href = '/';
-    }
-
     const responseData = await response.json().catch(() => ({}));
     
     if (!response.ok) {
@@ -111,13 +80,13 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
     return responseData;
   } catch (error) {
     console.error(`API Request Failed [${endpoint}]:`, error);
-    throw error; // Repassa o erro para a tela quebrar/avisar o usuário
+    throw error;
   }
 };
 
 export const api = {
   
-  // --- Auth & SaaS Core ---
+  // --- Auth & SaaS Core (CONNECTED TO REAL BACKEND) ---
   auth: {
       login: async (email: string, password: string) => {
           const data = await fetchClient('/saas/login', {
@@ -151,7 +120,6 @@ export const api = {
           return { tenant, user };
       },
       me: async () => {
-          // Recupera dados atualizados do usuário
           const u = localStorage.getItem('app_current_user');
           return u ? JSON.parse(u) : null;
       }
@@ -159,40 +127,19 @@ export const api = {
 
   // --- SaaS Management (Super Admin) ---
   saas: {
-      getMetrics: async (): Promise<SaasStats> => fetchClient('/saas/metrics'),
+      getMetrics: async (): Promise<SaasStats> => fetchClient('/saas/metrics'), // Implementar no controller se necessário
   },
 
   companies: {
-      list: async (): Promise<Company[]> => {
-          const data = await fetchClient('/saas/tenants');
-          // Adapter simples
-          return data.map((t: any) => ({
-              id: t.id,
-              name: t.name,
-              ownerName: t.ownerName,
-              email: t.email,
-              planId: t.planId || 'basic',
-              status: t.status,
-              userCount: 1, 
-              aiUsage: 0,
-              aiLimit: 1000,
-              useCustomKey: false
-          }));
-      },
+      list: async (): Promise<Company[]> => fetchClient('/saas/tenants'),
       create: async (data: any) => fetchClient('/saas/tenants', { method: 'POST', body: JSON.stringify(data) }),
-      update: async (id: string, data: any) => fetchClient(`/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-      delete: async (id: string) => fetchClient(`/saas/tenants/${id}`, { method: 'DELETE' })
+      update: async (id: string, data: any) => fetchClient(`/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }), // Implementar PUT se necessário
+      delete: async (id: string) => fetchClient(`/saas/tenants/${id}`, { method: 'DELETE' }) // Implementar DELETE se necessário
   },
 
   plans: {
       list: async (): Promise<Plan[]> => fetchClient('/saas/plans'),
-      save: async (plan: any) => {
-          if (plan.id && !plan.id.startsWith('plan_')) {
-               return fetchClient(`/saas/plans/${plan.id}`, { method: 'PUT', body: JSON.stringify(plan) });
-          } else {
-               return fetchClient('/saas/plans', { method: 'POST', body: JSON.stringify(plan) });
-          }
-      }
+      save: async (plan: any) => fetchClient('/saas/plans', { method: 'POST', body: JSON.stringify(plan) })
   },
 
   users: {
@@ -204,7 +151,7 @@ export const api = {
       create: async (data: any) => fetchClient('/saas/users', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  // --- Contacts (Real DB) ---
+  // --- Contacts ---
   contacts: {
       list: async (): Promise<Contact[]> => fetchClient('/api/contacts'),
       create: async (c: any) => fetchClient('/api/contacts', { method: 'POST', body: JSON.stringify(c) }),
@@ -245,14 +192,13 @@ export const api = {
       getConfig: async () => fetchClient('/api/ai/configs')
   },
 
-  // --- Modulos com Rotas Reais (Sem Mocks) ---
+  // --- Placeholders/Real Routes ---
   tasks: { 
       list: async () => fetchClient('/api/tasks'), 
       create: async (t:any) => fetchClient('/api/tasks', { method: 'POST', body: JSON.stringify(t) }), 
       update: async (id:string, u:any) => fetchClient(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify(u) }), 
       delete: async (id:string) => fetchClient(`/api/tasks/${id}`, { method: 'DELETE' }) 
   },
-  
   crm: { 
       getPipelines: async (): Promise<Pipeline[]> => fetchClient('/api/crm/pipelines'),
       createCard: async (columnId: string, cardData: any) => fetchClient(`/api/crm/cards`, { method: 'POST', body: JSON.stringify({ columnId, ...cardData }) }),
@@ -261,20 +207,8 @@ export const api = {
       updateColumn: async (colId: string, data: any) => fetchClient(`/api/crm/columns/${colId}`, { method: 'PUT', body: JSON.stringify(data) }),
       deleteColumn: async (colId: string) => fetchClient(`/api/crm/columns/${colId}`, { method: 'DELETE' })
   },
-  
   proposals: { 
       list: async (): Promise<Proposal[]> => fetchClient('/api/proposals'), 
       create: async (d:any) => fetchClient('/api/proposals', { method: 'POST', body: JSON.stringify(d) }) 
   },
 };
-
-// Exporta helper para adaptação de mensagens antigas se necessário
-export const adaptMessage = (data: any): Message => ({
-  id: data.id,
-  content: data.content,
-  senderId: data.sender_id === 'me' ? 'me' : data.contact_id || 'unknown',
-  timestamp: new Date(data.createdAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-  type: data.type || MessageType.TEXT,
-  status: data.status || 'sent',
-  channel: 'whatsapp'
-});

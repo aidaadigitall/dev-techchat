@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { api, adaptMessage } from '../services/api';
+import { api } from '../services/api';
 import { Contact, Message, MessageType } from '../types';
 import { Search, MoreVertical, Paperclip, Send, Check, CheckCheck, Clock, Plus, Phone, Video, Bot, ChevronLeft, Trash2, Filter, Inbox, Clock3, CheckCircle } from 'lucide-react';
 import { useToast } from '../components/ToastContext';
