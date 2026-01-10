@@ -20,23 +20,21 @@ services:
       - frontend
       - api
 
-  # --- FRONTEND (tech.escsistemas.com) ---
+  # --- FRONTEND ---
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        # Mantendo args de build para compatibilidade, mesmo se não usados diretamente
-        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
     container_name: tech_frontend
     restart: always
     expose:
       - "80" 
+    environment:
+      - VITE_API_URL=https://apitechchat.escsistemas.com
     networks:
       - tech_net
 
-  # --- BACKEND (apitechchat.escsistemas.com) ---
+  # --- BACKEND ---
   api:
     build: 
       context: ./backend
@@ -48,22 +46,21 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - API_BASE_URL=https://apitechchat.escsistemas.com
+      # Credentials injected via .env file on host
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - REDIS_HOST=redis
       - WHATSMEOW_URL=http://whatsmeow:8080
-      - API_BASE_URL=https://apitechchat.escsistemas.com
-      # Supabase/Postgres Connection
-      - SUPABASE_URL=${VITE_SUPABASE_URL}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      # Database Connection String for Prisma (Important!)
-      - DATABASE_URL=${DATABASE_URL}
-      - JWT_SECRET=supersecret_saas_key_change_me
     depends_on:
       - redis
       - whatsmeow
     networks:
       - tech_net
 
-  # --- QUEUE & CACHE ---
+  # --- SERVICES ---
   redis:
     image: redis:alpine
     container_name: tech_redis
@@ -73,7 +70,6 @@ services:
     networks:
       - tech_net
 
-  # --- WHATSAPP ENGINE ---
   whatsmeow:
     image: mikelue/whatsmeow-http-api:latest
     container_name: tech_whatsmeow

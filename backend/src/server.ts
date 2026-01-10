@@ -11,19 +11,18 @@ import { contactRoutes } from './routes/contact.routes';
 
 const app = Fastify({ logger: true });
 
-// 1. Configuração de CORS (Permissivo para evitar bloqueios na VPS)
+// 1. CORS for Production
 app.register(cors, {
     origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id']
 });
 
-// 2. Registrar JWT
+// 2. JWT Config
 app.register(jwt, {
     secret: process.env.JWT_SECRET || 'supersecret_saas_key_change_me'
 });
 
-// 3. Decorator de Autenticação
 app.decorate("authenticate", async function(request: any, reply: any) {
     try {
         await request.jwtVerify();
@@ -32,43 +31,34 @@ app.decorate("authenticate", async function(request: any, reply: any) {
     }
 });
 
-// 4. Registrar Rotas
-// --- CAMADA SAAS (CORE) ---
-console.log('🔄 Carregando Módulo SaaS...');
+// 3. Register Routes
+console.log('🔄 Registering Modules...');
 app.register(saasRoutes, { prefix: '/api/saas' });
-
-// --- Módulos Funcionais ---
 app.register(whatsappRoutes, { prefix: '/api/whatsapp' });
 app.register(webhookRoutes, { prefix: '/webhooks' });
 app.register(aiRoutes, { prefix: '/api/ai' });
 app.register(contactRoutes, { prefix: '/api/contacts' });
 
-// Healthcheck Global
-app.get('/health', async () => {
-    return { 
-        status: 'online', 
-        service: 'tech-chat-backend',
-        environment: process.env.NODE_ENV, 
-        timestamp: new Date() 
-    };
-});
+app.get('/health', async () => ({ 
+    status: 'online', 
+    env: process.env.NODE_ENV,
+    host: 'apitechchat.escsistemas.com'
+}));
 
 const start = async () => {
     try {
-        // Bind em 0.0.0.0 é obrigatório para Docker
         const port = parseInt(env.PORT || '3000');
+        // IMPORTANT: Listen on 0.0.0.0 for Docker
         await app.listen({ port, host: '0.0.0.0' });
         
         console.log(`
-🚀 SERVER RUNNING ON PORT ${port}
---------------------------------------------------
-✅ SaaS Routes Loaded:
-   POST /api/saas/auth/login
-   POST /api/saas/auth/register
-   GET  /api/saas/tenants
-   GET  /api/saas/metrics
---------------------------------------------------
-🌍 External URL: ${env.API_BASE_URL || 'http://localhost:3000'}
+🚀 SAAS BACKEND READY
+-----------------------------------------
+🔌 Port: ${port}
+🔑 JWT: Loaded
+📡 Routes: /api/saas/* registered
+🌍 URL: ${env.API_BASE_URL}
+-----------------------------------------
         `);
     } catch (err) {
         app.log.error(err);

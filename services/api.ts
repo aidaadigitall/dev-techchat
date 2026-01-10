@@ -1,11 +1,9 @@
 
 import { Contact, Message, MessageType, Pipeline, Campaign, Task, Proposal, Plan, User, Company, SaasStats, KanbanColumn } from '../types';
 
-// --- PRODUCTION URL HARDCODED ---
-// Garante que o frontend sempre aponte para a API de produção na VPS via HTTPS
+// --- PRODUCTION CONFIGURATION ---
 const API_BASE_URL = 'https://apitechchat.escsistemas.com';
-
-console.log('🔗 API Endpoint:', API_BASE_URL);
+console.log('🔗 Connecting to:', API_BASE_URL);
 
 // --- Auth Helpers ---
 export const getToken = () => localStorage.getItem('auth_token');
@@ -27,7 +25,7 @@ export const getTenantId = () => {
     return localStorage.getItem('tenant_id') || '';
 };
 
-// --- HTTP Client Core ---
+// --- HTTP Client ---
 const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
   
@@ -41,7 +39,6 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Tenant ID Injection Logic (se não for POST público)
   const tenantId = getTenantId();
   if (tenantId) {
       headers['x-tenant-id'] = tenantId;
@@ -66,10 +63,9 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
 
 export const api = {
   
-  // --- Auth & SaaS Core (NEW) ---
+  // --- REAL SAAS AUTH ---
   auth: {
       login: async (email: string, password: string) => {
-          // Rota Fixa: /api/saas/auth/login
           const data = await fetchClient('/api/saas/auth/login', {
               method: 'POST',
               body: JSON.stringify({ email, password })
@@ -82,7 +78,6 @@ export const api = {
           return data;
       },
       register: async (companyData: any, adminUserData: any) => {
-          // Rota Fixa: /api/saas/auth/register
           const payload = {
               companyName: companyData.name,
               ownerName: adminUserData.name,
@@ -109,14 +104,14 @@ export const api = {
       }
   },
 
-  // --- SaaS Management (Super Admin) ---
+  // --- SaaS Management ---
   saas: {
       getMetrics: async (): Promise<SaasStats> => fetchClient('/api/saas/metrics'),
   },
 
   companies: {
       list: async (): Promise<Company[]> => fetchClient('/api/saas/tenants'),
-      create: async (data: any) => fetchClient('/api/saas/tenants', { method: 'POST', body: JSON.stringify(data) }), // Mock se backend nao tiver endpoint POST /tenants ainda
+      create: async (data: any) => fetchClient('/api/saas/tenants', { method: 'POST', body: JSON.stringify(data) }),
       delete: async (id: string) => fetchClient(`/api/saas/tenants/${id}`, { method: 'DELETE' }),
       update: async (id: string, data: any) => fetchClient(`/api/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
@@ -142,7 +137,7 @@ export const api = {
       create: async (data: any) => fetchClient('/api/saas/users', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  // --- Business Modules ---
+  // --- Modules ---
   contacts: {
       list: async (): Promise<Contact[]> => fetchClient('/api/contacts'),
       create: async (c: any) => fetchClient('/api/contacts', { method: 'POST', body: JSON.stringify(c) }),
