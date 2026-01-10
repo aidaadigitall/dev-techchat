@@ -1,55 +1,90 @@
 
-import { Contact, Message, MessageType, Pipeline, Campaign, QuickReply, Task, Proposal, KanbanColumn, Tag, Sector, Company, Plan, AIAgent, User } from '../types';
+import { Contact, Message, MessageType, Pipeline, Campaign, Task, Proposal, Plan, AIAgent, User, Company, SaasStats, KanbanColumn } from '../types';
 
 // URL do Backend Node.js em Produção
 const API_BASE_URL = 'https://apitechchat.escsistemas.com';
 
-// Helper: Get Tenant ID
-const getTenantId = () => {
-  return localStorage.getItem('tenant_id') || 'tenant-default-123';
+// --- Auth Helpers ---
+export const getToken = () => localStorage.getItem('auth_token');
+export const setToken = (token: string) => localStorage.setItem('auth_token', token);
+export const clearToken = () => {
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('app_current_user');
+};
+export const getTenantId = () => {
+    // Tenta pegar do usuário logado primeiro
+    const userStr = localStorage.getItem('app_current_user');
+    if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user.tenantId) return user.tenantId;
+    }
+    // Fallback
+    return localStorage.getItem('tenant_id') || '';
 };
 
-// Helper: Fetch Wrapper handling tenantId in Body (POST/PUT) or Query (GET)
+// --- HTTP Client Core ---
 const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
-  const tenantId = getTenantId();
   let url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
   
+  // Headers padrão
   const headers: any = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
+
+  // Injeção de JWT
+  const token = getToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const config: RequestInit = {
     ...options,
     headers
   };
 
-  // Inject tenantId
-  if (options.method === 'POST' || options.method === 'PUT') {
-      // Inject into Body for mutation requests
-      let bodyObj: any = {};
-      if (typeof options.body === 'string') {
-          try { bodyObj = JSON.parse(options.body); } catch(e) {}
-      } else if (typeof options.body === 'object') {
-          bodyObj = options.body;
+  // Injeção de Tenant ID (Regra de Negócio SaaS)
+  // Se for POST/PUT, injeta no Body. Se for GET, injeta na Query.
+  const tenantId = getTenantId();
+  
+  if (tenantId) {
+      if (options.method === 'POST' || options.method === 'PUT') {
+          let bodyObj: any = {};
+          if (options.body && typeof options.body === 'string') {
+              try { bodyObj = JSON.parse(options.body); } catch(e) {}
+          } else if (typeof options.body === 'object') {
+              bodyObj = options.body;
+          }
+          
+          // Apenas injeta se não for rota de login/publica
+          if (!url.includes('/login') && !url.includes('/saas/tenants')) {
+               bodyObj.tenantId = tenantId;
+               config.body = JSON.stringify(bodyObj);
+          }
+      } else if (options.method === 'GET' || options.method === 'DELETE') {
+          const separator = url.includes('?') ? '&' : '?';
+          if (!url.includes('tenantId=')) {
+             url = `${url}${separator}tenantId=${tenantId}`;
+          }
       }
-      
-      // Merge tenantId (CRITICAL: Backend requires tenantId in BODY)
-      bodyObj.tenantId = tenantId;
-      config.body = JSON.stringify(bodyObj);
-  } else {
-      // Inject into Query Params for GET/DELETE
-      const separator = url.includes('?') ? '&' : '?';
-      url = `${url}${separator}tenantId=${tenantId}`;
   }
 
   try {
     const response = await fetch(url, config);
-    if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        throw new Error(errorBody.error || `Request failed: ${response.status}`);
+    
+    // Tratamento de Erros Globais
+    if (response.status === 401) {
+        console.warn("Sessão expirada. Redirecionando...");
+        // Opcional: window.location.href = '/'; 
+        // (melhor lidar no componente App para não causar refresh loop)
     }
-    return await response.json();
+
+    const responseData = await response.json().catch(() => ({}));
+    
+    if (!response.ok) {
+        throw new Error(responseData.error || `Erro na requisição: ${response.status}`);
+    }
+    return responseData;
   } catch (error) {
     console.error(`API Call Error [${endpoint}]:`, error);
     throw error;
@@ -57,265 +92,225 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
 };
 
 // --- Adapters ---
-const adaptMessage = (data: any): Message => ({
+export const adaptMessage = (data: any): Message => ({
   id: data.id,
   content: data.content,
-  senderId: data.from === 'me' ? 'me' : data.contactId || 'unknown',
-  timestamp: new Date(data.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+  senderId: data.sender_id === 'me' ? 'me' : data.contact_id || 'unknown', // Ajuste conforme seu backend
+  timestamp: new Date(data.createdAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
   type: data.type || MessageType.TEXT,
-  status: 'sent',
+  status: data.status || 'sent',
   channel: 'whatsapp'
 });
 
-// --- Local Storage Helpers (For Modules without Backend Endpoints) ---
-const localDb = {
-    get: (key: string) => {
-        const data = localStorage.getItem(`db_${key}_${getTenantId()}`);
-        return data ? JSON.parse(data) : [];
-    },
-    save: (key: string, data: any) => {
-        localStorage.setItem(`db_${key}_${getTenantId()}`, JSON.stringify(data));
-    },
-    add: (key: string, item: any) => {
-        const list = localDb.get(key);
-        const newItem = { ...item, id: `${key}_${Date.now()}` };
-        list.push(newItem);
-        localDb.save(key, list);
-        return newItem;
-    },
-    update: (key: string, id: string, updates: any) => {
-        const list = localDb.get(key);
-        const updated = list.map((i: any) => i.id === id ? { ...i, ...updates } : i);
-        localDb.save(key, updated);
-        return updated.find((i: any) => i.id === id);
-    },
-    delete: (key: string, id: string) => {
-        const list = localDb.get(key);
-        const filtered = list.filter((i: any) => i.id !== id);
-        localDb.save(key, filtered);
-    }
-};
-
 export const api = {
-  // --- Contacts (Real Backend or Fallback) ---
-  contacts: {
-      list: async (): Promise<Contact[]> => {
-          try {
-              // Try fetching from backend
-              const data = await fetchClient('/contacts');
-              return data.map((d: any) => ({
-                  id: d.id, 
-                  name: d.name || d.pushName || 'Desconhecido', 
-                  phone: d.phone, 
-                  email: d.email, 
-                  tags: d.tags || [],
-                  avatar: d.profilePicUrl || '', 
-                  status: d.status || 'open', 
-                  lastMessage: d.lastMessage,
-                  company: d.company, 
-                  role: d.role
-              }));
-          } catch (e) {
-              // Fallback to local if backend is not ready
-              console.warn("Using local contacts fallback");
-              return localDb.get('contacts');
+  
+  // --- Auth & SaaS Core ---
+  auth: {
+      login: async (email: string, password: string) => {
+          const data = await fetchClient('/saas/login', {
+              method: 'POST',
+              body: JSON.stringify({ email, password })
+          });
+          if (data.token) {
+              setToken(data.token);
+              localStorage.setItem('app_current_user', JSON.stringify(data.user));
+              // Salva tenantId explicitamente se necessário
+              if (data.user.tenantId) localStorage.setItem('tenant_id', data.user.tenantId);
           }
+          return data;
       },
-      create: async (c: any) => {
-          try {
-              return await fetchClient('/contacts', { method: 'POST', body: JSON.stringify(c) });
-          } catch (e) {
-              return localDb.add('contacts', c);
-          }
+      register: async (companyData: any, adminUserData: any) => {
+          // 1. Criar Tenant
+          const tenant = await fetchClient('/saas/tenants', {
+              method: 'POST',
+              body: JSON.stringify(companyData)
+          });
+          
+          // 2. Criar Admin User vinculado ao Tenant
+          const user = await fetchClient('/saas/users', {
+              method: 'POST',
+              body: JSON.stringify({
+                  ...adminUserData,
+                  tenantId: tenant.id,
+                  role: 'admin'
+              })
+          });
+
+          return { tenant, user };
       },
-      update: async (id: string, u: any) => {
-          try {
-              return await fetchClient(`/contacts/${id}`, { method: 'PUT', body: JSON.stringify(u) });
-          } catch (e) {
-              return localDb.update('contacts', id, u);
-          }
+      me: async () => {
+          // Endpoint hipotético ou recupera do localstorage por enquanto
+          // Se o backend tiver /saas/me, use-o. Caso contrário, usamos o stored user.
+          const u = localStorage.getItem('app_current_user');
+          return u ? JSON.parse(u) : null;
+      }
+  },
+
+  // --- SaaS Management (Super Admin) ---
+  saas: {
+      getMetrics: async (): Promise<SaasStats> => {
+          const data = await fetchClient('/saas/metrics');
+          return {
+              totalCompanies: data.overview.totalTenants,
+              activeUsers: data.overview.activeUsers,
+              mrr: data.overview.mrr,
+              churnRate: data.churnRate || 0
+          };
+      }
+  },
+
+  companies: {
+      list: async (): Promise<Company[]> => {
+          const data = await fetchClient('/saas/tenants');
+          // Adapter para interface Company do frontend
+          return data.map((t: any) => ({
+              id: t.id,
+              name: t.name,
+              ownerName: t.ownerName,
+              email: t.email,
+              phone: '', // Backend precisa retornar se tiver
+              planId: t.planId || 'basic',
+              status: t.status,
+              subscriptionEnd: t.createdAt, // Placeholder
+              userCount: 1, // Backend deveria retornar count real
+              aiUsage: 0,
+              aiLimit: 1000,
+              useCustomKey: false
+          }));
       },
-      delete: async (id: string) => {
-          try {
-              return await fetchClient(`/contacts/${id}`, { method: 'DELETE' });
-          } catch (e) {
-              return localDb.delete('contacts', id);
+      create: async (data: any) => fetchClient('/saas/tenants', { method: 'POST', body: JSON.stringify(data) }),
+      update: async (id: string, data: any) => fetchClient(`/saas/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: async (id: string) => fetchClient(`/saas/tenants/${id}`, { method: 'DELETE' })
+  },
+
+  plans: {
+      list: async (): Promise<Plan[]> => fetchClient('/saas/plans'),
+      save: async (plan: any) => {
+          if (plan.id && !plan.id.startsWith('plan_')) {
+               // Update (se não for ID temporário de frontend)
+               // Backend route for update plan not explicitly in prompt list, assuming pattern
+               return fetchClient(`/saas/plans/${plan.id}`, { method: 'PUT', body: JSON.stringify(plan) });
+          } else {
+               return fetchClient('/saas/plans', { method: 'POST', body: JSON.stringify(plan) });
           }
       }
   },
 
-  // --- WhatsApp / Instances (Real Backend) ---
-  whatsapp: {
-      list: async () => fetchClient('/whatsapp/instances'),
-      create: async (name: string) => fetchClient('/whatsapp/instances', { method: 'POST', body: JSON.stringify({ name }) }),
-      connect: async (id: string) => fetchClient(`/whatsapp/instances/${id}/connect`, { method: 'POST' }),
-      delete: async (id: string) => fetchClient(`/whatsapp/instances/${id}`, { method: 'DELETE' }),
-      update: async (id: string, data: any) => fetchClient(`/whatsapp/instances/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-      logout: async (id: string) => fetchClient(`/whatsapp/instances/${id}/logout`, { method: 'POST' })
+  users: {
+      list: async (tenantId?: string) => {
+          let url = '/saas/users';
+          if (tenantId) url += `?tenantId=${tenantId}`;
+          return fetchClient(url);
+      },
+      create: async (data: any) => fetchClient('/saas/users', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  // --- Chat (Real Backend) ---
+  // --- Contacts ---
+  contacts: {
+      list: async (): Promise<Contact[]> => {
+          // Fallback para array vazio se der erro (comum em setup inicial)
+          try {
+            const data = await fetchClient('/contacts'); // Rota precisa existir no backend.ts se não, vai dar 404
+            if (!Array.isArray(data)) return [];
+            return data.map((d: any) => ({
+                id: d.id, 
+                name: d.name || d.pushName || 'Sem Nome', 
+                phone: d.phone, 
+                email: d.email,
+                tags: d.tags || [],
+                status: d.status || 'open'
+            }));
+          } catch(e) {
+            console.warn("Contacts API failed or empty", e);
+            return [];
+          }
+      },
+      create: async (c: any) => fetchClient('/contacts', { method: 'POST', body: JSON.stringify(c) }),
+      update: async (id: string, u: any) => fetchClient(`/contacts/${id}`, { method: 'PUT', body: JSON.stringify(u) }),
+      delete: async (id: string) => fetchClient(`/contacts/${id}`, { method: 'DELETE' })
+  },
+
+  // --- WhatsApp ---
+  whatsapp: {
+      list: async () => fetchClient('/api/whatsapp/instances'),
+      create: async (name: string, engine = 'whatsmeow') => fetchClient('/api/whatsapp/instances', { method: 'POST', body: JSON.stringify({ name, engine }) }),
+      connect: async (id: string) => fetchClient(`/api/whatsapp/instances/${id}/connect`, { method: 'POST' }),
+      delete: async (id: string) => fetchClient(`/api/whatsapp/instances/${id}`, { method: 'DELETE' }),
+      logout: async (id: string) => fetchClient(`/api/whatsapp/instances/${id}/logout`, { method: 'POST' })
+  },
+
+  // --- Chat ---
   chat: {
       getMessages: async (contactId: string) => { 
           try {
-              const data = await fetchClient(`/chat/${contactId}/messages`);
-              return data.map(adaptMessage);
-          } catch(e) {
-              return [];
-          }
+             // Ajuste a rota conforme seu backend real
+             const data = await fetchClient(`/chat/${contactId}/messages`);
+             return Array.isArray(data) ? data.map(adaptMessage) : [];
+          } catch { return []; }
       },
-      sendMessage: async (contactId: string, content: string, type: MessageType = MessageType.TEXT, extraData?: any) => {
-          const payload = { contactId, content, type, ...extraData };
-          // This goes to the queue in backend
-          const data = await fetchClient('/chat/send', { method: 'POST', body: JSON.stringify(payload) });
-          return adaptMessage(data);
-      },
-      getQuickReplies: async () => localDb.get('quick_replies'),
-      createQuickReply: async (shortcut: string, content: string) => localDb.add('quick_replies', { shortcut, content })
-  },
-  
-  // --- Tasks (LOCAL STORAGE ONLY - Opção A) ---
-  tasks: { 
-      list: async (): Promise<Task[]> => localDb.get('tasks'),
-      create: async (t: any) => localDb.add('tasks', t),
-      update: async (id: string, u: any) => localDb.update('tasks', id, u),
-      delete: async (id: string) => localDb.delete('tasks', id)
-  },
-
-  // --- CRM / Kanban (MOCKED LOCAL - Backend not ready) ---
-  crm: { 
-      getPipelines: async (): Promise<Pipeline[]> => {
-          const pipes = localDb.get('pipelines');
-          if (pipes.length === 0) {
-              // Seed default pipeline
-              const defaultPipe = {
-                  id: 'default_pipeline',
-                  name: 'Funil de Vendas',
-                  columns: [
-                      { id: 'col1', title: 'Novo Lead', color: 'border-blue-500', cards: [] },
-                      { id: 'col2', title: 'Em Contato', color: 'border-yellow-500', cards: [] },
-                      { id: 'col3', title: 'Proposta', color: 'border-purple-500', cards: [] },
-                      { id: 'col4', title: 'Fechado', color: 'border-green-500', cards: [] }
-                  ]
-              };
-              localDb.save('pipelines', [defaultPipe]);
-              return [defaultPipe];
-          }
-          return pipes;
-      },
-      createCard: async (columnId: string, card: any) => {
-          const pipes = localDb.get('pipelines');
-          // Find and update nested card
-          // Simplified: Just add to first pipeline for demo
-          if(pipes.length > 0) {
-              const pipe = pipes[0];
-              const col = pipe.columns.find((c: any) => c.id === columnId);
-              if(col) {
-                  const newCard = { ...card, id: `card_${Date.now()}` };
-                  col.cards.push(newCard);
-                  localDb.save('pipelines', pipes);
-                  return newCard;
-              }
-          }
-          return null;
-      },
-      moveCard: async (cardId: string, fromColId: string, toColId: string) => {
-          const pipes = localDb.get('pipelines');
-          if(pipes.length > 0) {
-              const pipe = pipes[0];
-              const fromCol = pipe.columns.find((c: any) => c.id === fromColId);
-              const toCol = pipe.columns.find((c: any) => c.id === toColId);
-              if(fromCol && toCol) {
-                  const cardIndex = fromCol.cards.findIndex((c: any) => c.id === cardId);
-                  if(cardIndex > -1) {
-                      const [card] = fromCol.cards.splice(cardIndex, 1);
-                      toCol.cards.push(card);
-                      localDb.save('pipelines', pipes);
-                  }
-              }
-          }
-      },
-      createColumn: async (pipelineId: string, title: string, order: number, color: string) => {
-          const pipes = localDb.get('pipelines');
-          const pipe = pipes.find((p: any) => p.id === pipelineId);
-          if(pipe) {
-              const newCol = { id: `col_${Date.now()}`, title, order, color, cards: [] };
-              pipe.columns.push(newCol);
-              localDb.save('pipelines', pipes);
-              return newCol;
-          }
-          return null;
-      },
-      updateColumn: async (id: string, data: any) => {
-          const pipes = localDb.get('pipelines');
-          pipes.forEach((p: any) => {
-              const col = p.columns.find((c: any) => c.id === id);
-              if(col) Object.assign(col, data);
-          });
-          localDb.save('pipelines', pipes);
-      },
-      deleteColumn: async (id: string) => {
-          const pipes = localDb.get('pipelines');
-          pipes.forEach((p: any) => {
-              p.columns = p.columns.filter((c: any) => c.id !== id);
-          });
-          localDb.save('pipelines', pipes);
+      sendMessage: async (contactId: string, content: string, type: MessageType = MessageType.TEXT) => {
+          // Necessário connectionId. O backend deve inferir ou frontend deve passar.
+          // Assumindo que backend infere a conexão ativa do Tenant ou Contact.
+          // Se backend precisar de connectionId, precisamos pegar de algum contexto.
+          // Por enquanto, enviamos para rota genérica /send
+          const payload = { contactId, to: contactId, content, type }; // 'to' geralmente é o telefone
+          return fetchClient('/api/whatsapp/send', { method: 'POST', body: JSON.stringify(payload) });
       }
   },
 
-  // --- AI Service (Real Backend) ---
+  // --- AI ---
   ai: { 
-      listAgents: async () => localDb.get('ai_agents'),
-      
-      // Calls POST /ai/suggest
-      // Receives local tasks or chat history
+      // POST /ai/suggest
       generateInsight: async (dataPayload: any, contextType: string = 'tasks_analysis'): Promise<string> => {
-          const response = await fetchClient('/ai/suggest', { 
+          const response = await fetchClient('/api/ai/suggest', { 
               method: 'POST', 
               body: JSON.stringify({ 
                   contextType,
                   data: dataPayload
               }) 
           });
-          // Backend returns { suggestion: string } or text
-          return response.suggestion || response.text || '';
+          return response.suggestion || response.text || 'Sem sugestão.';
       },
-
-      analyzeConversation: async (messages: Message[]): Promise<string> => {
-          const response = await fetchClient('/ai/suggest', {
-              method: 'POST',
-              body: JSON.stringify({
-                  contextType: 'chat_analysis',
-                  data: messages
-              })
-          });
-          return JSON.stringify(response);
-      },
-
-      // Calls POST /ai/configs
-      // Expected Payload: { tenantId, provider, apiKey, model, enabled }
+      
+      // POST /ai/configs
       saveConfig: async (config: { apiKey: string; provider: string; model?: string; enabled?: boolean }) => {
-          return fetchClient('/ai/configs', { 
+          return fetchClient('/api/ai/configs', { 
               method: 'POST', 
               body: JSON.stringify(config) 
           });
       },
-
-      getConfig: async () => fetchClient('/ai/configs')
+      getConfig: async () => {
+          // GET /api/ai/configs (se implementado no backend)
+          // Se não tiver GET, retornamos null
+          try { return await fetchClient('/api/ai/configs'); } catch { return null; }
+      }
   },
 
-  // --- Other modules (Mocked Local) ---
-  proposals: { 
-      list: async() => localDb.get('proposals'), 
-      create: async(d:any) => localDb.add('proposals', d), 
-      update: async() => {} 
+  // --- Placeholders para módulos ainda não 100% no backend ---
+  tasks: { 
+      list: async () => [], 
+      create: async (t:any) => t, 
+      update: async (id:string, u:any) => u, 
+      delete: async (id:string) => {} 
   },
-  companies: { list: async() => [], create: async(c:any) => c, update: async(id:string, c:any) => c, delete: async(id: string) => {} },
-  plans: { list: async() => [], save: async(p:any) => p },
-  users: { updateProfile: async(d:any) => d },
-  campaigns: { list: async() => localDb.get('campaigns'), create: async(d:any) => localDb.add('campaigns', d) },
-  reports: { generatePdf: async() => {} },
-  metadata: { getTags: async() => [], saveTags: async() => {}, getSectors: async() => [], saveSectors: async() => {} }
+  crm: { 
+      getPipelines: async (): Promise<Pipeline[]> => [],
+      createCard: async (columnId: string, cardData: any) => {
+          // Mock creation
+          return { id: `card_${Date.now()}`, ...cardData, contactName: 'Novo Card' };
+      },
+      moveCard: async (cardId: string, sourceColId: string, destColId: string) => {
+          // Mock move
+      },
+      createColumn: async (pipelineId: string, title: string, order: number, color: string): Promise<KanbanColumn> => {
+          return { id: `col_${Date.now()}`, title, order: order as any, color, cards: [] } as any;
+      },
+      updateColumn: async (colId: string, data: any) => {
+          // Mock update
+      },
+      deleteColumn: async (colId: string) => {
+          // Mock delete
+      }
+  },
+  proposals: { list: async() => [], create: async(d:any) => d },
 };
-
-export { adaptMessage };

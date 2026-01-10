@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from '../services/supabase';
-import { Branding } from '../types';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, Phone, Building, AlertCircle, Database, ShieldCheck, Terminal, Eye, EyeOff } from 'lucide-react';
+import React, { useState } from 'react';
+import { api } from '../services/api';
+import { Branding, User } from '../types';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, Phone, Building, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 interface LoginProps {
   branding: Branding;
-  onLoginSuccess: (session: any) => void;
+  onLoginSuccess: (data: { user: User, token: string }) => void;
 }
 
 const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
@@ -27,184 +27,54 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
   // UI State
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showRegPassword, setShowRegPassword] = useState(false);
-  
   const [error, setError] = useState<string | null>(null);
-  const [dbErrorHelp, setDbErrorHelp] = useState(false);
-  const [signupDisabledHelp, setSignupDisabledHelp] = useState(false);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
-  // Estado de configuração do DB
-  const [dbConfigured, setDbConfigured] = useState(true);
-
-  // Clear stale sessions on mount and check config
-  useEffect(() => {
-    localStorage.removeItem('mock_session');
-    // Verifica a configuração ao montar
-    setDbConfigured(isSupabaseConfigured());
-  }, []);
-
-  // --- SPECIAL ADMIN HANDLER ---
-  const handleFirstTimeAdmin = async () => {
-    // Force check before action
-    if (!isSupabaseConfigured()) {
-        setError('Erro: Banco de dados não conectado. Verifique services/supabase.ts');
-        return;
-    }
-    
-    setLoading(true);
-    setError(null);
-    setDbErrorHelp(false);
-    setSignupDisabledHelp(false);
-    setSuccessMsg(null);
-    
-    const adminEmail = 'escinformaticago@gmail.com';
-    const adminPass = 'Esc@20200#';
-
-    try {
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email: adminEmail,
-        password: adminPass,
-      });
-
-      if (signInData.session) {
-        onLoginSuccess(signInData.session);
-        return;
-      }
-
-      if (signInError && signInError.message.includes('Email not confirmed')) {
-          throw new Error("Conta existe mas está pendente. Vá no painel Supabase > Authentication > Users, delete este usuário e clique neste botão novamente.");
-      }
-
-      console.log("Tentando criar conta admin...", signInError?.message);
-      
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: adminEmail,
-        password: adminPass,
-        options: {
-          data: {
-            full_name: 'Super Admin',
-            company_name: 'SaaS HQ',
-            phone: '5562999999999',
-            role: 'super_admin'
-          }
-        }
-      });
-
-      if (signUpError) {
-         if (signUpError.message.includes('already registered')) {
-             throw new Error("O usuário já existe. Tente logar normalmente.");
-         }
-         if (signUpError.message.includes('Signups not allowed for this instance')) {
-             setSignupDisabledHelp(true);
-             throw new Error("Bloqueio de Segurança: Cadastros desativados no Supabase.");
-         }
-         if (signUpError.message.includes('Database error saving new user')) {
-             setDbErrorHelp(true);
-             throw new Error("Erro de Banco de Dados: As tabelas não foram criadas. Execute o script SQL no Supabase.");
-         }
-         throw signUpError;
-      }
-
-      if (signUpData.session) {
-         onLoginSuccess(signUpData.session);
-      } else if (signUpData.user) {
-         setError("Conta criada! Tente fazer login agora. Se não funcionar, verifique se 'Confirm Email' está desativado no Supabase.");
-         setLoading(false);
-      }
-
-    } catch (err: any) {
-      console.error("Erro Admin Init:", err);
-      setError(err.message || "Erro ao inicializar admin.");
-      setLoading(false);
-    }
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     setLoading(true);
     setError(null);
-    setDbErrorHelp(false);
-    setSignupDisabledHelp(false);
-    setSuccessMsg(null);
     
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      if (data.session) {
-        onLoginSuccess(data.session);
-      }
+      const data = await api.auth.login(email, password);
+      onLoginSuccess(data);
     } catch (err: any) {
-      let msg = err.message;
-      if (err.message === 'Failed to fetch') {
-          msg = 'Falha de conexão com o servidor. Verifique sua internet e a URL do Supabase.';
-      } else if (err.message.includes('Invalid login credentials')) {
-          msg = 'Email ou senha incorretos.';
-      } else if (err.message.includes('Email not confirmed')) {
-          msg = 'Email pendente. Delete o usuário no painel Supabase e tente novamente.';
-      }
-      setError(msg);
+      setError(err.message || 'Erro ao realizar login. Verifique suas credenciais.');
+    } finally {
       setLoading(false);
     }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-
     setLoading(true);
     setError(null);
-    setDbErrorHelp(false);
-    setSignupDisabledHelp(false);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: regEmail,
-        password: regPassword,
-        options: {
-          data: {
-            full_name: `${firstName} ${lastName}`,
-            company_name: companyName,
-            phone: phone,
-            role: 'admin'
-          }
-        }
-      });
+      // 1. Prepara dados
+      const companyData = {
+          name: companyName,
+          email: regEmail, // Email da empresa/dono
+          ownerName: `${firstName} ${lastName}`,
+          planId: 'basic' // Default plan
+      };
 
-      if (error) {
-          if (error.message.includes('Database error saving new user')) {
-             setDbErrorHelp(true);
-             throw new Error("Erro crítico: Banco de dados incompleto.");
-          }
-          if (error.message.includes('Signups not allowed for this instance')) {
-             setSignupDisabledHelp(true);
-             throw new Error("Novos cadastros estão bloqueados no servidor.");
-          }
-          throw error;
-      }
+      const adminData = {
+          name: `${firstName} ${lastName}`,
+          email: regEmail,
+          password: regPassword,
+          role: 'admin'
+      };
 
-      if (data.session) {
-        onLoginSuccess(data.session);
-      } else {
-        if (data.user && !data.session) {
-            setSuccessMsg("Conta criada! Se não conseguir entrar, verifique se a confirmação de email está desativada no Supabase.");
-        } else {
-            setError("Ocorreu um erro inesperado ao criar a conta.");
-        }
-        setLoading(false);
-      }
+      // 2. Chama API de registro unificada (Helper no frontend)
+      const { user, tenant } = await api.auth.register(companyData, adminData);
+
+      // 3. Auto Login
+      const loginData = await api.auth.login(regEmail, regPassword);
+      onLoginSuccess(loginData);
 
     } catch (err: any) {
-      let msg = err.message;
-      if (err.message === 'Failed to fetch') {
-          msg = 'Falha de conexão com o servidor. Tente novamente mais tarde.';
-      }
-      setError(msg);
+      console.error(err);
+      setError(err.message || 'Erro ao criar conta. Tente novamente.');
       setLoading(false);
     }
   };
@@ -213,7 +83,6 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
     <div className="min-h-screen flex w-full bg-white overflow-hidden">
       {/* Left Side - Branding & Visuals */}
       <div className="hidden lg:flex w-1/2 bg-[#09090b] relative flex-col justify-between p-12 overflow-hidden">
-        {/* Abstract Background Shapes */}
         <div className="absolute top-0 left-0 w-full h-full opacity-20">
             <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-purple-600 blur-[120px]"></div>
             <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-blue-600 blur-[100px]"></div>
@@ -221,17 +90,13 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
 
         <div className="relative z-10 pt-20">
            <h2 className="text-5xl font-bold text-white mb-6 leading-tight">
-             Centralize seu atendimento.<br/>
+             Plataforma SaaS<br/>
              <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">
-               Potencialize seus resultados.
+               Enterprise Ready
              </span>
            </h2>
            <ul className="space-y-4 mt-8">
-              {[
-                'Gestão Omnichannel (WhatsApp, Instagram)',
-                'CRM Kanban Integrado',
-                'Automação com Inteligência Artificial'
-              ].map((item, i) => (
+              {['Multi-tenant Isolado', 'Gestão de Planos & Billing', 'API RESTful Segura'].map((item, i) => (
                 <li key={i} className="flex items-center text-gray-300 text-lg">
                    <CheckCircle2 className="text-purple-400 mr-3" size={24} />
                    {item}
@@ -239,9 +104,8 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
               ))}
            </ul>
         </div>
-
         <div className="relative z-10 text-xs text-gray-500">
-           © {new Date().getFullYear()} {branding.appName}. Todos os direitos reservados.
+           © {new Date().getFullYear()} {branding.appName}. SaaS Powered by Fastify & Prisma.
         </div>
       </div>
 
@@ -249,65 +113,26 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50 relative overflow-y-auto">
         <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-gray-100 my-auto animate-fadeIn">
            
-           {/* Logo Centered Above Form */}
            <div className="flex flex-col items-center mb-6">
-              {branding.logoUrl ? (
-                <img src={branding.logoUrl} alt={branding.appName} className="h-16 w-auto object-contain mb-2" />
-              ) : (
-                <div className="w-14 h-14 rounded-xl bg-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-2">
+              <div className="w-14 h-14 rounded-xl bg-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-2">
                   {branding.appName.charAt(0)}
-                </div>
-              )}
+              </div>
               <span className="text-xl font-bold text-gray-800 tracking-tight">{branding.appName}</span>
            </div>
 
            <div className="mb-8 text-center">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Bem-vindo!</h1>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                 {view === 'login' ? 'Acesso ao Painel' : 'Crie sua Empresa'}
+              </h1>
               <p className="text-sm text-gray-500">
-                {view === 'login' ? 'Insira suas credenciais para acessar o painel.' : 'Crie sua conta para começar.'}
+                {view === 'login' ? 'Entre com suas credenciais de acesso.' : 'Comece seu teste grátis agora.'}
               </p>
            </div>
 
-           {/* Environment Warning */}
-           {!dbConfigured && (
-             <div className="mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800 flex items-start animate-fadeIn">
-                <Database size={18} className="mr-2 flex-shrink-0 mt-0.5 text-yellow-600" />
-                <span>
-                   <strong>Aviso:</strong> Conexão com banco de dados instável ou em modo fallback.
-                </span>
-             </div>
-           )}
-
            {error && (
-             <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-100 text-sm text-red-600 flex flex-col items-start animate-fadeIn">
-                <div className="flex items-center mb-1">
-                    <AlertCircle size={18} className="mr-2 flex-shrink-0" />
-                    <strong>{error}</strong>
-                </div>
-                {dbErrorHelp && (
-                    <div className="mt-2 text-xs text-gray-600 bg-white p-2 rounded border border-red-100 w-full">
-                        <p className="mb-1"><strong>Causa Provável:</strong> O banco de dados Supabase está vazio e faltam as tabelas essenciais.</p>
-                        <p className="flex items-center"><Terminal size={12} className="mr-1"/> Solução: Execute o script SQL de criação no painel do Supabase.</p>
-                    </div>
-                )}
-                {signupDisabledHelp && (
-                    <div className="mt-2 text-xs text-gray-600 bg-white p-2 rounded border border-red-100 w-full">
-                        <p className="mb-1"><strong>Solução:</strong></p>
-                        <ol className="list-decimal pl-4 space-y-1">
-                            <li>Vá no Supabase Dashboard &gt; Authentication.</li>
-                            <li>Clique em <strong>Configuration</strong> (ou Settings) &gt; <strong>General</strong>.</li>
-                            <li>Ative a opção: <strong>"Allow new user signups"</strong>.</li>
-                            <li>Tente novamente.</li>
-                        </ol>
-                    </div>
-                )}
-             </div>
-           )}
-
-           {successMsg && (
-             <div className="mb-6 p-4 rounded-lg bg-green-50 border border-green-100 text-sm text-green-700 flex items-start animate-fadeIn">
-                <CheckCircle2 size={18} className="mr-2 flex-shrink-0 mt-0.5" />
-                <span>{successMsg}</span>
+             <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-100 text-sm text-red-600 flex items-start animate-fadeIn">
+                <AlertCircle size={18} className="mr-2 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
              </div>
            )}
 
@@ -316,16 +141,12 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                 <div>
                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                         <Mail size={18} />
-                      </div>
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Mail size={18} /></div>
                       <input 
-                        type="email" 
-                        required
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
+                        type="email" required
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all bg-white"
                         placeholder="seu@email.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        value={email} onChange={(e) => setEmail(e.target.value)}
                       />
                    </div>
                 </div>
@@ -333,151 +154,50 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
                 <div>
                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Senha</label>
                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                         <Lock size={18} />
-                      </div>
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Lock size={18} /></div>
                       <input 
-                        type={showPassword ? "text" : "password"} 
-                        required
-                        className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
+                        type={showPassword ? "text" : "password"} required
+                        className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all bg-white"
                         placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        value={password} onChange={(e) => setPassword(e.target.value)}
                       />
-                      <button 
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer focus:outline-none"
-                        tabIndex={-1}
-                      >
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer">
                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                   </div>
-                   
-                   {/* Link esqueceu senha e Botão de Criar Admin */}
-                   <div className="flex justify-between items-center mt-3">
-                      <a href="#" className="text-xs font-medium text-gray-500 hover:text-gray-700">Esqueceu a senha?</a>
-                      
-                      <button 
-                        type="button" 
-                        onClick={handleFirstTimeAdmin}
-                        className="text-[10px] font-bold text-purple-600 hover:text-purple-800 uppercase tracking-wide flex items-center bg-purple-50 px-2 py-1 rounded hover:bg-purple-100 transition-colors"
-                        title="Tenta criar a conta escinformaticago@gmail.com caso ela ainda não exista"
-                      >
-                        <ShieldCheck size={12} className="mr-1" /> Criar Admin (Se não possuir)
                       </button>
                    </div>
                 </div>
 
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  className="w-full bg-[#09090b] hover:bg-black text-white font-bold py-2.5 rounded-lg transition-all transform active:scale-[0.98] flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                   {loading ? (
-                     <Loader2 size={20} className="animate-spin" />
-                   ) : (
-                     <>Entrar no Sistema <ArrowRight size={18} className="ml-2" /></>
-                   )}
+                <button type="submit" disabled={loading} className="w-full bg-[#09090b] hover:bg-black text-white font-bold py-2.5 rounded-lg transition-all transform active:scale-[0.98] flex items-center justify-center shadow-lg disabled:opacity-70">
+                   {loading ? <Loader2 size={20} className="animate-spin" /> : <>Entrar <ArrowRight size={18} className="ml-2" /></>}
                 </button>
              </form>
            ) : (
              <form onSubmit={handleRegister} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                   <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
-                      <input 
-                        type="text" 
-                        required 
-                        className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                        placeholder="João" 
-                        value={firstName} 
-                        onChange={e => setFirstName(e.target.value)} 
-                      />
-                   </div>
-                   <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Sobrenome</label>
-                      <input 
-                        type="text" 
-                        required 
-                        className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                        placeholder="Silva" 
-                        value={lastName} 
-                        onChange={e => setLastName(e.target.value)} 
-                      />
-                   </div>
+                   <div><label className="block text-sm font-medium text-gray-700">Nome</label><input type="text" required className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white" placeholder="João" value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+                   <div><label className="block text-sm font-medium text-gray-700">Sobrenome</label><input type="text" required className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white" placeholder="Silva" value={lastName} onChange={e => setLastName(e.target.value)} /></div>
                 </div>
                 
                 <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
+                   <label className="block text-sm font-medium text-gray-700">Nome da Empresa</label>
                    <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Building size={18} /></div>
-                      <input 
-                        type="text" 
-                        required 
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                        placeholder="Minha Empresa Ltda" 
-                        value={companyName} 
-                        onChange={e => setCompanyName(e.target.value)} 
-                      />
+                      <input type="text" required className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white" placeholder="Minha Empresa Ltda" value={companyName} onChange={e => setCompanyName(e.target.value)} />
                    </div>
                 </div>
 
                 <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">Telefone (WhatsApp)</label>
-                   <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Phone size={18} /></div>
-                      <input 
-                        type="text" 
-                        required 
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                        placeholder="(11) 99999-9999" 
-                        value={phone} 
-                        onChange={e => setPhone(e.target.value)} 
-                      />
-                   </div>
+                   <label className="block text-sm font-medium text-gray-700">Email (Admin)</label>
+                   <input type="email" required className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white" placeholder="admin@empresa.com" value={regEmail} onChange={e => setRegEmail(e.target.value)} />
                 </div>
 
                 <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                   <input 
-                     type="email" 
-                     required 
-                     className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                     placeholder="seu@email.com" 
-                     value={regEmail} 
-                     onChange={e => setRegEmail(e.target.value)} 
-                   />
+                   <label className="block text-sm font-medium text-gray-700">Senha</label>
+                   <input type="password" required className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white" placeholder="Senha forte" value={regPassword} onChange={e => setRegPassword(e.target.value)} />
                 </div>
 
-                <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                   <div className="relative">
-                      <input 
-                        type={showRegPassword ? "text" : "password"} 
-                        required 
-                        className="w-full border border-gray-300 rounded-lg p-2.5 pr-10 text-sm bg-white text-gray-900 focus:ring-2 focus:ring-purple-500 outline-none" 
-                        placeholder="Criar senha segura" 
-                        value={regPassword} 
-                        onChange={e => setRegPassword(e.target.value)} 
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setShowRegPassword(!showRegPassword)}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer focus:outline-none"
-                        tabIndex={-1}
-                      >
-                        {showRegPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                   </div>
-                </div>
-
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-lg mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                   {loading ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Criar Conta Grátis'}
+                <button type="submit" disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-lg mt-2 disabled:opacity-70">
+                   {loading ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Criar Conta e Empresa'}
                 </button>
              </form>
            )}
@@ -485,21 +205,13 @@ const Login: React.FC<LoginProps> = ({ branding, onLoginSuccess }) => {
            <div className="mt-8 pt-6 border-t border-gray-100 flex flex-col gap-3 text-center">
               {view === 'login' ? (
                  <p className="text-sm text-gray-600">
-                    Não tem uma conta? <button onClick={() => setView('register')} className="text-purple-600 font-bold hover:underline">Inscrever-se</button>
+                    Novo por aqui? <button onClick={() => setView('register')} className="text-purple-600 font-bold hover:underline">Criar conta</button>
                  </p>
               ) : (
                  <p className="text-sm text-gray-600">
-                    Já tem uma conta? <button onClick={() => setView('login')} className="text-purple-600 font-bold hover:underline">Fazer Login</button>
+                    Já tem conta? <button onClick={() => setView('login')} className="text-purple-600 font-bold hover:underline">Fazer Login</button>
                  </p>
               )}
-              
-              <div className="mt-4 flex justify-center gap-6 text-xs text-gray-400">
-                 <a href="#" className="hover:text-gray-600 transition-colors">Visitar Site do Sistema</a>
-                 <span>•</span>
-                 <a href="#" className="hover:text-gray-600 transition-colors">Termos de Uso</a>
-                 <span>•</span>
-                 <a href="#" className="hover:text-gray-600 transition-colors">Privacidade</a>
-              </div>
            </div>
         </div>
       </div>

@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './services/supabase';
 import Sidebar from './components/Sidebar';
 import MobileHeader from './components/MobileHeader';
 import { AppRoute, User, Branding } from './types';
-import { MOCK_USERS, APP_NAME } from './constants';
+import { APP_NAME } from './constants';
 import { ToastProvider } from './components/ToastContext';
+import { api, getToken, clearToken } from './services/api';
 
 // Pages
 import Login from './pages/Login';
@@ -26,146 +27,94 @@ import SuperAdminPlans from './pages/SuperAdminPlans';
 import SuperAdminDatabase from './pages/SuperAdminDatabase';
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<any>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loadingSession, setLoadingSession] = useState(true);
   const [activeRoute, setActiveRoute] = useState<AppRoute>(AppRoute.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
-  // State for Current User (Profile Management)
-  const [currentUser, setCurrentUser] = useState<User>(() => {
-    // 1. Try to load from local storage to persist changes across reloads
-    try {
-      const savedUser = localStorage.getItem('app_current_user');
-      if (savedUser) {
-        return JSON.parse(savedUser);
-      }
-    } catch (e) {
-      console.error("Failed to load saved user", e);
-    }
-
-    // 2. Fallback default user for UI rendering if auth data is minimal
-    return MOCK_USERS[0] || {
-      id: 'default_admin',
-      name: 'Admin User',
-      email: 'admin@techchat.com',
-      role: 'super_admin',
-      avatar: '',
-      status: 'active',
-      companyId: 'comp1'
-    };
-  });
+  // Current User State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   
-  // State for Visual Identity (White Label)
+  // Branding State
   const [branding, setBranding] = useState<Branding>(() => {
     try {
         const saved = localStorage.getItem('app_branding');
         return saved ? JSON.parse(saved) : {
           appName: APP_NAME,
-          primaryColor: '#00a884', // Default WhatsApp Green Style
-          logoUrl: '' // Empty by default, user can set in settings
+          primaryColor: '#00a884',
+          logoUrl: ''
         };
-    } catch (e) {
+    } catch {
         return { appName: APP_NAME, primaryColor: '#00a884', logoUrl: '' };
     }
   });
   
-  // Simulation State for Role Switching - Persistent
-  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => {
-      return localStorage.getItem('app_is_admin_mode') === 'true';
-  });
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
 
-  // --- Auth & Session Management ---
+  // --- Init Session ---
   useEffect(() => {
-    const initSession = async () => {
-        try {
-            // Create a timeout promise that rejects after 5 seconds
-            // This prevents the "White Screen of Death" if Supabase hangs
-            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Session check timeout')), 5000));
-            const sessionPromise = supabase.auth.getSession();
-
-            // Race the session check against the timeout
-            const result: any = await Promise.race([sessionPromise, timeout]);
-            const { data: { session: supabaseSession } } = result;
-            
-            if (supabaseSession) {
-                setSession(supabaseSession);
-                syncUser(supabaseSession.user);
-            } else {
-                // Fallback: Check for Mock Session in LocalStorage
-                const mockSession = localStorage.getItem('mock_session');
-                if (mockSession) {
-                    const parsed = JSON.parse(mockSession);
-                    setSession(parsed);
-                    syncUser(parsed.user);
-                }
-            }
-        } catch (e) {
-            console.warn("Auth check finished with warning (or timeout):", e);
-            // Even if it fails/times out, we stop loading so the user can see the Login screen
-        } finally {
-            setLoadingSession(false);
-        }
+    const checkAuth = async () => {
+       const token = getToken();
+       if (token) {
+           // Token exists, load user data
+           try {
+               const savedUser = localStorage.getItem('app_current_user');
+               if (savedUser) {
+                   const parsedUser = JSON.parse(savedUser);
+                   setCurrentUser(parsedUser);
+                   setIsAuthenticated(true);
+                   
+                   // Check Admin Mode Preference
+                   const adminPref = localStorage.getItem('app_is_admin_mode') === 'true';
+                   const isSuperAdmin = parsedUser.role === 'super_admin';
+                   
+                   if (isSuperAdmin && adminPref) {
+                       setIsAdminMode(true);
+                       setActiveRoute(AppRoute.ADMIN_DASHBOARD);
+                   }
+               } else {
+                   // Se tem token mas não tem user salvo, logout
+                   clearToken();
+               }
+           } catch (e) {
+               console.error("Auth Error", e);
+               clearToken();
+           }
+       }
+       setLoadingSession(false);
     };
 
-    initSession();
-
-    // 2. Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-          setSession(session);
-          syncUser(session.user);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    checkAuth();
   }, []);
 
-  const syncUser = (authUser: any) => {
-    // Check if it's the Super Admin Credential
-    const isSuperAdminEmail = authUser.email === 'admin@techchat.com' || authUser.email === 'escinformaticago@gmail.com';
+  const handleLoginSuccess = (data: { user: User, token: string }) => {
+      setCurrentUser(data.user);
+      setIsAuthenticated(true);
+      
+      // Auto-redirect Super Admin
+      if (data.user.role === 'super_admin') {
+          setIsAdminMode(true);
+          localStorage.setItem('app_is_admin_mode', 'true');
+          setActiveRoute(AppRoute.ADMIN_DASHBOARD);
+      }
+  };
+
+  const handleLogout = () => {
+    clearToken();
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setIsAdminMode(false);
+    localStorage.removeItem('app_is_admin_mode');
+  };
+
+  const handleToggleAdmin = () => {
+    if (currentUser?.role !== 'super_admin') return;
     
-    // Only force Admin Mode if user just logged in and we don't have preference
-    if (isSuperAdminEmail && localStorage.getItem('app_is_admin_mode') === null) {
-      setIsAdminMode(true);
-      setActiveRoute(AppRoute.ADMIN_DASHBOARD);
-      localStorage.setItem('app_is_admin_mode', 'true');
-    }
-
-    setCurrentUser(prev => {
-        // Prefer auth metadata if available, otherwise keep existing custom name
-        const newName = authUser.user_metadata?.full_name || prev.name || 'Usuário';
-        const newAvatar = authUser.user_metadata?.avatar_url || prev.avatar || '';
-
-        const updatedUser = {
-            ...prev,
-            id: authUser.id,
-            email: authUser.email || prev.email,
-            name: newName,
-            avatar: newAvatar,
-            role: isSuperAdminEmail ? 'super_admin' : (authUser.app_metadata?.role || 'admin')
-        };
-        
-        // Save to local storage immediately to keep sync
-        localStorage.setItem('app_current_user', JSON.stringify(updatedUser));
-        
-        return updatedUser;
-    });
+    const newMode = !isAdminMode;
+    setIsAdminMode(newMode);
+    localStorage.setItem('app_is_admin_mode', String(newMode));
+    setActiveRoute(newMode ? AppRoute.ADMIN_DASHBOARD : AppRoute.DASHBOARD);
   };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    localStorage.removeItem('mock_session'); // Clear mock session
-    localStorage.removeItem('app_current_user'); // Clear cached user
-    localStorage.removeItem('app_is_admin_mode'); // Reset admin preference
-    setSession(null);
-    setIsAdminMode(false); // Reset admin mode on logout
-  };
-
-  // Update document title and localStorage when branding changes
-  useEffect(() => {
-    document.title = branding.appName;
-    localStorage.setItem('app_branding', JSON.stringify(branding));
-  }, [branding]);
 
   // Router Logic
   const renderContent = () => {
@@ -181,7 +130,7 @@ const App: React.FC = () => {
 
     switch (activeRoute) {
       case AppRoute.DASHBOARD: return <Dashboard />;
-      case AppRoute.CHAT: return <Chat branding={branding} />;
+      case AppRoute.CHAT: return <Chat />;
       case AppRoute.KANBAN: return <Kanban />;
       case AppRoute.CONTACTS: return <Contacts />;
       case AppRoute.CAMPAIGNS: return <Campaigns />;
@@ -191,7 +140,7 @@ const App: React.FC = () => {
       case AppRoute.REPORTS: return <Reports />;
       case AppRoute.SETTINGS: 
         return <Settings 
-          currentUser={currentUser} 
+          currentUser={currentUser!} 
           onUpdateUser={setCurrentUser} 
           branding={branding}
           onUpdateBranding={setBranding}
@@ -200,30 +149,21 @@ const App: React.FC = () => {
     }
   };
 
-  const handleToggleAdmin = () => {
-    const newMode = !isAdminMode;
-    setIsAdminMode(newMode);
-    localStorage.setItem('app_is_admin_mode', String(newMode));
-    setActiveRoute(newMode ? AppRoute.ADMIN_DASHBOARD : AppRoute.DASHBOARD);
-  };
-
-  // --- Render ---
-
   if (loadingSession) {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
             <div className="flex flex-col items-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mb-4"></div>
-                <p className="text-gray-400 text-sm">Carregando sistema...</p>
+                <p className="text-gray-400 text-sm">Carregando sistema SaaS...</p>
             </div>
         </div>
     );
   }
 
-  if (!session) {
+  if (!isAuthenticated) {
     return (
       <ToastProvider>
-        <Login branding={branding} onLoginSuccess={(s) => setSession(s)} />
+        <Login branding={branding} onLoginSuccess={handleLoginSuccess} />
       </ToastProvider>
     );
   }
@@ -243,23 +183,18 @@ const App: React.FC = () => {
           .bg-purple-50 { background-color: ${branding.primaryColor}15 !important; }
           .bg-purple-100 { background-color: ${branding.primaryColor}25 !important; }
           .text-purple-700 { color: var(--primary-color) !important; filter: brightness(0.8); }
-          .border-purple-200 { border-color: ${branding.primaryColor}40 !important; }
-          .focus\\:ring-purple-500:focus { --tw-ring-color: var(--primary-color) !important; }
-          .focus\\:border-purple-500:focus { border-color: var(--primary-color) !important; }
         `}</style>
 
-        {/* Desktop Sidebar */}
         <Sidebar 
           activeRoute={activeRoute} 
           onNavigate={setActiveRoute} 
           isAdminMode={isAdminMode}
           onToggleAdminMode={handleToggleAdmin}
-          currentUser={currentUser}
+          currentUser={currentUser!}
           branding={branding}
           onLogout={handleLogout}
         />
         
-        {/* Mobile Sidebar Overlay */}
         {mobileMenuOpen && (
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)}></div>
@@ -272,7 +207,7 @@ const App: React.FC = () => {
                 }}
                 isAdminMode={isAdminMode}
                 onToggleAdminMode={handleToggleAdmin}
-                currentUser={currentUser}
+                currentUser={currentUser!}
                 branding={branding}
                 onLogout={handleLogout}
               />
