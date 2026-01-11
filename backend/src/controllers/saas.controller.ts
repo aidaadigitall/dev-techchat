@@ -9,8 +9,8 @@ export class SaasController {
 
   async register(req: FastifyRequest, reply: FastifyReply) {
     const schema = z.object({
-      companyName: z.string().min(3),
-      ownerName: z.string().min(3),
+      companyName: z.string().min(2),
+      ownerName: z.string().min(2),
       email: z.string().email(),
       password: z.string().min(6)
     });
@@ -19,6 +19,7 @@ export class SaasController {
       const data = schema.parse(req.body);
       const result = await service.createTenantAndAdmin(data);
       
+      // Gerar Token JWT
       const token = await reply.jwtSign({
         id: result.user.id,
         email: result.user.email,
@@ -27,13 +28,14 @@ export class SaasController {
       });
 
       return reply.code(201).send({
-        message: 'Empresa registrada',
+        message: 'Empresa registrada com sucesso',
         tenant: result.tenant,
         user: result.user,
         token
       });
 
     } catch (error: any) {
+      console.error("[Register Error]", error);
       const msg = error.issues ? error.issues[0].message : error.message;
       return reply.code(400).send({ error: msg });
     }
@@ -59,16 +61,7 @@ export class SaasController {
       return reply.code(200).send({ user, token });
 
     } catch (error: any) {
-      return reply.code(401).send({ error: 'Credenciais inválidas' });
-    }
-  }
-
-  async listTenants(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tenants = await service.listTenants();
-      return reply.send(tenants);
-    } catch (error) {
-      return reply.code(500).send({ error: 'Erro interno' });
+      return reply.code(401).send({ error: error.message || 'Falha na autenticação' });
     }
   }
 

@@ -2,7 +2,7 @@
 version: '3.8'
 
 services:
-  # --- PROXY REVERSO (HTTPS Automático) ---
+  # --- PROXY & SSL ---
   proxy:
     image: caddy:2-alpine
     container_name: tech_proxy
@@ -20,7 +20,7 @@ services:
       - frontend
       - api
 
-  # --- FRONTEND ---
+  # --- FRONTEND APP ---
   frontend:
     build:
       context: .
@@ -34,7 +34,7 @@ services:
     networks:
       - tech_net
 
-  # --- BACKEND ---
+  # --- BACKEND API ---
   api:
     build: 
       context: ./backend
@@ -46,21 +46,40 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - API_BASE_URL=https://apitechchat.escsistemas.com
-      # Credentials injected via .env file on host
-      - DATABASE_URL=${DATABASE_URL}
-      - JWT_SECRET=${JWT_SECRET}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - REDIS_HOST=redis
       - WHATSMEOW_URL=http://whatsmeow:8080
+      - API_BASE_URL=https://apitechchat.escsistemas.com
+      # Usa a string de conexão do Postgres interno
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/techchat?schema=public}
+      - JWT_SECRET=${JWT_SECRET:-techchat_secure_secret}
     depends_on:
-      - redis
-      - whatsmeow
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - tech_net
 
-  # --- SERVICES ---
+  # --- DATABASE ---
+  postgres:
+    image: postgres:15-alpine
+    container_name: tech_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-techchat}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tech_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- QUEUE & CACHE ---
   redis:
     image: redis:alpine
     container_name: tech_redis
@@ -70,6 +89,7 @@ services:
     networks:
       - tech_net
 
+  # --- WHATSAPP ENGINE ---
   whatsmeow:
     image: mikelue/whatsmeow-http-api:latest
     container_name: tech_whatsmeow
@@ -84,6 +104,7 @@ networks:
     driver: bridge
 
 volumes:
+  postgres_data:
   redis_data:
   whatsmeow_data:
   caddy_data:

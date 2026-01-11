@@ -1,11 +1,13 @@
 
 import { Contact, Message, MessageType, Pipeline, Campaign, Task, Proposal, Plan, User, Company, SaasStats, KanbanColumn } from '../types';
 
-// --- PRODUCTION CONFIGURATION ---
+// --- CONFIGURAÇÃO DE PRODUÇÃO ---
+// Aponta para o Backend real na VPS
 const API_BASE_URL = 'https://apitechchat.escsistemas.com';
-console.log('🔗 Connecting to:', API_BASE_URL);
 
-// --- Auth Helpers ---
+console.log('🔗 API Conectada:', API_BASE_URL);
+
+// --- Helpers de Autenticação ---
 export const getToken = () => localStorage.getItem('auth_token');
 export const setToken = (token: string) => localStorage.setItem('auth_token', token);
 export const clearToken = () => {
@@ -25,7 +27,7 @@ export const getTenantId = () => {
     return localStorage.getItem('tenant_id') || '';
 };
 
-// --- HTTP Client ---
+// --- Cliente HTTP Genérico ---
 const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
   
@@ -39,6 +41,7 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  // Header Multi-tenant
   const tenantId = getTenantId();
   if (tenantId) {
       headers['x-tenant-id'] = tenantId;
@@ -48,22 +51,29 @@ const fetchClient = async (endpoint: string, options: RequestInit = {}) => {
 
   try {
     const response = await fetch(url, config);
+    
+    // Tratamento especial para 204 No Content
+    if (response.status === 204) return null;
+
     const responseData = await response.json().catch(() => ({}));
     
     if (!response.ok) {
-        const errorMessage = responseData.error || responseData.message || `Erro API ${response.status}`;
-        throw new Error(errorMessage);
+        if (response.status === 401) {
+            clearToken();
+            window.location.href = '/'; 
+        }
+        throw new Error(responseData.error || responseData.message || `Erro API ${response.status}`);
     }
     return responseData;
   } catch (error: any) {
-    console.error(`API Request Failed [${endpoint}]:`, error);
+    console.error(`API Error [${endpoint}]:`, error);
     throw error;
   }
 };
 
 export const api = {
   
-  // --- REAL SAAS AUTH ---
+  // --- AUTH REAL (SaaS) ---
   auth: {
       login: async (email: string, password: string) => {
           const data = await fetchClient('/api/saas/auth/login', {
@@ -137,7 +147,7 @@ export const api = {
       create: async (data: any) => fetchClient('/api/saas/users', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  // --- Modules ---
+  // --- Business Modules ---
   contacts: {
       list: async (): Promise<Contact[]> => fetchClient('/api/contacts'),
       create: async (c: any) => fetchClient('/api/contacts', { method: 'POST', body: JSON.stringify(c) }),
@@ -176,7 +186,7 @@ export const api = {
   },
 
   tasks: { 
-      list: async () => fetchClient('/api/tasks'), 
+      list: async (): Promise<Task[]> => fetchClient('/api/tasks'), 
       create: async (t:any) => fetchClient('/api/tasks', { method: 'POST', body: JSON.stringify(t) }), 
       update: async (id:string, u:any) => fetchClient(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify(u) }), 
       delete: async (id:string) => fetchClient(`/api/tasks/${id}`, { method: 'DELETE' }) 
