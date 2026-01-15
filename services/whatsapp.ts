@@ -1,7 +1,4 @@
 
-// services/whatsapp.ts
-import { WhatsAppConfig, MessageType } from '../types';
-import { supabase } from './supabase';
 import { api } from './api';
 
 // Types for WhatsApp Status
@@ -13,64 +10,53 @@ class WhatsAppService {
   private activeInstance: any = null;
   private eventListeners: Map<string, EventHandler[]> = new Map();
   private logs: string[] = [];
-  private realtimeSubscription: any = null;
+  private pollingInterval: any = null;
 
   constructor() {
-    this.checkConnection();
+    //
   }
 
-  // --- Helper to get Company ID ---
-  private async getCompanyId(): Promise<string | null> {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      return user.user_metadata?.company_id || null;
-  }
-
-  // --- Public API ---
-
-  // Connect to a specific connection saved in DB
+  // Connect to a specific connection saved in State
   public async setActiveConnection(connection: any) {
-      if(this.realtimeSubscription) supabase.removeChannel(this.realtimeSubscription);
+      if (this.pollingInterval) clearInterval(this.pollingInterval);
       
       this.activeInstance = connection;
       this.addLog(`Alternado para conexão: ${connection.name}`);
       
-      // Update status immediately based on DB
+      this.updateLocalStatus(connection);
+
+      // Start Polling for status updates (Alternative to Realtime)
+      this.pollingInterval = setInterval(async () => {
+          if (!this.activeInstance) return;
+          try {
+              // Fetch fresh list to find current instance
+              const instances = await api.whatsapp.list();
+              const fresh = instances.find((i: any) => i.id === this.activeInstance.id);
+              if (fresh) {
+                  // Check for status change or QR code update
+                  if (fresh.status !== this.activeInstance.status || fresh.qrCode !== this.activeInstance.qrCode) {
+                      this.activeInstance = fresh;
+                      this.updateLocalStatus(fresh);
+                  }
+              }
+          } catch (e) {
+              console.error("Polling error", e);
+          }
+      }, 3000); // Poll every 3 seconds
+  }
+
+  private updateLocalStatus(connection: any) {
       if (connection.status === 'open' || connection.status === 'connected') {
           this.emit('status', 'connected');
+          this.emit('qr', null);
       } else if (connection.status === 'qr_ready') {
           this.emit('status', 'qr_ready');
-          if (connection.qr_code) this.emit('qr', connection.qr_code);
+          // Note: Backend prisma uses camelCase 'qrCode', frontend types might vary. 
+          // Adjust based on API response. Assuming API returns Prisma object directly.
+          if (connection.qrCode) this.emit('qr', connection.qrCode);
       } else {
           this.emit('status', 'disconnected');
       }
-
-      // Subscribe to changes for this connection (QR code updates, status updates)
-      this.realtimeSubscription = supabase.channel(`whatsapp-${connection.id}`)
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'whatsapp_connections', filter: `id=eq.${connection.id}` },
-          (payload) => {
-             const newData = payload.new;
-             // Handle QR Code
-             if (newData.qr_code && newData.status === 'qr_ready') {
-                 this.emit('status', 'qr_ready');
-                 this.emit('qr', newData.qr_code);
-                 this.addLog('QR Code recebido via Realtime.');
-             }
-             // Handle Status
-             if (newData.status === 'open' || newData.status === 'connected') {
-                 this.emit('status', 'connected');
-                 this.emit('qr', null); // Clear QR
-                 this.addLog('Conexão estabelecida (Realtime).');
-             }
-             // Handle Disconnect
-             if (newData.status === 'disconnected') {
-                 this.emit('status', 'disconnected');
-             }
-          }
-        )
-        .subscribe();
   }
 
   public getStatus(): WhatsAppStatus {
@@ -80,18 +66,12 @@ class WhatsAppService {
   }
 
   public getQrCode(): string | null {
-    return this.activeInstance?.qr_code || null;
+    return this.activeInstance?.qrCode || null;
   }
 
   public getLogs(): string[] {
     return this.logs;
   }
-
-  public async checkConnection(): Promise<void> {
-      // Logic handled via Realtime and initial load in Settings.tsx
-  }
-
-  // --- Actions calling Proxy ---
 
   public async connect(): Promise<void> {
     if (!this.activeInstance) {
@@ -116,28 +96,12 @@ class WhatsAppService {
 
     try {
         this.addLog('Desconectando...');
-        await api.whatsapp.logout(this.activeInstance.id);
+        await api.whatsapp.delete(this.activeInstance.id); // Or logout endpoint
         this.emit('status', 'disconnected');
         this.addLog('Desconectado.');
     } catch (e: any) {
         this.addLog(`Erro ao desconectar: ${e.message}`);
     }
-  }
-
-  public async sendMessage(to: string, content: string): Promise<void> {
-      // Note: This should ideally also go through the Proxy to keep API Key hidden.
-      // For now, let's assume we implement 'send_message' action in proxy later 
-      // OR rely on the existing DB trigger/webhook architecture where creating a message in 'messages' table triggers the sending.
-      // But for this refactor, we are focusing on connection security.
-      
-      // Temporary: Just log, as the `api.chat.sendMessage` logic handles db insertion.
-      // Real SaaS architecture usually has a Database Trigger on 'messages' table that calls Edge Function to send.
-      console.log(`[WhatsAppService] Message queued for ${to}: ${content}`);
-  }
-
-  public async syncHistory() {
-      // Sync is now handled by Webhook Receiver in Backend.
-      this.addLog('Sincronização é automática via Webhook.');
   }
 
   // --- Event Handling System ---

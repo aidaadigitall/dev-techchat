@@ -2,25 +2,42 @@
 import { FastifyInstance } from 'fastify';
 import { WhatsappService } from '../services/whatsapp.service';
 import { messageQueue } from '../queues/message.queue';
-import { supabaseAdmin } from '../lib/supabase';
+import { prisma } from '../lib/prisma';
 
 export async function whatsappRoutes(app: FastifyInstance) {
     const service = new WhatsappService();
 
-    // Middleware de Auth (Simplificado para o exemplo, usar JWT validation real)
-    app.addHook('preHandler', async (req, reply) => {
-        const authHeader = req.headers.authorization;
-        if (!authHeader) return reply.code(401).send({ error: 'Unauthorized' });
-        // Validar token do Supabase aqui
+    // Middleware de Auth
+    app.addHook('preHandler', async (req: any, reply) => {
+        try {
+            await req.jwtVerify();
+        } catch (err) {
+            reply.code(401).send({ error: "Unauthorized" });
+        }
+    });
+
+    // Listar Instâncias
+    app.get('/instances', async (req: any, reply) => {
+        const tenantId = req.user.tenantId;
+        const instances = await prisma.whatsappConnection.findMany({
+            where: { tenantId }
+        });
+        return instances;
     });
 
     app.post('/instances', async (req: any, reply) => {
         const { name, engine = 'whatsmeow' } = req.body;
-        // Mock: extrair company_id do token JWT
-        const companyId = req.user?.company_id || req.body.company_id; 
+        const tenantId = req.user.tenantId;
         
-        const result = await service.createConnection(companyId, name, engine);
+        const result = await service.createConnection(tenantId, name, engine);
         return result;
+    });
+
+    app.delete('/instances/:id', async (req: any, reply) => {
+        const { id } = req.params;
+        // Todo: Adicionar lógica de desconexão no provider
+        await prisma.whatsappConnection.delete({ where: { id } });
+        return { success: true };
     });
 
     app.post('/instances/:id/connect', async (req: any, reply) => {
@@ -31,26 +48,22 @@ export async function whatsappRoutes(app: FastifyInstance) {
     app.post('/send', async (req: any, reply) => {
         const { connectionId, to, content, type = 'text' } = req.body;
         
-        // Buscar detalhes da conexão para saber a engine e instance_key
-        const { data: conn } = await supabaseAdmin
-            .from('whatsapp_connections')
-            .select('instance_key, engine')
-            .eq('id', connectionId)
-            .single();
+        // Busca conexão via Prisma
+        const conn = await prisma.whatsappConnection.findUnique({
+            where: { id: connectionId },
+            select: { instanceKey: true, engine: true }
+        });
 
         if (!conn) return reply.code(404).send({ error: 'Connection not found' });
 
-        // Adicionar na Fila BullMQ (Anti-ban logic happens inside worker)
+        // Adicionar na Fila BullMQ
         await messageQueue.add('send-message', {
-            instanceName: conn.instance_key,
+            instanceName: conn.instanceKey,
             to,
             content,
             type,
             engine: conn.engine
         });
-
-        // Salvar mensagem no banco como 'sending'
-        // ... (Logica de insert na tabela messages)
 
         return { success: true, status: 'queued' };
     });

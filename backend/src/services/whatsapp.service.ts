@@ -2,7 +2,7 @@
 import { WhatsAppProvider } from './providers/WhatsAppProvider';
 import { WhatsMeowProvider } from './providers/WhatsMeowProvider';
 import { EvolutionProvider } from './providers/EvolutionProvider';
-import { supabaseAdmin } from '../lib/supabase';
+import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 
 export class WhatsappService {
@@ -17,44 +17,46 @@ export class WhatsappService {
 
     // --- Métodos Públicos chamados pela API ---
 
-    async createConnection(companyId: string, name: string, engine: 'whatsmeow' | 'evolution') {
-        const instanceKey = `inst_${companyId.split('-')[0]}_${Date.now().toString(36)}`;
+    async createConnection(tenantId: string, name: string, engine: 'whatsmeow' | 'evolution') {
+        // Gera um ID único para a instância
+        const instanceKey = `inst_${tenantId.split('-')[0]}_${Date.now().toString(36)}`;
         const webhookUrl = `${env.API_BASE_URL}/webhooks/whatsapp/${instanceKey}`;
 
         const provider = this.getProvider(engine);
         await provider.createInstance(instanceKey, webhookUrl);
 
-        // Salva no Supabase
-        const { data, error } = await supabaseAdmin
-            .from('whatsapp_connections')
-            .insert({
-                company_id: companyId,
+        // Salva no Banco via Prisma (tabela WhatsAppConnection deve existir no schema)
+        // Caso a tabela não exista no schema atual, assumiremos que ela mapeia para 'whatsapp_connections'
+        // Adaptando para o modelo Prisma padrão
+        const connection = await prisma.whatsappConnection.create({
+            data: {
+                tenantId: tenantId,
                 name: name,
-                instance_key: instanceKey,
-                instance_name: instanceKey, // Compatibilidade legado
+                instanceKey: instanceKey,
                 engine: engine,
                 status: 'created'
-            })
-            .select()
-            .single();
+            }
+        });
 
-        if (error) throw error;
-        return data;
+        return connection;
     }
 
     async connect(connectionId: string) {
-        // Busca dados da conexão
-        const { data: conn } = await supabaseAdmin.from('whatsapp_connections').select('*').eq('id', connectionId).single();
+        // Busca dados da conexão via Prisma
+        const conn = await prisma.whatsappConnection.findUnique({ where: { id: connectionId } });
         if (!conn) throw new Error("Conexão não encontrada");
 
-        const provider = this.getProvider(conn.engine);
-        const { qrcode, status } = await provider.connectInstance(conn.instance_key);
+        const provider = this.getProvider(conn.engine as any);
+        const { qrcode, status } = await provider.connectInstance(conn.instanceKey);
 
-        // Atualiza QR no banco
-        await supabaseAdmin.from('whatsapp_connections').update({
-            qr_code: qrcode,
-            status: status
-        }).eq('id', connectionId);
+        // Atualiza QR no banco via Prisma
+        await prisma.whatsappConnection.update({
+            where: { id: connectionId },
+            data: {
+                qrCode: qrcode,
+                status: status
+            }
+        });
 
         return { qrcode, status };
     }

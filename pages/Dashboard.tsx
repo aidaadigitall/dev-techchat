@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { DASHBOARD_STATS, MOCK_USERS } from '../constants';
-import { api } from '../services/api'; // Import API to fetch real data
+import { api } from '../services/api'; 
 import { useToast } from '../components/ToastContext';
 import { 
   AreaChart, 
@@ -13,13 +13,11 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  Legend,
-  LineChart,
-  Line
+  Legend
 } from 'recharts';
-import { Filter, MessageSquare, Users } from 'lucide-react';
+import { MessageSquare, Users } from 'lucide-react';
 
-// --- Mock Data Generators (keep for charts for now) ---
+// --- Mock Data Generators ---
 const generateDateLabels = (days: number) => {
   const labels = [];
   const today = new Date();
@@ -35,7 +33,6 @@ const generateFlowData = (range: string) => {
   let days = 7;
   if (range === '15') days = 15;
   if (range === '30') days = 30;
-  // ... simple logic
   const labels = generateDateLabels(days);
   return labels.map(label => ({
     name: label,
@@ -44,45 +41,27 @@ const generateFlowData = (range: string) => {
   }));
 };
 
-const generateTimelineData = (points: number) => {
-  const data = [];
-  for (let i = 0; i < points; i++) {
-    data.push({
-      time: i < 24 ? `${i}:00` : `Dia ${i+1}`,
-      tickets: Math.floor(Math.random() * 15)
-    });
-  }
-  return data;
-};
-
 const Dashboard: React.FC = () => {
   const { addToast } = useToast();
   
-  // Stats State (Dynamic now)
+  // Stats State
   const [stats, setStats] = useState(DASHBOARD_STATS);
   const [loadingStats, setLoadingStats] = useState(true);
 
   // Chart States
   const [flowRange, setFlowRange] = useState('7');
-  const [flowCustomStart, setFlowCustomStart] = useState('');
-  const [flowCustomEnd, setFlowCustomEnd] = useState('');
   const [flowData, setFlowData] = useState<any[]>([]);
   const [userData, setUserData] = useState<any[]>([]);
-  const [timelineData, setTimelineData] = useState<any[]>([]);
 
-  // --- Fetch Real Data ---
   useEffect(() => {
     const fetchDashboardData = async () => {
         try {
             setLoadingStats(true);
-            // 1. Fetch Contacts for "Contatos" card
             const contacts = await api.contacts.list();
             
-            // 2. Update Stats Array with REAL numbers (no fake multipliers)
             const newStats = [...DASHBOARD_STATS];
             
-            // Total de Entradas (Atendimentos reais = Open + Resolved + Pending)
-            // Exclui 'saved' da contagem de tickets
+            // Tickets
             const tickets = contacts.filter(c => c.status !== 'saved');
             newStats[0] = { 
                 ...newStats[0], 
@@ -90,10 +69,10 @@ const Dashboard: React.FC = () => {
                 change: '+Realtime' 
             }; 
 
-            // Mensagens Hoje (Placeholder - needs message API filter)
+            // Mensagens
             newStats[1] = { 
                 ...newStats[1], 
-                value: '0', // Keep 0 if no real data source yet
+                value: '0', 
                 change: '' 
             }; 
 
@@ -105,7 +84,7 @@ const Dashboard: React.FC = () => {
                 change: 'Status: Aberto' 
             }; 
 
-            // Contatos Totais (Base completa)
+            // Base Completa
             newStats[3] = { 
                 ...newStats[3], 
                 value: contacts.length.toString(), 
@@ -116,7 +95,7 @@ const Dashboard: React.FC = () => {
             setLoadingStats(false);
         } catch (error) {
             console.error("Dashboard Load Error", error);
-            addToast("Erro ao carregar dados do dashboard", 'error');
+            // Fail silently or show generic toast
             setLoadingStats(false);
         }
     };
@@ -125,7 +104,6 @@ const Dashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Initial Load User Data from Registered Users
     const initialUserData = MOCK_USERS.map(user => ({
       name: user.name.split(' ')[0], 
       fullName: user.name,
@@ -133,14 +111,13 @@ const Dashboard: React.FC = () => {
     }));
     setUserData(initialUserData);
     setFlowData(generateFlowData(flowRange));
-    setTimelineData(generateTimelineData(24));
   }, [flowRange]);
 
   return (
     <div className="p-4 md:p-6 overflow-y-auto h-full bg-gray-50">
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
-        <p className="text-gray-500">Visão geral da sua operação hoje (Conectado ao Supabase).</p>
+        <p className="text-gray-500">Visão geral da sua operação hoje (SaaS Cloud).</p>
       </header>
 
       {/* Stats Grid */}
@@ -162,9 +139,8 @@ const Dashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* Charts Row 1: Fluxo & Vendas */}
+      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* CHART 1: FLUXO DE ATENDIMENTOS */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0 overflow-hidden">
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
             <h3 className="text-lg font-semibold text-gray-800">Fluxo de Atendimentos</h3>
@@ -198,7 +174,6 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* CHART 2: VENDAS */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-w-0 overflow-hidden">
            <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-gray-800">Vendas vs Metas</h3>
@@ -215,25 +190,6 @@ const Dashboard: React.FC = () => {
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
-
-      {/* SECTION 2: TOTAL DE ATENDIMENTO POR USUÁRIO */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 min-w-0 overflow-hidden">
-         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-100 pb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Total de Atendimento por Usuário</h3>
-         </div>
-
-         <div className="h-64 w-full min-w-[300px] overflow-x-auto">
-            <ResponsiveContainer width="100%" height="100%">
-               <BarChart data={userData} barSize={40}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#4b5563'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9ca3af'}} />
-                  <Tooltip />
-                  <Bar dataKey="tickets" name="Atendimentos" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-               </BarChart>
-            </ResponsiveContainer>
-         </div>
       </div>
     </div>
   );

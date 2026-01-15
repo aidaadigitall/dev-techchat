@@ -1,6 +1,6 @@
 
 import { FastifyInstance } from 'fastify';
-import { supabaseAdmin } from '../lib/supabase';
+import { prisma } from '../lib/prisma';
 
 export async function webhookRoutes(app: FastifyInstance) {
     
@@ -8,53 +8,72 @@ export async function webhookRoutes(app: FastifyInstance) {
         const { instanceKey } = req.params;
         const payload = req.body;
 
-        // Validar header secreto (Opcional mas recomendado)
-        // if (req.headers['x-webhook-secret'] !== process.env.WEBHOOK_SECRET) ...
-
-        console.log(`[Webhook] Event from ${instanceKey}`, payload);
+        console.log(`[Webhook] Event from ${instanceKey}`);
 
         // 1. Identificar Empresa dona da instância
-        const { data: conn } = await supabaseAdmin
-            .from('whatsapp_connections')
-            .select('company_id, id')
-            .eq('instance_key', instanceKey)
-            .single();
+        const conn = await prisma.whatsappConnection.findFirst({
+            where: { instanceKey: instanceKey }
+        });
 
-        if (!conn) return reply.code(404).send();
+        if (!conn) return reply.code(404).send({ error: 'Connection not found' });
 
-        // 2. Normalizar Payload (Exemplo WhatsMeow)
-        // Nota: Payload muda drasticamente entre Evolution e WhatsMeow. 
-        // Aqui precisa de um Adapter pattern. Assumindo estrutura genérica:
+        // 2. Normalizar Payload (Exemplo Genérico baseado em WhatsMeow/Evolution)
         const messageData = payload.data || payload; 
         
-        if (messageData.message) {
-            const phone = messageData.key?.remoteJid?.split('@')[0];
-            const content = messageData.message?.conversation || messageData.message?.extendedTextMessage?.text;
+        if (messageData.message || (messageData.key && messageData.messageTimestamp)) {
+            const remoteJid = messageData.key?.remoteJid || '';
+            const phone = remoteJid.split('@')[0];
+            const pushName = messageData.pushName || phone;
             const fromMe = messageData.key?.fromMe;
 
-            // 3. Upsert Contact
-            const { data: contact } = await supabaseAdmin
-                .from('contacts')
-                .upsert({
-                    company_id: conn.company_id,
-                    phone: phone,
-                    name: messageData.pushName || phone,
-                    last_message_at: new Date()
-                }, { onConflict: 'company_id, phone' })
-                .select()
-                .single();
+            // Extrair conteúdo (texto simples)
+            const content = 
+                messageData.message?.conversation || 
+                messageData.message?.extendedTextMessage?.text || 
+                messageData.message?.imageMessage?.caption ||
+                '[Mídia/Outro]';
 
-            // 4. Insert Message
-            if (contact) {
-                await supabaseAdmin.from('messages').insert({
-                    company_id: conn.company_id,
-                    contact_id: contact.id,
-                    content: content,
-                    sender_id: fromMe ? 'me' : contact.id,
-                    status: 'received',
-                    type: 'text'
+            if (!phone) return { success: true, ignored: true };
+
+            // 3. Upsert Contact (Prisma)
+            // Precisamos garantir que o contato existe
+            let contact = await prisma.contact.findFirst({
+                where: { 
+                    tenantId: conn.tenantId,
+                    phone: phone
+                }
+            });
+
+            if (!contact) {
+                contact = await prisma.contact.create({
+                    data: {
+                        tenantId: conn.tenantId,
+                        phone: phone,
+                        name: pushName,
+                        status: 'open',
+                        lastMessageAt: new Date()
+                    }
+                });
+            } else {
+                // Atualiza timestamp
+                await prisma.contact.update({
+                    where: { id: contact.id },
+                    data: { lastMessageAt: new Date() }
                 });
             }
+
+            // 4. Insert Message (Prisma)
+            await prisma.message.create({
+                data: {
+                    tenantId: conn.tenantId,
+                    contactId: contact.id,
+                    content: content,
+                    senderId: fromMe ? 'me' : contact.id,
+                    status: 'received',
+                    type: 'text', // Simplificado
+                    channel: 'whatsapp'
+                }
+            });
         }
 
         return { success: true };
